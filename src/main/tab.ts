@@ -27,6 +27,8 @@ export interface TabInit {
   sleeping?: boolean;
   history?: { entries: NavigationEntry[]; index: number } | null;
   referrer?: string;
+  /** The tab group it starts in. */
+  groupId?: number | null;
 }
 
 function hostOf(url: string): string {
@@ -82,6 +84,8 @@ export class Tab {
   blocked = 0;
   lastActive = Date.now();
   openerId: number | null;
+  /** Its tab group, if any (see MoonWindow's groups). */
+  groupId: number | null;
   private lastGesture = 0;
   private typed = false;
   private closing = false;
@@ -98,6 +102,7 @@ export class Tab {
     this.title = init.title ?? "";
     this.pinned = init.pinned ?? false;
     this.openerId = init.openerId ?? null;
+    this.groupId = init.groupId ?? null;
     this.history = init.history ?? null;
     if (init.webContents) {
       this.createView(init.webContents);
@@ -357,6 +362,7 @@ export class Tab {
       security: this.security(),
       zoom: wc ? Math.round(wc.getZoomFactor() * 100) : 100,
       error: this.error,
+      groupId: this.groupId,
     };
   }
 

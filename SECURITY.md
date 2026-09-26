@@ -133,9 +133,9 @@ never imported.
 ## Known limitations
 
 - Extensions run on Electron's extension support plus electron-chrome-extensions and Moon
-  Browser's own additions (side panel, identity, search, debugger), which cover the common APIs
-  but not all of Chrome's: tab groups, `declarativeNetRequest` rules and keyboard commands are
-  missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
+  Browser's own additions (side panel, identity, tab groups, search, debugger), which cover the
+  common APIs but not all of Chrome's: `declarativeNetRequest` rules, keyboard commands and
+  moving tab groups with `chrome.tabGroups.move` are missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
   itself). Native messaging starts the desktop apps registered for Google Chrome, only for the
   extensions those apps name, as Chrome does.
 - `chrome.debugger` (for extensions that declare it, with the install warning "Access the page

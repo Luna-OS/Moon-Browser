@@ -2,6 +2,7 @@
  * Everything Moon Browser remembers between starts, as small JSON files in
  * the profile folder. Private windows never write here.
  */
+import { cleanGroupTitle, isGroupColor, type GroupColor } from "@shared/tab-groups";
 import { randomUUID } from "node:crypto";
 import { sanitizeSettings } from "@shared/settings";
 import type {
@@ -26,11 +27,14 @@ export interface SavedTab {
   pinned: boolean;
   entries?: { url: string; title: string }[];
   index?: number;
+  /** Index into the window's `groups`. */
+  group?: number;
 }
 
 export interface SavedWindow {
   tabs: SavedTab[];
   active: number;
+  groups?: { title: string; color: GroupColor; collapsed: boolean }[];
   bounds?: { x: number; y: number; width: number; height: number };
   maximized?: boolean;
 }
@@ -151,9 +155,23 @@ function parseSession(raw: unknown): SavedSession {
           pinned: t.pinned === true,
           entries,
           index: entries ? Math.min(entries.length - 1, Math.max(0, num(t.index))) : undefined,
+          group:
+            typeof t.group === "number" && Number.isInteger(t.group) && t.group >= 0
+              ? t.group
+              : undefined,
         },
       ];
     });
+    const groups = Array.isArray(w.groups)
+      ? w.groups
+          .filter(isObj)
+          .slice(0, 100)
+          .map((g) => ({
+            title: cleanGroupTitle(g.title),
+            color: isGroupColor(g.color) ? g.color : "grey",
+            collapsed: g.collapsed === true,
+          }))
+      : [];
     if (!tabs.length) return [];
     const b = isObj(w.bounds) ? w.bounds : null;
     return [
@@ -165,6 +183,7 @@ function parseSession(raw: unknown): SavedSession {
             ? { x: num(b.x), y: num(b.y), width: num(b.width), height: num(b.height) }
             : undefined,
         maximized: w.maximized === true,
+        groups,
       },
     ];
   });

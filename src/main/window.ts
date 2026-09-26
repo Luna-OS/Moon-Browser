@@ -34,6 +34,13 @@ import {
   type Insets,
 } from "@shared/layout";
 import { resolveInput } from "@shared/omnibox";
+import {
+  cleanGroupTitle,
+  groupAfterMove,
+  nextGroupColor,
+  type GroupColor,
+  type TabGroupInfo,
+} from "@shared/tab-groups";
 import { protectionSiteOf } from "@shared/sites";
 import type { FindState, Rect, SplitState, WindowState } from "@shared/types";
 import type { Browser } from "./browser";
@@ -65,6 +72,9 @@ export class MoonWindow {
   private readonly attached = new Set<WebContentsView>();
   private overlayOpen = false;
   private htmlFullscreen: Tab | null = null;
+  /** Tab groups; IDs are unique across windows (extensions see them). */
+  groups: TabGroupInfo[] = [];
+  private static nextGroupId = 1;
   /** An extension's side panel next to the tabs. */
   private sidePanel: { extensionId: string; url: string; view: WebContentsView } | null = null;
   private sidePanelWidth = SIDE_PANEL_WIDTH;
@@ -174,8 +184,15 @@ export class MoonWindow {
 
     // Tabs: a saved window, some addresses, or one new tab.
     if (options.saved) {
+      const groupIds = (options.saved.groups ?? []).map((g) => {
+        const id = MoonWindow.nextGroupId++;
+        this.groups.push({ id, title: g.title, color: g.color, collapsed: g.collapsed });
+        return id;
+      });
       for (const [i, saved] of options.saved.tabs.entries()) {
         const tab = new Tab(this, {
+          groupId:
+            saved.group !== undefined && !saved.pinned ? (groupIds[saved.group] ?? null) : null,
           url: saved.url,
           title: saved.title,
           pinned: saved.pinned,
@@ -193,6 +210,11 @@ export class MoonWindow {
       }
     }
     if (this.activeId < 0) this.activeId = this.tabs[0].id;
+    this.dropEmptyGroups();
+    // The active tab is never hidden in a collapsed group.
+    const activeGroup = this.activeTab?.groupId;
+    const g = this.groups.find((x) => x.id === activeGroup);
+    if (g) g.collapsed = false;
     this.activeTab?.wake();
 
     void this.win.loadURL("moon://ui/");
@@ -255,7 +277,15 @@ export class MoonWindow {
   private insertTab(tab: Tab, index?: number): void {
     const firstUnpinned = this.tabs.findIndex((t) => !t.pinned);
     const minIndex = firstUnpinned < 0 ? this.tabs.length : firstUnpinned;
+    // A tab opened from a grouped tab joins its group, like in Chrome.
+    const opener = tab.openerId !== null ? this.tab(tab.openerId) : undefined;
+    if (tab.groupId === null && opener?.groupId != null && index === undefined)
+      tab.groupId = opener.groupId;
     let at = index;
+    if (at === undefined && tab.groupId !== null) {
+      const last = this.tabs.findLastIndex((t) => t.groupId === tab.groupId);
+      if (last >= 0 && !opener) at = last + 1;
+    }
     if (at === undefined) {
       const activeIndex = this.tabs.findIndex((t) => t.id === this.activeId);
       if (tab.openerId !== null) {
@@ -268,7 +298,14 @@ export class MoonWindow {
         at = this.tabs.length;
       }
     }
-    this.tabs.splice(Math.max(minIndex, Math.min(this.tabs.length, at)), 0, tab);
+    const place = Math.max(minIndex, Math.min(this.tabs.length, at));
+    this.tabs.splice(place, 0, tab);
+    // Landing inside another group (or leaving its own) follows the group rules.
+    tab.groupId = groupAfterMove(
+      this.tabs.map((t) => t.groupId),
+      place,
+    );
+    this.dropEmptyGroups();
   }
 
   activate(id: number, options: { focusPage?: boolean } = {}): void {
@@ -276,6 +313,9 @@ export class MoonWindow {
     if (!tab) return;
     const previous = this.activeTab;
     if (previous) previous.lastActive = Date.now();
+    // Showing a tab of a collapsed group opens the group.
+    const group = this.groups.find((g) => g.id === tab.groupId);
+    if (group?.collapsed) group.collapsed = false;
     this.activeId = tab.id;
     tab.lastActive = Date.now();
     for (const t of this.visibleTabs()) t.wake();
@@ -293,6 +333,7 @@ export class MoonWindow {
     const index = this.tabs.indexOf(tab);
     if (index < 0) return;
     this.tabs.splice(index, 1);
+    this.dropEmptyGroups();
     this.browser.permissions.cancelTab(tab.id);
     let next: Tab | undefined;
     if (this.split && (this.split.leftId === tab.id || this.split.rightId === tab.id)) {
@@ -327,12 +368,27 @@ export class MoonWindow {
       ? Math.max(0, Math.min(pinnedCount, index))
       : Math.max(pinnedCount, Math.min(this.tabs.length, index));
     this.tabs.splice(to, 0, tab);
+    const before = tab.groupId;
+    tab.groupId = tab.pinned
+      ? null
+      : groupAfterMove(
+          this.tabs.map((t) => t.groupId),
+          to,
+        );
+    if (tab.groupId !== before) this.groupsChanged(before, tab.groupId);
+    this.dropEmptyGroups();
     this.update();
     this.browser.saveSessionSoon();
   }
 
   private togglePin(tab: Tab): void {
     tab.pinned = !tab.pinned;
+    // Pinned tabs sit at the start, outside any group.
+    if (tab.pinned && tab.groupId !== null) {
+      const was = tab.groupId;
+      tab.groupId = null;
+      this.groupsChanged(was, null);
+    }
     const others = this.tabs.filter((t) => t !== tab);
     const pinnedCount = others.filter((t) => t.pinned).length;
     others.splice(pinnedCount, 0, tab);
@@ -396,6 +452,126 @@ export class MoonWindow {
       }
       view.setBounds(rect);
     }
+  }
+
+  // ---- Tab groups ----
+
+  group(id: number | null): TabGroupInfo | undefined {
+    return id === null ? undefined : this.groups.find((g) => g.id === id);
+  }
+
+  /**
+   * Puts tabs into a group — an existing one, or a new one — and moves them
+   * next to its other tabs. Returns the group's ID.
+   */
+  groupTabs(tabs: Tab[], groupId?: number, title = ""): number {
+    let group = groupId !== undefined ? this.group(groupId) : undefined;
+    const created = !group;
+    if (!group) {
+      group = {
+        id: MoonWindow.nextGroupId++,
+        title: cleanGroupTitle(title),
+        color: nextGroupColor(this.groups.map((g) => g.color)),
+        collapsed: false,
+      };
+      this.groups.push(group);
+    }
+    const moving = this.tabs.filter((t) => tabs.includes(t));
+    const olds = new Set(moving.map((t) => t.groupId));
+    for (const t of moving) {
+      t.pinned = false;
+      t.groupId = group.id;
+    }
+    // Keep the group in one piece: gather its tabs where it starts (or
+    // where the first of the new tabs is), in their current order.
+    const members = this.tabs.filter((t) => t.groupId === group.id);
+    const firstAt = this.tabs.findIndex((t) => t.groupId === group.id);
+    const rest = this.tabs.filter((t) => t.groupId !== group.id);
+    const insertAt = rest.filter((t) => this.tabs.indexOf(t) < firstAt).length;
+    rest.splice(insertAt, 0, ...members);
+    // Pinned tabs stay first (grouped tabs are never pinned).
+    this.tabs = [...rest.filter((t) => t.pinned), ...rest.filter((t) => !t.pinned)];
+    group.collapsed = false;
+    for (const old of olds) if (old !== null && old !== group.id) this.groupsChanged(old, null);
+    this.dropEmptyGroups();
+    this.browser.extensions.groupChanged(created ? "onCreated" : "onUpdated", this, group);
+    this.update();
+    this.browser.saveSessionSoon();
+    return group.id;
+  }
+
+  /** Takes tabs out of their groups; they stay right after the group. */
+  ungroupTabs(tabs: Tab[]): void {
+    for (const tab of tabs) {
+      const was = tab.groupId;
+      if (was === null) continue;
+      const lastOfGroup = this.tabs.findLastIndex((t) => t.groupId === was);
+      tab.groupId = null;
+      const from = this.tabs.indexOf(tab);
+      if (from >= 0 && from < lastOfGroup) {
+        this.tabs.splice(from, 1);
+        this.tabs.splice(lastOfGroup, 0, tab);
+      }
+      this.groupsChanged(was, null);
+    }
+    this.dropEmptyGroups();
+    this.update();
+    this.browser.saveSessionSoon();
+  }
+
+  updateGroup(
+    id: number,
+    patch: { title?: string; color?: GroupColor; collapsed?: boolean },
+  ): TabGroupInfo | undefined {
+    const group = this.group(id);
+    if (!group) return undefined;
+    if (patch.title !== undefined) group.title = cleanGroupTitle(patch.title);
+    if (patch.color !== undefined) group.color = patch.color;
+    if (patch.collapsed !== undefined && patch.collapsed !== group.collapsed) {
+      group.collapsed = patch.collapsed;
+      // A collapsed group hides its tabs: show a tab outside it instead.
+      if (group.collapsed && this.activeTab?.groupId === id) {
+        const index = this.tabs.findIndex((t) => t.id === this.activeId);
+        const outside =
+          this.tabs.slice(index).find((t) => t.groupId !== id) ??
+          [...this.tabs.slice(0, index)].reverse().find((t) => t.groupId !== id);
+        if (outside) this.activate(outside.id);
+        else this.openTab();
+      }
+    }
+    this.browser.extensions.groupChanged("onUpdated", this, group);
+    this.update();
+    this.browser.saveSessionSoon();
+    return group;
+  }
+
+  private groupAction(id: number, action: "newTab" | "ungroup" | "close"): void {
+    const members = this.tabs.filter((t) => t.groupId === id);
+    if (!members.length) return;
+    if (action === "newTab") {
+      const last = this.tabs.lastIndexOf(members[members.length - 1]);
+      this.openTab({ index: last + 1, groupId: id });
+    } else if (action === "ungroup") {
+      this.ungroupTabs(members);
+    } else {
+      members.forEach((t) => t.close());
+    }
+  }
+
+  /** Called when a tab joins or leaves a group through a move. */
+  private groupsChanged(from: number | null, to: number | null): void {
+    for (const id of [from, to]) {
+      const group = this.group(id);
+      if (group) this.browser.extensions.groupChanged("onUpdated", this, group);
+    }
+  }
+
+  /** Groups without tabs are gone. */
+  private dropEmptyGroups(): void {
+    const empty = this.groups.filter((g) => !this.tabs.some((t) => t.groupId === g.id));
+    if (!empty.length) return;
+    this.groups = this.groups.filter((g) => !empty.includes(g));
+    for (const g of empty) this.browser.extensions.groupChanged("onRemoved", this, g);
   }
 
   // ---- Side panel ----
@@ -585,6 +761,7 @@ export class MoonWindow {
         !this.isPrivate && this.browser.extensions.count() > 0 ? (active?.wc?.id ?? null) : null,
       extensions: this.isPrivate ? [] : this.browser.extensions.entries(active?.url ?? ""),
       sidePanel: this.sidePanelState(),
+      groups: this.groups,
     };
   }
 
@@ -615,8 +792,14 @@ export class MoonWindow {
   }
 
   saved(): SavedWindow {
+    const groups = this.groups.filter((g) => this.tabs.some((t) => t.groupId === g.id));
     return {
-      tabs: this.tabs.map((t) => t.saved()),
+      tabs: this.tabs.map((t) => {
+        const saved = t.saved();
+        const group = groups.findIndex((g) => g.id === t.groupId);
+        return group >= 0 ? { ...saved, group } : saved;
+      }),
+      groups: groups.map((g) => ({ title: g.title, color: g.color, collapsed: g.collapsed })),
       active: Math.max(
         0,
         this.tabs.findIndex((t) => t.id === this.activeId),
@@ -879,6 +1062,22 @@ export class MoonWindow {
       case "sidePanelClose":
         this.closeSidePanel();
         break;
+      case "groupTab": {
+        const tab = this.tab(cmd.tabId);
+        if (tab) this.groupTabs([tab], cmd.groupId);
+        break;
+      }
+      case "ungroupTab": {
+        const tab = this.tab(cmd.tabId);
+        if (tab) this.ungroupTabs([tab]);
+        break;
+      }
+      case "groupUpdate":
+        this.updateGroup(cmd.groupId, cmd);
+        break;
+      case "groupAction":
+        this.groupAction(cmd.groupId, cmd.action);
+        break;
       case "sidePanelWidth": {
         const [width] = this.win.getContentSize();
         this.sidePanelWidth = clampPanelWidth(cmd.width, contentArea(width, 0, this.insets).width);
@@ -988,6 +1187,26 @@ export class MoonWindow {
     this.popup(
       [
         { label: "New tab to the right", click: () => this.openTab({ index: index + 1 }) },
+        { type: "separator" },
+        tab.groupId === null
+          ? {
+              label: "Add tab to new group",
+              click: () => {
+                const id = this.groupTabs([tab]);
+                this.send({ type: "editGroup", groupId: id });
+              },
+            }
+          : { label: "Remove from group", click: () => this.ungroupTabs([tab]) },
+        {
+          label: "Add tab to group",
+          visible: this.groups.some((g) => g.id !== tab.groupId),
+          submenu: this.groups
+            .filter((g) => g.id !== tab.groupId)
+            .map((g) => ({
+              label: g.title || `Unnamed ${g.color} group`,
+              click: () => this.groupTabs([tab], g.id),
+            })),
+        },
         { type: "separator" },
         { label: "Reload", click: () => tab.reload() },
         { label: "Duplicate", click: () => this.openTab({ url: tab.url, index: index + 1 }) },

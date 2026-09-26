@@ -14,6 +14,13 @@ import {
   unsupportedFeatures,
 } from "./extensions";
 import { timeAgo } from "./format";
+import {
+  cleanGroupTitle,
+  GROUP_COLORS,
+  groupAfterMove,
+  isGroupColor,
+  nextGroupColor,
+} from "./tab-groups";
 import { clampPanelWidth, SIDE_PANEL_HEADER, sidePanelRects, SPLIT_GAP } from "./layout";
 import { internalPageOf, INTERNAL_ALIASES } from "./internal";
 import { PAGE_METHODS } from "./ipc";
@@ -82,7 +89,8 @@ describe("extension manifests", () => {
   it("notes what Moon Browser can't offer", () => {
     // Native messaging works (through desktop apps' registrations for Chrome).
     expect(unsupportedFeatures({ permissions: ["nativeMessaging"] })).toEqual([]);
-    expect(unsupportedFeatures({ optional_permissions: ["tabGroups"] })).toHaveLength(1);
+    expect(unsupportedFeatures({ permissions: ["tabGroups"] })).toEqual([]);
+    expect(unsupportedFeatures({ permissions: ["declarativeNetRequest"] })).toHaveLength(1);
     expect(unsupportedFeatures({ permissions: ["storage"] })).toEqual([]);
   });
 
@@ -185,5 +193,35 @@ describe("side panel", () => {
     // Never so wide that the pages disappear, never too narrow to use.
     expect(clampPanelWidth(5000, 1200)).toBeLessThanOrEqual(1200 - 320 - SPLIT_GAP);
     expect(clampPanelWidth(10, 1200)).toBe(280);
+  });
+});
+
+describe("tab groups", () => {
+  it("keeps groups in one piece when a tab moves", () => {
+    // Dropped between two tabs of group 1: joins it.
+    expect(groupAfterMove([1, null, 1], 1)).toBe(1);
+    // Moved to the edge of its own group: stays.
+    expect(groupAfterMove([null, 2, 2], 1)).toBe(2);
+    expect(groupAfterMove([2, 2, null], 1)).toBe(2);
+    // Moved away from its group: leaves it.
+    expect(groupAfterMove([1, 1, 3, null], 2)).toBeNull();
+    // Next to a group it doesn't belong to: stays outside.
+    expect(groupAfterMove([1, 1, null], 2)).toBeNull();
+    expect(groupAfterMove([null], 0)).toBeNull();
+  });
+
+  it("picks an unused colour for a new group, grey last", () => {
+    expect(nextGroupColor([])).toBe("blue");
+    expect(nextGroupColor(["blue", "red"])).toBe("yellow");
+    const all = GROUP_COLORS.filter((c) => c !== "grey");
+    expect(nextGroupColor(all)).toBe("grey");
+    expect(isGroupColor("purple")).toBe(true);
+    expect(isGroupColor("magenta")).toBe(false);
+  });
+
+  it("keeps group names to one short line", () => {
+    expect(cleanGroupTitle("  Work \n stuff  ")).toBe("Work stuff");
+    expect(cleanGroupTitle("x".repeat(100))).toHaveLength(60);
+    expect(cleanGroupTitle(42)).toBe("");
   });
 });

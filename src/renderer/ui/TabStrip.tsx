@@ -1,12 +1,21 @@
-import { useState, type DragEvent, type MouseEvent } from "react";
+import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import type { TabGroupInfo } from "@shared/tab-groups";
 import type { TabInfo, WindowState } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
 import { CloseIcon, MaskIcon, PlusIcon, SleepIcon, SpeakerIcon } from "@theme/icons";
+import { GROUP_HEX } from "./group-colors";
 import { ui } from "./store";
+import { GroupChip } from "./TabGroups";
 
 const DRAG_TYPE = "application/x-moon-tab";
 
-export function TabStrip({ state }: { state: WindowState }) {
+export function TabStrip({
+  state,
+  onEditGroup,
+}: {
+  state: WindowState;
+  onEditGroup: (groupId: number, anchor: DOMRect) => void;
+}) {
   const [drop, setDrop] = useState<{ id: number; side: "before" | "after" } | null>(null);
   const splitIds = state.split ? [state.split.leftId, state.split.rightId] : [];
 
@@ -40,18 +49,42 @@ export function TabStrip({ state }: { state: WindowState }) {
         </span>
       )}
       <div className="mb-tabs" role="tablist" aria-label="Tabs">
-        {state.tabs.map((tab) => (
-          <Tab
-            key={tab.id}
-            tab={tab}
-            active={tab.id === state.activeId}
-            inSplit={splitIds.includes(tab.id)}
-            drop={drop?.id === tab.id ? drop.side : undefined}
-            onDragOver={(e) => onDragOver(e, tab)}
-            onDragLeave={() => setDrop(null)}
-            onDrop={(e) => onDrop(e, tab)}
-          />
-        ))}
+        {(() => {
+          // Each group's label goes in front of its tabs; a collapsed group
+          // shows only the label.
+          const groups = new Map(state.groups.map((g) => [g.id, g]));
+          const items: ReactNode[] = [];
+          let previous: number | null = null;
+          for (const tab of state.tabs) {
+            const group = tab.groupId !== null ? groups.get(tab.groupId) : undefined;
+            if (group && tab.groupId !== previous) {
+              items.push(
+                <GroupChip
+                  key={`group-${group.id}`}
+                  group={group}
+                  count={state.tabs.filter((t) => t.groupId === group.id).length}
+                  onEdit={(anchor) => onEditGroup(group.id, anchor)}
+                />,
+              );
+            }
+            previous = tab.groupId;
+            if (group?.collapsed) continue;
+            items.push(
+              <Tab
+                key={tab.id}
+                tab={tab}
+                group={group}
+                active={tab.id === state.activeId}
+                inSplit={splitIds.includes(tab.id)}
+                drop={drop?.id === tab.id ? drop.side : undefined}
+                onDragOver={(e) => onDragOver(e, tab)}
+                onDragLeave={() => setDrop(null)}
+                onDrop={(e) => onDrop(e, tab)}
+              />,
+            );
+          }
+          return items;
+        })()}
         <button
           type="button"
           className="mb-icon-btn mb-newtab"
@@ -68,6 +101,7 @@ export function TabStrip({ state }: { state: WindowState }) {
 
 function Tab({
   tab,
+  group,
   active,
   inSplit,
   drop,
@@ -76,6 +110,7 @@ function Tab({
   onDrop,
 }: {
   tab: TabInfo;
+  group?: TabGroupInfo;
   active: boolean;
   inSplit: boolean;
   drop?: "before" | "after";
@@ -97,10 +132,13 @@ function Tab({
       tabIndex={active ? 0 : -1}
       title={title}
       className="mb-tab"
+      data-tab-id={tab.id}
       data-pinned={tab.pinned}
       data-sleeping={tab.sleeping}
       data-split={inSplit}
       data-drop={drop}
+      data-group={group ? "" : undefined}
+      style={group ? ({ "--mb-group": GROUP_HEX[group.color] } as React.CSSProperties) : undefined}
       draggable
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_TYPE, String(tab.id));
@@ -124,6 +162,7 @@ function Tab({
       }}
     >
       <span className="mb-tab-glow" />
+      {group && <span className="mb-tab-group-line" aria-hidden="true" />}
       <span className="mb-tab-icon inline-flex">
         {tab.loading && !tab.sleeping ? (
           <span className="mb-loader" />

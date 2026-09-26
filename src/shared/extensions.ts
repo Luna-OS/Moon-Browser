@@ -128,8 +128,11 @@ export function unsupportedFeatures(manifest: ManifestLike): string[] {
     ...strings(manifest.optional_permissions),
   ]);
   const out: string[] = [];
-  if (permissions.has("tabGroups"))
-    out.push("Tab groups aren't available in Moon Browser; the extension works without them.");
+  if (
+    permissions.has("declarativeNetRequest") ||
+    permissions.has("declarativeNetRequestWithHostAccess")
+  )
+    out.push("Blocking rules (declarativeNetRequest) may not all work in Moon Browser.");
   return out;
 }
 

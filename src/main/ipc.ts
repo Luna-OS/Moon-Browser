@@ -8,6 +8,7 @@ import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { BANGS } from "@shared/bangs";
 import { SEARCH_ENGINES } from "@shared/engines";
 import { EXTENSION_ID } from "@shared/extensions";
+import { isGroupColor } from "@shared/tab-groups";
 import { internalPageOf } from "@shared/internal";
 import {
   INTERNAL_CHANNEL,
@@ -15,6 +16,7 @@ import {
   UI_CHANNELS,
   type Disposition,
   type DownloadAction,
+  type GroupAction,
   type InternalMethod,
   type UiCommand,
 } from "@shared/ipc";
@@ -145,6 +147,26 @@ export function validateCommand(raw: unknown): UiCommand | null {
         : null;
     case "sidePanelClose":
       return { type: "sidePanelClose" };
+    case "groupTab":
+      return isNum(c.tabId)
+        ? { type: "groupTab", tabId: c.tabId, groupId: isNum(c.groupId) ? c.groupId : undefined }
+        : null;
+    case "ungroupTab":
+      return isNum(c.tabId) ? { type: "ungroupTab", tabId: c.tabId } : null;
+    case "groupUpdate":
+      return isNum(c.groupId)
+        ? {
+            type: "groupUpdate",
+            groupId: c.groupId,
+            title: isStr(c.title, 200) ? c.title : undefined,
+            color: isGroupColor(c.color) ? c.color : undefined,
+            collapsed: typeof c.collapsed === "boolean" ? c.collapsed : undefined,
+          }
+        : null;
+    case "groupAction":
+      return isNum(c.groupId) && ["newTab", "ungroup", "close"].includes(c.action as string)
+        ? { type: "groupAction", groupId: c.groupId, action: c.action as GroupAction }
+        : null;
     case "sidePanelWidth":
       return isNum(c.width) ? { type: "sidePanelWidth", width: c.width } : null;
     case "insets":

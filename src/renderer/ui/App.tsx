@@ -22,6 +22,7 @@ import { ExtensionButtons, ExtensionsMenu } from "./Extensions";
 import { useOverlay } from "./overlay";
 import { DownloadsPanel, MainMenu, Popover, ShieldPanel, type PopoverKind } from "./Popovers";
 import { onUiEvent, ui, useWindowState } from "./store";
+import { GroupEditor } from "./TabGroups";
 import { TabStrip } from "./TabStrip";
 
 export function App() {
@@ -32,7 +33,11 @@ export function App() {
 }
 
 function Browser({ state }: { state: WindowState }) {
-  const [popover, setPopover] = useState<{ kind: PopoverKind; anchor: DOMRect } | null>(null);
+  const [popover, setPopover] = useState<{
+    kind: PopoverKind;
+    anchor: DOMRect;
+    groupId?: number;
+  } | null>(null);
   const [dropdown, setDropdown] = useState(false);
   const [dragging, setDragging] = useState(false);
   /** The tab the find bar was opened for; switching tabs closes it, like Chrome. */
@@ -76,6 +81,21 @@ function Browser({ state }: { state: WindowState }) {
       onUiEvent((event) => {
         if (event.type === "find") setFindTab(activeRef.current);
         if (event.type === "closePopovers") setPopover(null);
+        if (event.type === "editGroup") {
+          // The new group's label appears with the next state; wait for it.
+          let tries = 0;
+          const open = () => {
+            const chip = document.querySelector(`[data-group-chip="${event.groupId}"]`);
+            if (chip)
+              setPopover({
+                kind: "group",
+                anchor: chip.getBoundingClientRect(),
+                groupId: event.groupId,
+              });
+            else if (tries++ < 30) requestAnimationFrame(open);
+          };
+          requestAnimationFrame(open);
+        }
       }),
     [],
   );
@@ -93,7 +113,10 @@ function Browser({ state }: { state: WindowState }) {
     <div className="flex h-full flex-col">
       {!state.fullscreen && (
         <header>
-          <TabStrip state={state} />
+          <TabStrip
+            state={state}
+            onEditGroup={(groupId, anchor) => setPopover({ kind: "group", anchor, groupId })}
+          />
           <div className="mb-toolbar">
             <button
               type="button"
@@ -253,7 +276,23 @@ function Browser({ state }: { state: WindowState }) {
 
       {findOpen && !state.fullscreen && <FindBar state={state} onClose={() => setFindTab(null)} />}
 
-      {popover && (
+      {popover && popover.kind === "group" && (
+        <Popover
+          anchor={popover.anchor}
+          align="left"
+          width={250}
+          label="Tab group"
+          onClose={closePopover}
+        >
+          {(() => {
+            const group = state.groups.find((g) => g.id === popover.groupId);
+            return group ? (
+              <GroupEditor key={group.id} group={group} onClose={closePopover} />
+            ) : null;
+          })()}
+        </Popover>
+      )}
+      {popover && popover.kind !== "group" && (
         <Popover
           anchor={popover.anchor}
           width={
