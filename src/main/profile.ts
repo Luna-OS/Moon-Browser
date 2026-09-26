@@ -1,0 +1,469 @@
+/**
+ * Everything Moon Browser remembers between starts, as small JSON files in
+ * the profile folder. Private windows never write here.
+ */
+import { randomUUID } from "node:crypto";
+import { sanitizeSettings } from "@shared/settings";
+import type {
+  Bookmark,
+  DownloadInfo,
+  HistoryEntry,
+  PermissionKind,
+  SiteSettingsEntry,
+  Settings,
+} from "@shared/types";
+import { profilePath } from "./paths";
+import { JsonStore } from "./store";
+
+const HISTORY_LIMIT = 20_000;
+const HISTORY_DAYS = 180;
+const DOWNLOADS_LIMIT = 300;
+const DAY = 86_400_000;
+
+export interface SavedTab {
+  url: string;
+  title: string;
+  pinned: boolean;
+  entries?: { url: string; title: string }[];
+  index?: number;
+}
+
+export interface SavedWindow {
+  tabs: SavedTab[];
+  active: number;
+  bounds?: { x: number; y: number; width: number; height: number };
+  maximized?: boolean;
+}
+
+export interface SavedSession {
+  windows: SavedWindow[];
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
+const str = (v: unknown, max = 8192) => (typeof v === "string" ? v.slice(0, max) : "");
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const httpish = (url: string) => /^(https?|file):/i.test(url);
+const faviconOf = (v: unknown) => {
+  const s = str(v, 2048);
+  return /^(https?:|data:image\/)/i.test(s) ? s : null;
+};
+
+function parseHistory(raw: unknown): Map<string, HistoryEntry> {
+  const map = new Map<string, HistoryEntry>();
+  if (!Array.isArray(raw)) return map;
+  const cutoff = Date.now() - HISTORY_DAYS * DAY;
+  for (const e of raw) {
+    if (!isObj(e)) continue;
+    const url = str(e.url);
+    if (!httpish(url) || num(e.lastVisit) < cutoff) continue;
+    map.set(url, {
+      url,
+      title: str(e.title, 512),
+      favicon: faviconOf(e.favicon),
+      visits: Math.max(1, num(e.visits)),
+      typed: num(e.typed),
+      lastVisit: num(e.lastVisit),
+    });
+  }
+  return map;
+}
+
+function parseBookmarks(raw: unknown): Bookmark[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isObj).flatMap((b) => {
+    const url = str(b.url);
+    if (!/^(https?|file|moon):/i.test(url)) return [];
+    return [
+      {
+        id: str(b.id, 64) || randomUUID(),
+        url,
+        title: str(b.title, 512),
+        favicon: faviconOf(b.favicon),
+        created: num(b.created) || Date.now(),
+      },
+    ];
+  });
+}
+
+function parseDownloads(raw: unknown): DownloadInfo[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter(isObj)
+    .map((d) => ({
+      id: str(d.id, 64) || randomUUID(),
+      filename: str(d.filename, 1024),
+      path: str(d.path, 4096),
+      url: str(d.url),
+      state: (["completed", "cancelled", "interrupted"] as const).includes(d.state as "completed")
+        ? (d.state as DownloadInfo["state"])
+        : "interrupted",
+      received: num(d.received),
+      total: num(d.total),
+      paused: false,
+      startTime: num(d.startTime),
+    }))
+    .slice(0, DOWNLOADS_LIMIT);
+}
+
+type PermissionMap = Record<string, Partial<Record<PermissionKind, "allow" | "deny">>>;
+
+function parsePermissions(raw: unknown): PermissionMap {
+  const out: PermissionMap = {};
+  if (!isObj(raw)) return out;
+  for (const [origin, perms] of Object.entries(raw)) {
+    if (!/^https?:\/\//.test(origin) || !isObj(perms)) continue;
+    const entry: PermissionMap[string] = {};
+    for (const [kind, decision] of Object.entries(perms)) {
+      if (decision === "allow" || decision === "deny") entry[kind as PermissionKind] = decision;
+    }
+    out[origin] = entry;
+  }
+  return out;
+}
+
+function parseZoom(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!isObj(raw)) return out;
+  for (const [host, level] of Object.entries(raw)) {
+    if (typeof level === "number" && Number.isFinite(level) && level !== 0) out[host] = level;
+  }
+  return out;
+}
+
+function parseSession(raw: unknown): SavedSession {
+  if (!isObj(raw) || !Array.isArray(raw.windows)) return { windows: [] };
+  const windows = raw.windows.filter(isObj).flatMap((w): SavedWindow[] => {
+    if (!Array.isArray(w.tabs)) return [];
+    const tabs = w.tabs.filter(isObj).flatMap((t): SavedTab[] => {
+      const url = str(t.url);
+      if (!/^(https?|file|moon):/i.test(url)) return [];
+      const entries = Array.isArray(t.entries)
+        ? t.entries
+            .filter(isObj)
+            .map((e) => ({ url: str(e.url), title: str(e.title, 512) }))
+            .filter((e) => /^(https?|file|moon):/i.test(e.url))
+            .slice(-50)
+        : undefined;
+      return [
+        {
+          url,
+          title: str(t.title, 512),
+          pinned: t.pinned === true,
+          entries,
+          index: entries ? Math.min(entries.length - 1, Math.max(0, num(t.index))) : undefined,
+        },
+      ];
+    });
+    if (!tabs.length) return [];
+    const b = isObj(w.bounds) ? w.bounds : null;
+    return [
+      {
+        tabs,
+        active: Math.min(tabs.length - 1, Math.max(0, num(w.active))),
+        bounds:
+          b && num(b.width) >= 400 && num(b.height) >= 300
+            ? { x: num(b.x), y: num(b.y), width: num(b.width), height: num(b.height) }
+            : undefined,
+        maximized: w.maximized === true,
+      },
+    ];
+  });
+  return { windows };
+}
+
+interface Stats {
+  totalBlocked: number;
+  hiddenTopSites: string[];
+  importHintDismissed: boolean;
+}
+
+export class Profile {
+  readonly settings: JsonStore<Settings>;
+  readonly history: JsonStore<Map<string, HistoryEntry>>;
+  readonly bookmarks: JsonStore<Bookmark[]>;
+  readonly downloads: JsonStore<DownloadInfo[]>;
+  readonly permissions: JsonStore<PermissionMap>;
+  readonly zoom: JsonStore<Record<string, number>>;
+  readonly session: JsonStore<SavedSession>;
+  readonly stats: JsonStore<Stats>;
+
+  constructor(readonly platform: string) {
+    this.settings = JsonStore.load(profilePath("settings.json"), (raw) =>
+      sanitizeSettings(raw, platform),
+    );
+    this.history = JsonStore.load(profilePath("history.json"), parseHistory, {
+      serialize: (m) => [...m.values()],
+      delay: 3000,
+    });
+    this.bookmarks = JsonStore.load(profilePath("bookmarks.json"), parseBookmarks);
+    this.downloads = JsonStore.load(profilePath("downloads.json"), parseDownloads);
+    this.permissions = JsonStore.load(profilePath("permissions.json"), parsePermissions);
+    this.zoom = JsonStore.load(profilePath("zoom.json"), parseZoom);
+    this.session = JsonStore.load(profilePath("session.json"), parseSession, { delay: 2000 });
+    this.stats = JsonStore.load(profilePath("stats.json"), (raw): Stats => ({
+      totalBlocked: isObj(raw) ? num(raw.totalBlocked) : 0,
+      hiddenTopSites:
+        isObj(raw) && Array.isArray(raw.hiddenTopSites)
+          ? raw.hiddenTopSites.filter((s): s is string => typeof s === "string").slice(0, 500)
+          : [],
+      importHintDismissed: isObj(raw) && raw.importHintDismissed === true,
+    }));
+  }
+
+  flush(): void {
+    for (const store of [
+      this.settings,
+      this.history,
+      this.bookmarks,
+      this.downloads,
+      this.permissions,
+      this.zoom,
+      this.session,
+      this.stats,
+    ] as JsonStore<unknown>[]) {
+      store.flush();
+    }
+  }
+
+  // ---- History ----
+
+  recordVisit(url: string, title: string, typed: boolean): void {
+    if (!/^https?:/i.test(url)) return;
+    const map = this.history.get();
+    const now = Date.now();
+    const prev = map.get(url);
+    // Re-inserting keeps the Map ordered by last visit (oldest first).
+    map.delete(url);
+    map.set(url, {
+      url,
+      title: title || prev?.title || "",
+      favicon: prev?.favicon ?? null,
+      visits: (prev?.visits ?? 0) + 1,
+      typed: (prev?.typed ?? 0) + (typed ? 1 : 0),
+      lastVisit: now,
+    });
+    if (map.size > HISTORY_LIMIT) {
+      const excess = map.size - HISTORY_LIMIT;
+      let i = 0;
+      for (const key of map.keys()) {
+        if (i++ >= excess) break;
+        map.delete(key);
+      }
+    }
+    this.history.changed();
+  }
+
+  updateHistory(url: string, patch: { title?: string; favicon?: string | null }): void {
+    const entry = this.history.get().get(url);
+    if (!entry) return;
+    if (patch.title !== undefined && patch.title) entry.title = patch.title.slice(0, 512);
+    if (patch.favicon !== undefined) entry.favicon = patch.favicon;
+    this.history.changed();
+    for (const b of this.bookmarks.get()) {
+      if (b.url === url && patch.favicon && b.favicon !== patch.favicon) {
+        b.favicon = patch.favicon;
+        this.bookmarks.changed();
+      }
+    }
+  }
+
+  queryHistory(text: string, limit: number, before: number): HistoryEntry[] {
+    const q = text.trim().toLowerCase();
+    const out: HistoryEntry[] = [];
+    const all = [...this.history.get().values()].reverse();
+    for (const e of all) {
+      if (e.lastVisit >= before) continue;
+      if (q && !e.url.toLowerCase().includes(q) && !e.title.toLowerCase().includes(q)) continue;
+      out.push(e);
+      if (out.length >= limit) break;
+    }
+    return out;
+  }
+
+  removeHistory(urls: string[]): void {
+    const map = this.history.get();
+    for (const url of urls) map.delete(url);
+    this.history.changed();
+  }
+
+  clearHistory(sinceMs: number): void {
+    const map = this.history.get();
+    for (const [url, e] of map) if (e.lastVisit >= sinceMs) map.delete(url);
+    this.history.changed();
+  }
+
+  topSites(limit: number): HistoryEntry[] {
+    const hidden = new Set(this.stats.get().hiddenTopSites);
+    const now = Date.now();
+    const byHost = new Map<string, { entry: HistoryEntry; score: number }>();
+    for (const e of this.history.get().values()) {
+      let host: string;
+      try {
+        host = new URL(e.url).host;
+      } catch {
+        continue;
+      }
+      if (hidden.has(host)) continue;
+      const age = (now - e.lastVisit) / DAY;
+      const score = (e.visits + e.typed * 2) / (1 + age / 7);
+      const prev = byHost.get(host);
+      if (!prev) {
+        byHost.set(host, { entry: e, score });
+      } else {
+        // Prefer the site's root page as the tile, and add up the host's visits.
+        const better = new URL(e.url).pathname.length < new URL(prev.entry.url).pathname.length;
+        byHost.set(host, { entry: better ? e : prev.entry, score: prev.score + score });
+      }
+    }
+    return [...byHost.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((x) => x.entry);
+  }
+
+  hideTopSite(url: string): void {
+    try {
+      const host = new URL(url).host;
+      const stats = this.stats.get();
+      if (!stats.hiddenTopSites.includes(host)) stats.hiddenTopSites.push(host);
+      this.stats.changed();
+    } catch {
+      // not an URL: nothing to hide
+    }
+  }
+
+  addBlocked(count: number): void {
+    this.stats.get().totalBlocked += count;
+    this.stats.changed();
+  }
+
+  /** Merges history from another browser; returns how many entries are new. */
+  importHistory(
+    entries: { url: string; title: string; visits: number; typed: number; lastVisit: number }[],
+  ): number {
+    const map = this.history.get();
+    const cutoff = Date.now() - HISTORY_DAYS * DAY;
+    let added = 0;
+    for (const e of entries) {
+      if (!/^https?:/i.test(e.url) || e.lastVisit < cutoff) continue;
+      const prev = map.get(e.url);
+      if (!prev) added++;
+      map.set(e.url, {
+        url: e.url,
+        title: prev?.title || e.title,
+        favicon: prev?.favicon ?? null,
+        visits: Math.max(prev?.visits ?? 0, e.visits),
+        typed: Math.max(prev?.typed ?? 0, e.typed),
+        lastVisit: Math.max(prev?.lastVisit ?? 0, e.lastVisit),
+      });
+    }
+    // Keep the map ordered by last visit (oldest first) and within the limit.
+    const sorted = [...map.values()]
+      .sort((a, b) => a.lastVisit - b.lastVisit)
+      .slice(-HISTORY_LIMIT);
+    map.clear();
+    for (const e of sorted) map.set(e.url, e);
+    this.history.changed();
+    return added;
+  }
+
+  // ---- Bookmarks ----
+
+  bookmarkFor(url: string): Bookmark | undefined {
+    return this.bookmarks.get().find((b) => b.url === url);
+  }
+
+  addBookmark(url: string, title: string, favicon: string | null): Bookmark {
+    const existing = this.bookmarkFor(url);
+    if (existing) return existing;
+    const b: Bookmark = {
+      id: randomUUID(),
+      url,
+      title: title || url,
+      favicon,
+      created: Date.now(),
+    };
+    this.bookmarks.set([...this.bookmarks.get(), b]);
+    return b;
+  }
+
+  /** Adds bookmarks from another browser, skipping ones already here. */
+  importBookmarks(list: { url: string; title: string }[]): number {
+    const current = this.bookmarks.get();
+    const known = new Set(current.map((b) => b.url));
+    const added: Bookmark[] = [];
+    for (const b of list) {
+      if (known.has(b.url)) continue;
+      known.add(b.url);
+      added.push({
+        id: randomUUID(),
+        url: b.url,
+        title: b.title || b.url,
+        favicon: null,
+        created: Date.now(),
+      });
+    }
+    if (added.length) this.bookmarks.set([...current, ...added]);
+    return added.length;
+  }
+
+  updateBookmark(id: string, patch: { title?: string; url?: string; index?: number }): void {
+    const list = [...this.bookmarks.get()];
+    const i = list.findIndex((b) => b.id === id);
+    if (i < 0) return;
+    const b = { ...list[i] };
+    if (typeof patch.title === "string") b.title = patch.title.slice(0, 512);
+    if (typeof patch.url === "string" && /^(https?|file|moon):/i.test(patch.url)) b.url = patch.url;
+    list[i] = b;
+    if (typeof patch.index === "number" && Number.isInteger(patch.index)) {
+      list.splice(i, 1);
+      list.splice(Math.max(0, Math.min(list.length, patch.index)), 0, b);
+    }
+    this.bookmarks.set(list);
+  }
+
+  removeBookmark(id: string): void {
+    this.bookmarks.set(this.bookmarks.get().filter((b) => b.id !== id));
+  }
+
+  // ---- Downloads ----
+
+  saveDownload(info: DownloadInfo): void {
+    const list = this.downloads.get().filter((d) => d.id !== info.id);
+    this.downloads.set([{ ...info, paused: false }, ...list].slice(0, DOWNLOADS_LIMIT));
+  }
+
+  removeDownload(id: string): void {
+    this.downloads.set(this.downloads.get().filter((d) => d.id !== id));
+  }
+
+  // ---- Site permissions ----
+
+  permission(origin: string, kind: PermissionKind): "allow" | "deny" | undefined {
+    return this.permissions.get()[origin]?.[kind];
+  }
+
+  setPermission(origin: string, kind: PermissionKind, decision: "allow" | "deny"): void {
+    const map = this.permissions.get();
+    map[origin] = { ...map[origin], [kind]: decision };
+    this.permissions.changed();
+  }
+
+  listPermissions(): SiteSettingsEntry[] {
+    return Object.entries(this.permissions.get()).flatMap(([origin, perms]) =>
+      Object.entries(perms).map(([kind, decision]) => ({
+        origin,
+        kind: kind as PermissionKind,
+        decision: decision,
+      })),
+    );
+  }
+
+  resetPermission(origin: string, kind?: PermissionKind): void {
+    const map = this.permissions.get();
+    if (!map[origin]) return;
+    if (kind) delete map[origin][kind];
+    if (!kind || Object.keys(map[origin]).length === 0) delete map[origin];
+    this.permissions.changed();
+  }
+}

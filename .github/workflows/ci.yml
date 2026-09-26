@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run build
+
+  # Starts the real browser and drives it: tabs, the address bar, search,
+  # settings, the Comet import, split view and the security boundaries
+  # between web pages and Moon Browser's own pages.
+  e2e:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: End-to-end test (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1400x900x24" node scripts/e2e.mjs
+      - name: End-to-end test (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/e2e.mjs
+
+  package:
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            targets: --linux deb AppImage --x64
+          - os: windows-latest
+            targets: --win nsis --x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.targets }} --publish never
+
+      # Start the packaged app (with its fuses flipped) and make sure it is
+      # still running after 20 s.
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run -a release/linux-unpacked/moon-browser --no-sandbox > app.log 2>&1 &
+          sleep 20
+          if ! pgrep -f "release/linux-unpacked/moon-browser" > /dev/null; then
+            echo "Moon Browser exited during start-up:"; cat app.log
+            exit 1
+          fi
+          pkill -f "release/linux-unpacked/moon-browser" || true
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $app = Start-Process -FilePath "release\win-unpacked\moon-browser.exe" -PassThru
+          Start-Sleep -Seconds 20
+          if ($app.HasExited) {
+            Write-Host "Moon Browser exited during start-up with code $($app.ExitCode)"
+            exit 1
+          }
+          Stop-Process -Id $app.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moon-browser-${{ runner.os }}
+          path: |
+            release/*.exe
+            release/*.deb
+            release/*.AppImage
+          if-no-files-found: error
+          retention-days: 7
