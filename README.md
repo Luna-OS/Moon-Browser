@@ -33,6 +33,9 @@ and nothing phoning home. It wears the same night-sky design as
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
   click on *Update* installs it over the old one and brings your tabs back
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
+- **Tab groups** like Chrome's — right-click a tab → *Add tab to new group*, give the group a
+  name and a colour, click its label to collapse it, drag tabs in and out. Groups come back with
+  your session, and extensions can use them through `chrome.tabGroups`.
 - **Split view** — two tabs side by side, with a divider to resize
 - **Sleeping tabs** — tabs you haven't looked at for a while give their memory back and wake up
   when you return
@@ -166,7 +169,7 @@ Chrome Web Store — and builds them on [Electron](https://www.electronjs.org), 
 same Chromium engine and security fixes but can be built on an ordinary machine in minutes
 instead of hours on a build farm. The trade-off: Electron's extension support covers the common
 Chrome extension APIs (pop-ups, side panels, content scripts, storage, tabs, windows, context
-menus, cookies, notifications, identity, native messaging), not all of them — tab groups and
+menus, cookies, notifications, identity, native messaging, tab groups), not all of them —
 `chrome.webRequest` events are missing, for example. The most important extension, an ad
 blocker, is built in.
 

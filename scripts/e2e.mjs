@@ -272,6 +272,26 @@ try {
     const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
     if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)
       throw new Error(`identity.getRedirectURL gave ${redirect}`);
+    // Extensions can group tabs (chrome.tabs.group, chrome.tabGroups).
+    const color = await inPopup(`chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([tab]) => chrome.tabs.group({ tabIds: [tab.id] }))
+      .then((id) => chrome.tabGroups.update(id, { title: "From the extension" }))
+      .then((group) => group.color)`);
+    if (typeof color !== "string") throw new Error(`tabGroups gave ${color}`);
+    await waitFor(
+      () =>
+        ui
+          .locator("[data-group-chip]")
+          .textContent()
+          .then((t) => t.includes("From the extension")),
+      "the extension's group in the tab strip",
+    );
+    const groupId = Number(await ui.locator("[data-group-chip]").getAttribute("data-group-chip"));
+    await ui.evaluate(
+      (group) => window.moonUI.command({ type: "groupAction", groupId: group, action: "ungroup" }),
+      groupId,
+    );
     await ui.mouse.click(button.x, button.y);
   });
 
@@ -282,7 +302,7 @@ try {
     // The test page is on 127.0.0.1, which the extension may read.
     await waitFor(() => menu.getByText("Full access").isVisible(), "the Full access group");
     await new Promise((r) => setTimeout(r, 500));
-    await shot("03-extensions-menu");
+    await shot("04-extensions-menu");
     await menu.getByRole("button", { name: "Unpin Moon Test Extension" }).click();
     await waitFor(
       async () =>
@@ -318,7 +338,7 @@ try {
       "the side panel's title bar",
     );
     await new Promise((r) => setTimeout(r, 600));
-    await shot("04-side-panel");
+    await shot("05-side-panel");
     await ui.getByRole("button", { name: "Close side panel" }).click();
     await waitFor(
       () =>
@@ -392,6 +412,49 @@ try {
     );
   });
 
+  await check("tabs can be grouped, named, collapsed and ungrouped", async () => {
+    const tabId = (title) =>
+      ui.locator(`[role="tab"][title="${title}"]`).getAttribute("data-tab-id").then(Number);
+    const first = await tabId("Moon test page");
+    const second = await tabId("Second page");
+    await ui.evaluate((id) => window.moonUI.command({ type: "groupTab", tabId: id }), first);
+    const chip = ui.locator("[data-group-chip]");
+    await waitFor(() => chip.count().then((n) => n === 1), "the group's label");
+    const groupId = Number(await chip.getAttribute("data-group-chip"));
+    await ui.evaluate(
+      ([id, group]) => window.moonUI.command({ type: "groupTab", tabId: id, groupId: group }),
+      [second, groupId],
+    );
+    await ui.evaluate(
+      (group) => window.moonUI.command({ type: "groupUpdate", groupId: group, title: "Moon work" }),
+      groupId,
+    );
+    await waitFor(() => chip.textContent().then((t) => t.includes("Moon work")), "the group name");
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("03-tab-group");
+    // Collapsing hides the group's tabs and shows a tab outside it (a new
+    // one when every tab is in the group, like Chrome).
+    const shown = (title) => ui.locator(`[role="tab"][title="${title}"]`).count();
+    await chip.click();
+    await waitFor(
+      async () => (await shown("Moon test page")) === 0 && (await shown("Second page")) === 0,
+      "the group's tabs to hide",
+    );
+    const active = await ui.locator('[role="tab"][aria-selected="true"]').getAttribute("title");
+    if (active === "Moon test page" || active === "Second page")
+      throw new Error(`the active tab ${active} is hidden in the collapsed group`);
+    await chip.click();
+    await waitFor(
+      async () => (await shown("Moon test page")) === 1 && (await shown("Second page")) === 1,
+      "the group to open again",
+    );
+    await ui.evaluate(
+      (group) => window.moonUI.command({ type: "groupAction", groupId: group, action: "ungroup" }),
+      groupId,
+    );
+    await waitFor(() => chip.count().then((n) => n === 0), "the group to go");
+  });
+
   await check("Ctrl+T opens a new tab and Ctrl+W closes it", async () => {
     const before = await ui.locator('[role="tab"]').count();
     await press("T", ["control"]);
@@ -453,7 +516,7 @@ try {
     await waitFor(() => ui.getByRole("button", { name: "Home" }).isVisible(), "the home button");
   });
   await new Promise((r) => setTimeout(r, 600));
-  await shot("05-settings");
+  await shot("06-settings");
 
   await check("internal pages may only use their own methods", async () => {
     const err = await app.evaluate(async ({ webContents }) => {
@@ -480,7 +543,7 @@ try {
     });
     if (!found) throw new Error("the test page is not in the history");
   });
-  await shot("06-history");
+  await shot("07-history");
 
   await check("bookmarks and history import from Comet", async () => {
     const result = await app.evaluate(async ({ webContents }) => {
@@ -507,7 +570,7 @@ try {
     if (!bookmarked) throw new Error("settings page gone");
   });
   await new Promise((r) => setTimeout(r, 400));
-  await shot("07-import");
+  await shot("08-import");
 
   await check("the extensions page lists, switches off and on", async () => {
     const result = await app.evaluate(async ({ webContents, session }, id) => {
@@ -530,7 +593,7 @@ try {
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);
   });
   await new Promise((r) => setTimeout(r, 500));
-  await shot("08-extensions");
+  await shot("09-extensions");
 
   await check("the menu opens above the page", async () => {
     await ui.getByRole("button", { name: "Menu" }).click();
@@ -539,7 +602,7 @@ try {
       "the menu",
     );
     await new Promise((r) => setTimeout(r, 500));
-    await shot("09-menu");
+    await shot("10-menu");
     await ui.keyboard.press("Escape");
   });
 
@@ -550,7 +613,7 @@ try {
       "split view",
     );
     await new Promise((r) => setTimeout(r, 800));
-    await shot("10-split");
+    await shot("11-split");
     await ui.getByRole("button", { name: "Close split view" }).first().click();
   });
 

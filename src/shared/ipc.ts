@@ -10,6 +10,7 @@
  */
 import type { ShortcutCommand } from "./shortcuts";
 import type { InternalPage } from "./internal";
+import type { GroupColor } from "./tab-groups";
 import type { Rect, WindowState } from "./types";
 
 export type Disposition = "current" | "foreground" | "background" | "window" | "private";
@@ -46,12 +47,30 @@ export type UiCommand =
   | { type: "sidePanelToggle"; extensionId: string }
   | { type: "sidePanelClose" }
   | { type: "sidePanelWidth"; width: number }
+  /** Put a tab into a group (a new one without groupId). */
+  | { type: "groupTab"; tabId: number; groupId?: number }
+  | { type: "ungroupTab"; tabId: number }
+  | {
+      type: "groupUpdate";
+      groupId: number;
+      title?: string;
+      color?: GroupColor;
+      collapsed?: boolean;
+    }
+  | { type: "groupAction"; groupId: number; action: GroupAction }
   | { type: "insets"; top: number; bottom: number };
+
+export type GroupAction = "newTab" | "ungroup" | "close";
 
 export type DownloadAction = "open" | "show" | "cancel" | "pause" | "resume" | "remove";
 
 /** Messages from the main process to the browser UI. */
-export type UiEvent = { type: "focusAddressBar" } | { type: "find" } | { type: "closePopovers" };
+export type UiEvent =
+  | { type: "focusAddressBar" }
+  | { type: "find" }
+  | { type: "closePopovers" }
+  /** Open the name-and-colour editor of a (new) tab group. */
+  | { type: "editGroup"; groupId: number };
 
 export interface OverlaySnapshot {
   rect: Rect;

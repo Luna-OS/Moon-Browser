@@ -45,9 +45,10 @@ import {
   type ManifestLike,
 } from "@shared/extensions";
 import { internalUrl, NEWTAB_URL } from "@shared/internal";
+import type { TabGroupInfo } from "@shared/tab-groups";
 import type { ExtensionEntry, ExtensionInfo } from "@shared/types";
 import type { Browser } from "./browser";
-import { ExtensionApis, extensionIdOf } from "./extension-apis";
+import { ExtensionApis, extensionIdOf, groupInfo } from "./extension-apis";
 import { extensionApiPreload, extensionExtraPreload, profilePath } from "./paths";
 import type { MoonWindow } from "./window";
 
@@ -151,7 +152,10 @@ export class Extensions {
       },
       assignTabDetails: (details, wc) => {
         const tab = browser.tabFor(wc.id);
-        if (tab) details.pinned = tab.pinned;
+        if (tab) {
+          details.pinned = tab.pinned;
+          details.groupId = tab.groupId ?? -1;
+        }
       },
       requestPermissions: async (extension, request) => {
         const wanted = describePermissions({
@@ -641,6 +645,17 @@ export class Extensions {
   panelClosed(win: MoonWindow, id: string, url: string): void {
     const path = url.replace(`chrome-extension://${id}/`, "");
     this.apis?.emit(id, "sidePanel.onClosed", { windowId: win.win.id, path });
+  }
+
+  // ---- Tab groups (chrome.tabGroups events) ----
+
+  groupChanged(
+    kind: "onCreated" | "onUpdated" | "onRemoved",
+    win: MoonWindow,
+    group: TabGroupInfo,
+  ): void {
+    if (win.isPrivate) return;
+    this.apis?.emitAll(`tabGroups.${kind}`, "tabGroups", groupInfo(win, group));
   }
 
   // ---- Errors ----

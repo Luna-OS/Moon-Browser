@@ -127,7 +127,6 @@ function install(bridge: {
   }
 
   if (has("tabGroups")) {
-    const unsupported = rejecting("Tab groups aren't available in Moon Browser.");
     define("tabGroups", {
       TAB_GROUP_ID_NONE: -1,
       Color: {
@@ -141,23 +140,25 @@ function install(bridge: {
         CYAN: "cyan",
         ORANGE: "orange",
       },
-      query: () => Promise.resolve([]),
-      get: unsupported,
-      update: unsupported,
-      move: unsupported,
+      query: fn("tabGroups.query"),
+      get: fn("tabGroups.get"),
+      update: fn("tabGroups.update"),
+      move: rejecting("Moving tab groups isn't available in Moon Browser."),
       onCreated: event("tabGroups.onCreated"),
       onUpdated: event("tabGroups.onUpdated"),
       onRemoved: event("tabGroups.onRemoved"),
       onMoved: event("tabGroups.onMoved"),
     });
-    const tabs = chrome.tabs as Record<string, unknown> | undefined;
-    if (tabs && !tabs.group) {
-      try {
-        tabs.group = unsupported;
-        tabs.ungroup = unsupported;
-      } catch {
-        // chrome.tabs is frozen
-      }
+  }
+
+  // chrome.tabs.group/ungroup (no permission needed, as in Chrome).
+  const tabs = chrome.tabs as Record<string, unknown> | undefined;
+  if (tabs && !tabs.group) {
+    try {
+      tabs.group = fn("tabs.group");
+      tabs.ungroup = fn("tabs.ungroup");
+    } catch {
+      // chrome.tabs is frozen
     }
   }
 

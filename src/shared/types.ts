@@ -3,6 +3,8 @@
  * pages. Everything here crosses an IPC boundary, so it is plain data only.
  */
 
+import type { TabGroupInfo } from "./tab-groups";
+
 export type ThemeChoice = "dark" | "light" | "system";
 export type ResolvedTheme = "dark" | "light";
 export type StartupMode = "newtab" | "restore";
@@ -82,6 +84,8 @@ export interface TabInfo {
   zoom: number;
   /** Set when the page failed to load; the UI shows it instead of the page. */
   error: TabError | null;
+  /** The tab group it is in (see WindowState.groups). */
+  groupId: number | null;
 }
 
 export interface TabError {
@@ -214,6 +218,8 @@ export interface WindowState {
   extensions: ExtensionEntry[];
   /** An extension's page shown next to the tabs, like Chrome's side panel. */
   sidePanel: SidePanelState | null;
+  /** The window's tab groups; their tabs sit next to each other in `tabs`. */
+  groups: TabGroupInfo[];
 }
 
 /** An extension as the toolbar and the extensions menu show it. */

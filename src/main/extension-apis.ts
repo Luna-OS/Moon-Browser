@@ -18,8 +18,15 @@ import {
 } from "electron";
 import { searchUrl } from "@shared/engines";
 import { isInternalUrl } from "@shared/internal";
+import { isGroupColor, type TabGroupInfo } from "@shared/tab-groups";
 import type { Browser } from "./browser";
+import type { Tab } from "./tab";
 import type { MoonWindow } from "./window";
+
+/** A group as chrome.tabGroups describes it. */
+export function groupInfo(win: MoonWindow, group: TabGroupInfo) {
+  return { ...group, windowId: win.win.id };
+}
 
 const CALL = "moon-ext:call";
 const EVENT = "moon-ext:event";
@@ -31,6 +38,9 @@ const PERMISSION: Record<string, string> = {
   identity: "identity",
   search: "search",
   debugger: "debugger",
+  tabGroups: "tabGroups",
+  // chrome.tabs.group/ungroup need no permission, as in Chrome.
+  tabs: "",
 };
 
 type Host = { kind: "frame"; wc: WebContents } | { kind: "worker"; worker: ServiceWorkerMain };
@@ -109,6 +119,14 @@ export class ExtensionApis {
     hosts.add(host);
   }
 
+  /** Delivers an event to every extension that listens for it and may see it. */
+  emitAll(name: string, permission: string, ...args: unknown[]): void {
+    for (const [id, events] of this.listeners) {
+      if (events.get(name)?.size && this.browser.extensions.declares(id, permission))
+        this.emit(id, name, ...args);
+    }
+  }
+
   /** Delivers an event to an extension's pages and worker that listen for it. */
   emit(id: string, name: string, ...args: unknown[]): void {
     const hosts = this.listeners.get(id)?.get(name);
@@ -132,7 +150,10 @@ export class ExtensionApis {
   private async call(id: string, name: string, args: unknown[]): Promise<unknown> {
     const namespace = name.split(".")[0];
     const permission = PERMISSION[namespace];
-    if (!permission || !this.browser.extensions.declares(id, permission))
+    if (
+      permission === undefined ||
+      (permission && !this.browser.extensions.declares(id, permission))
+    )
       throw new Error(`chrome.${name} needs the "${permission ?? namespace}" permission`);
     const [a, b, c] = args;
     const ext = this.browser.extensions;
@@ -174,6 +195,29 @@ export class ExtensionApis {
         return this.debuggerSend(id, a, b, c);
       case "debugger.getTargets":
         return this.debuggerTargets();
+      case "tabGroups.query":
+        return this.groupQuery(a);
+      case "tabGroups.get": {
+        const found = this.findGroup(a);
+        if (!found) throw new Error(`No group with id: ${String(a)}.`);
+        return groupInfo(found.win, found.group);
+      }
+      case "tabGroups.update": {
+        const found = this.findGroup(a);
+        if (!found) throw new Error(`No group with id: ${String(a)}.`);
+        const p = isObj(b) ? b : {};
+        const group = found.win.updateGroup(found.group.id, {
+          title: typeof p.title === "string" ? p.title : undefined,
+          color: isGroupColor(p.color) ? p.color : undefined,
+          collapsed: typeof p.collapsed === "boolean" ? p.collapsed : undefined,
+        });
+        return group ? groupInfo(found.win, group) : undefined;
+      }
+      case "tabs.group":
+        return this.groupTabs(a);
+      case "tabs.ungroup":
+        for (const tab of this.tabsOf(a)) tab.window.ungroupTabs([tab]);
+        return undefined;
       default:
         throw new Error(`chrome.${name} isn't available in Moon Browser`);
     }
@@ -192,6 +236,54 @@ export class ExtensionApis {
     }
     const focused = this.browser.focusedWindow();
     return focused && !focused.isPrivate ? focused : normal[0];
+  }
+
+  // ---- Tab groups ----
+
+  private normalWindows(): MoonWindow[] {
+    return [...this.browser.windows].filter((w) => !w.isPrivate && !w.closed);
+  }
+
+  private findGroup(id: unknown): { win: MoonWindow; group: TabGroupInfo } | undefined {
+    for (const win of this.normalWindows()) {
+      const group = win.groups.find((g) => g.id === id);
+      if (group) return { win, group };
+    }
+    return undefined;
+  }
+
+  private groupQuery(query: unknown): unknown[] {
+    const q = isObj(query) ? query : {};
+    return this.normalWindows()
+      .filter((w) => q.windowId === undefined || w.win.id === q.windowId)
+      .flatMap((w) => w.groups.map((g) => groupInfo(w, g)))
+      .filter(
+        (g) =>
+          (q.title === undefined || g.title === q.title) &&
+          (q.color === undefined || g.color === q.color) &&
+          (q.collapsed === undefined || g.collapsed === q.collapsed),
+      );
+  }
+
+  /** Tabs by their extension IDs (webContents ids), normal windows only. */
+  private tabsOf(ids: unknown): Tab[] {
+    const list = Array.isArray(ids) ? ids : [ids];
+    return list
+      .map((id) => (typeof id === "number" ? this.browser.tabFor(id) : undefined))
+      .filter((t): t is Tab => !!t && !t.window.isPrivate);
+  }
+
+  private groupTabs(options: unknown): number {
+    const o = isObj(options) ? options : {};
+    const tabs = this.tabsOf(o.tabIds);
+    if (!tabs.length) throw new Error("No tabs to group");
+    const groupId = num(o.groupId);
+    const target = groupId !== undefined ? this.findGroup(groupId) : undefined;
+    if (groupId !== undefined && !target) throw new Error(`No group with id: ${groupId}.`);
+    const win = target?.win ?? tabs[0].window;
+    if (tabs.some((t) => t.window !== win))
+      throw new Error("Tabs from different windows can't be grouped here");
+    return win.groupTabs(tabs, groupId);
   }
 
   // ---- identity.launchWebAuthFlow ----
