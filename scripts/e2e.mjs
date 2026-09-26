@@ -270,20 +270,32 @@ try {
     );
   });
 
-  await check("a search goes to the search engine", async () => {
-    const url = await app.evaluate(async ({ webContents }) => {
-      const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith("moon://ui"));
-      await wc.executeJavaScript(
-        "window.moonUI.command({ type: 'navigate', input: 'full moon !w', disposition: 'background' })",
-      );
-      await new Promise((r) => setTimeout(r, 300));
-      return webContents
-        .getAllWebContents()
-        .map((w) => w.getURL())
-        .find((u) => u.includes("wikipedia"));
+  await check("a bang opens its site in a new tab", async () => {
+    // Record where new tabs start navigating: the bang's own address, before
+    // the site gets to redirect it (Wikipedia jumps straight to an article).
+    const url = await app.evaluate(async ({ app: electronApp, webContents }) => {
+      const started = [];
+      const onCreated = (_event, contents) =>
+        contents.on("did-start-navigation", (details) => {
+          if (details.isMainFrame) started.push(details.url);
+        });
+      electronApp.on("web-contents-created", onCreated);
+      try {
+        const wc = webContents.getAllWebContents().find((w) => w.getURL().startsWith("moon://ui"));
+        await wc.executeJavaScript(
+          "window.moonUI.command({ type: 'navigate', input: 'full moon !w', disposition: 'background' })",
+        );
+        for (let i = 0; i < 60 && !started.some((u) => u.includes("wikipedia")); i++) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      } finally {
+        electronApp.off("web-contents-created", onCreated);
+      }
+      return started.find((u) => u.includes("wikipedia"));
     });
-    // The page may not load without network, but the tab must be opened at the bang's URL.
-    if (!url || !url.includes("search=full+moon")) throw new Error(`no Wikipedia tab (${url})`);
+    if (url !== "https://en.wikipedia.org/w/index.php?search=full+moon") {
+      throw new Error(`the Wikipedia tab started at ${url}`);
+    }
   });
 
   await check("settings open and save through the internal API", async () => {
