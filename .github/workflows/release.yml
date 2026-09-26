@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag to publish (e.g. v0.1.0). Must match package.json's version."
+        required: true
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install rpm tooling
+        run: sudo apt-get update && sudo apt-get install -y rpm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --linux --publish never
+
+      - name: Checksums
+        working-directory: release
+        run: sha256sum *.AppImage *.deb *.rpm > ../checksums-linux.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moon-browser-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            checksums-linux.txt
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx electron-builder --win --publish never
+
+      - name: Checksums
+        shell: bash
+        working-directory: release
+        run: sha256sum *.exe > ../checksums-windows.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moon-browser-windows
+          path: |
+            release/*.exe
+            checksums-windows.txt
+
+  # macOS comes later.
+
+  publish:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: moon-browser-linux
+          path: dist/linux
+      - uses: actions/download-artifact@v5
+        with:
+          name: moon-browser-windows
+          path: dist/windows
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Moon Browser ${{ steps.version.outputs.tag }}"
+          generate_release_notes: true
+          files: |
+            dist/linux/**/*.AppImage
+            dist/linux/**/*.deb
+            dist/linux/**/*.rpm
+            dist/linux/checksums-linux.txt
+            dist/windows/**/*.exe
+            dist/windows/checksums-windows.txt

@@ -1,0 +1,20 @@
+# A browser is only as safe as its engine: Electron releases carry
+# Chromium's security fixes, so Moon Browser follows them closely.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      electron:
+        patterns: ["electron"]
+      blocker:
+        patterns: ["@ghostery/*", "tldts"]
+      tooling:
+        patterns: ["*"]
+        exclude-patterns: ["electron", "@ghostery/*", "tldts"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

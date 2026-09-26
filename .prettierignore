@@ -1,0 +1,10 @@
+out
+release
+dist
+node_modules
+package-lock.json
+coverage
+e2e-screenshots
+
+# Markdown is reviewed by hand; Prettier's table padding makes noisy diffs.
+*.md

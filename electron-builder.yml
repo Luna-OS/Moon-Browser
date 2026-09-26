@@ -1,0 +1,86 @@
+# Moon Browser packaging: Windows (NSIS installer) and Linux (AppImage, deb,
+# rpm). macOS follows later.
+appId: io.lunaos.moonbrowser
+productName: Moon Browser
+executableName: moon-browser
+copyright: © 2026 Luna
+artifactName: moon-browser-${version}-${os}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: build
+
+# Everything is bundled into out/ — no node_modules ship with the app.
+files:
+  - out/**/*
+  - "!out/**/*.map"
+  - build/icons/512x512.png
+  - package.json
+asar: true
+
+# Electron fuses — flipped in the binary itself, so they can't be turned
+# back on from outside:
+electronFuses:
+  # The app can't be abused as a plain Node.js interpreter …
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  # … nor opened up with --inspect for debugging.
+  enableNodeCliInspectArguments: false
+  # Cookies are encrypted on disk with the system's key store.
+  enableCookieEncryption: true
+  # Only the signed-off app.asar is loaded, and it must match its hash.
+  onlyLoadAppFromAsar: true
+  enableEmbeddedAsarIntegrityValidation: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  # file:// gets no extra powers beyond a normal browser's.
+  grantFileProtocolExtraPrivileges: false
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Moon Browser
+  deleteAppDataOnUninstall: false
+  # Registers Moon Browser with Windows as a web browser (Default apps).
+  include: build/installer.nsh
+
+linux:
+  icon: build/icons
+  syncDesktopName: true
+  category: Network
+  maintainer: Luna-OS <https://github.com/Luna-OS>
+  vendor: Luna-OS
+  synopsis: The web, calmly under the moon.
+  description: >-
+    Moon Browser is a private, open-source Chromium browser: Perplexity search, ad and
+    tracker blocking built in, HTTPS first, bangs, split view and sleeping tabs — in a
+    calm night-sky design.
+  mimeTypes:
+    - text/html
+    - application/xhtml+xml
+    - x-scheme-handler/http
+    - x-scheme-handler/https
+  desktop:
+    entry:
+      Name: Moon Browser
+      GenericName: Web Browser
+      Comment: The web, calmly under the moon
+      Categories: Network;WebBrowser;
+      Keywords: web;browser;internet;moon;
+      StartupWMClass: moon-browser
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
