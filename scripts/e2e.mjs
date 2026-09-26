@@ -591,6 +591,14 @@ try {
     // The service worker's console.error is listed, like Chrome's "Errors".
     if (!result.errors.some((e) => e.includes("moon-test: an error")))
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);
+    // Starting the worker while it is still being registered isn't an error,
+    // and the chrome.* API preloads load (with --no-sandbox too).
+    if (
+      result.errors.some(
+        (e) => e.includes("service worker didn't start") || e.includes("Unable to load preload"),
+      )
+    )
+      throw new Error(`errors: ${JSON.stringify(result.errors)}`);
   });
   await new Promise((r) => setTimeout(r, 500));
   await shot("09-extensions");

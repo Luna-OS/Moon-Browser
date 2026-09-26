@@ -62,7 +62,11 @@ await copyFile(
 );
 
 // The extension libraries look for their preloads next to the bundle that
-// uses them (the packaged app has no node_modules).
+// uses them (the packaged app has no node_modules). They are CommonJS: said
+// here, as the app's own package.json declares ES modules, so that they also
+// load where Moon Browser runs with --no-sandbox (only sandboxed preloads
+// ignore the module type).
+await writeFile(resolve(root, "out/main/package.json"), '{ "type": "commonjs" }\n');
 await copyFile(
   require.resolve("electron-chrome-web-store/preload"),
   resolve(root, "out/main/chrome-web-store.preload.js"),
