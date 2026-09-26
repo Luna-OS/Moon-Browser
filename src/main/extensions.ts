@@ -59,6 +59,8 @@ interface PanelOptions {
 
 /** How many errors the extensions page keeps per extension. */
 const MAX_ERRORS = 30;
+/** How long a new extension's service worker may take to register. */
+const WORKER_REGISTRATION_TIMEOUT = 30_000;
 
 interface Installed {
   id: string;
@@ -397,20 +399,50 @@ export class Extensions {
     }
   }
 
+  /**
+   * Makes sure a loaded extension's service worker runs, as Chrome does at
+   * start-up. A new or updated extension first gets its worker registered,
+   * which runs it but takes a moment (longer for big workers like a
+   * password manager's), and starting a worker that isn't registered yet
+   * fails; so a failed start waits for the registration, then checks again.
+   */
   private async startWorker(extension: Extension): Promise<void> {
+    const ses = this.session;
     const manifest = extension.manifest as {
       manifest_version?: number;
       background?: { service_worker?: string };
     };
-    if (manifest.manifest_version !== 3 || !manifest.background?.service_worker) return;
-    await this.session?.serviceWorkers
-      .startWorkerForScope(`chrome-extension://${extension.id}`)
-      .catch((err: unknown) =>
-        this.recordError(
-          extension.id,
-          `The service worker didn't start: ${err instanceof Error ? err.message : String(err)}`,
-        ),
+    if (!ses || manifest.manifest_version !== 3 || !manifest.background?.service_worker) return;
+    const workers = ses.serviceWorkers;
+    const scope = `chrome-extension://${extension.id}/`;
+    const running = () => Object.values(workers.getAllRunning()).some((w) => w.scope === scope);
+    const start = () =>
+      workers.startWorkerForScope(scope).then(
+        () => null,
+        (err: unknown) => (err instanceof Error ? err.message : String(err)),
       );
+
+    let onRegistered = (_event: unknown, _details: { scope: string }) => {};
+    const registered = new Promise<void>((resolve) => {
+      onRegistered = (_event, details) => {
+        if (details.scope === scope) resolve();
+      };
+      workers.on("registration-completed", onRegistered);
+    });
+    try {
+      if ((await start()) === null) return;
+      await Promise.race([
+        registered,
+        new Promise((resolve) => setTimeout(resolve, WORKER_REGISTRATION_TIMEOUT)),
+      ]);
+      // Switched off or removed in the meantime, or running after its registration.
+      if (!ses.extensions.getExtension(extension.id) || running()) return;
+      const error = await start();
+      if (error !== null && ses.extensions.getExtension(extension.id))
+        this.recordError(extension.id, `The service worker didn't start: ${error}`);
+    } finally {
+      workers.removeListener("registration-completed", onRegistered);
+    }
   }
 
   private disabled(): Set<string> {
