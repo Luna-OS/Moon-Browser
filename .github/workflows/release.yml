@@ -71,11 +71,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: moon-browser-linux
           path: dist/linux
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: moon-browser-windows
           path: dist/windows
