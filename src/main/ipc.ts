@@ -7,6 +7,7 @@
 import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { BANGS } from "@shared/bangs";
 import { SEARCH_ENGINES } from "@shared/engines";
+import { EXTENSION_ID } from "@shared/extensions";
 import { internalPageOf } from "@shared/internal";
 import {
   INTERNAL_CHANNEL,
@@ -31,6 +32,7 @@ const DOWNLOAD_ACTIONS: DownloadAction[] = ["open", "show", "cancel", "pause", "
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isStr = (v: unknown, max = 8192): v is string => typeof v === "string" && v.length <= max;
+const isExtensionId = (v: unknown): v is string => typeof v === "string" && EXTENSION_ID.test(v);
 
 /**
  * Accepts only well-formed commands. The UI is our own code, but it renders
@@ -129,6 +131,22 @@ export function validateCommand(raw: unknown): UiCommand | null {
       return isStr(c.id, 64) && DOWNLOAD_ACTIONS.includes(c.action as DownloadAction)
         ? { type: "download", id: c.id, action: c.action as DownloadAction }
         : null;
+    case "extensionPin":
+      return isExtensionId(c.extensionId) && typeof c.pinned === "boolean"
+        ? { type: "extensionPin", extensionId: c.extensionId, pinned: c.pinned }
+        : null;
+    case "extensionMenu":
+      return isExtensionId(c.extensionId) && isNum(c.x) && isNum(c.y)
+        ? { type: "extensionMenu", extensionId: c.extensionId, x: c.x, y: c.y }
+        : null;
+    case "sidePanelToggle":
+      return isExtensionId(c.extensionId)
+        ? { type: "sidePanelToggle", extensionId: c.extensionId }
+        : null;
+    case "sidePanelClose":
+      return { type: "sidePanelClose" };
+    case "sidePanelWidth":
+      return isNum(c.width) ? { type: "sidePanelWidth", width: c.width } : null;
     case "insets":
       return isNum(c.top) && isNum(c.bottom)
         ? { type: "insets", top: c.top, bottom: c.bottom }
@@ -385,6 +403,9 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
     },
     "extensions.options": (_tab, id) => {
       if (isStr(id, 64)) return browser.extensions.openOptions(id);
+    },
+    "extensions.clearErrors": (_tab, id) => {
+      if (isExtensionId(id)) browser.extensions.clearErrors(id);
     },
     "update.status": () => browser.updater.status(),
     "update.check": () => browser.updater.check(),

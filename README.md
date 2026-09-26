@@ -25,8 +25,11 @@ and nothing phoning home. It wears the same night-sky design as
 - **Import from Comet** — bookmarks and history from Comet, Chrome, Brave, Edge, Helium, Vivaldi
   or any other Chromium browser, read directly from its profile folder
 - **Chrome extensions** from the Chrome Web Store — your password manager (NordPass, Bitwarden,
-  1Password, …) with its toolbar button and pop-up. Before an extension is added, Moon Browser
-  shows what it will be able to do; *Menu → Extensions* switches them off or removes them.
+  1Password, …) with its toolbar button and pop-up, and side-panel extensions like Claude. The
+  puzzle button lists them like Chrome does (*Full access* / *No access needed* on the current
+  site), pins them to the toolbar and opens their options. Before an extension is added, Moon
+  Browser shows what it will be able to do; `moon://extensions` switches them off, removes them
+  and shows their errors.
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
   click on *Update* installs it over the old one and brings your tabs back
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
@@ -142,9 +145,10 @@ Running the installer of a newer version by hand works too: it updates in place.
    2FA codes of NordPass Authenticator all live in the extension.
 
 Extensions get the Chrome APIs password managers rely on — storage, alarms, idle, tabs, windows,
-scripting, cookies, context menus, notifications, offscreen documents, pop-ups and content
-scripts. What doesn't work is talking to a *desktop app* (native messaging, e.g. unlocking the
-extension through the NordPass app): sign in to the extension directly.
+scripting, cookies, context menus, notifications, offscreen documents, identity (sign-in
+windows), pop-ups and content scripts. Talking to the NordPass *desktop app* (native messaging)
+uses the connection the app registers for Google Chrome. If an extension misbehaves,
+`moon://extensions` shows its errors under *Errors*.
 
 ### Coming from Comet
 
@@ -161,9 +165,10 @@ unbiased blocking, bangs, a quiet interface, privacy by default, split view, ext
 Chrome Web Store — and builds them on [Electron](https://www.electronjs.org), which ships the
 same Chromium engine and security fixes but can be built on an ordinary machine in minutes
 instead of hours on a build farm. The trade-off: Electron's extension support covers the common
-Chrome extension APIs (pop-ups, content scripts, storage, tabs, windows, context menus, cookies,
-notifications), not all of them — native messaging and `chrome.webRequest` events are missing,
-for example. The most important extension, an ad blocker, is built in.
+Chrome extension APIs (pop-ups, side panels, content scripts, storage, tabs, windows, context
+menus, cookies, notifications, identity, native messaging), not all of them — tab groups and
+`chrome.webRequest` events are missing, for example. The most important extension, an ad
+blocker, is built in.
 
 ## Development
 

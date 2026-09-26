@@ -12,12 +12,15 @@
  * extension is added, Moon Browser shows what it will be able to do.
  */
 import {
+  app,
   dialog,
+  Menu,
   nativeImage,
   webContents,
   type BaseWindow,
   type BrowserWindow,
   type ContextMenuParams,
+  type Extension,
   type MenuItem,
   type Session,
   type WebContents,
@@ -32,17 +35,29 @@ import {
   describePermissions,
   EXTENSION_ID,
   EXTENSIONS_PARTITION,
+  extensionPageUrl,
+  hasSiteAccess,
   localize,
   optionsPage,
   pickIcon,
+  sidePanelPage,
   unsupportedFeatures,
   type ManifestLike,
 } from "@shared/extensions";
-import { NEWTAB_URL } from "@shared/internal";
-import type { ExtensionInfo } from "@shared/types";
+import { internalUrl, NEWTAB_URL } from "@shared/internal";
+import type { ExtensionEntry, ExtensionInfo } from "@shared/types";
 import type { Browser } from "./browser";
-import { extensionApiPreload, profilePath } from "./paths";
+import { ExtensionApis, extensionIdOf } from "./extension-apis";
+import { extensionApiPreload, extensionExtraPreload, profilePath } from "./paths";
 import type { MoonWindow } from "./window";
+
+interface PanelOptions {
+  path?: string;
+  enabled?: boolean;
+}
+
+/** How many errors the extensions page keeps per extension. */
+const MAX_ERRORS = 30;
 
 interface Installed {
   id: string;
@@ -73,9 +88,17 @@ async function readJson(path: string): Promise<unknown> {
 export class Extensions {
   readonly path = profilePath("Extensions");
   private api: ElectronChromeExtensions | null = null;
+  private apis: ExtensionApis | null = null;
   private session: Session | null = null;
   /** Set while Moon Browser itself tells the extension system a tab is gone. */
   private untracking = false;
+  /** chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick }). */
+  private readonly panelBehaviors = new Map<string, boolean>();
+  /** chrome.sidePanel.setOptions: for all tabs, and per tab (webContents id). */
+  private readonly panelDefaults = new Map<string, PanelOptions>();
+  private readonly panelPerTab = new Map<string, Map<number, PanelOptions>>();
+  private readonly errors = new Map<string, string[]>();
+  private readonly icons = new Map<string, string | null>();
 
   constructor(private readonly browser: Browser) {}
 
@@ -154,6 +177,21 @@ export class Extensions {
       },
     });
 
+    // The APIs the library lacks (side panel, identity, …), in extension
+    // pages and service workers.
+    this.apis = new ExtensionApis(browser, ses);
+    this.apis.install();
+    ses.registerPreloadScript({
+      id: "moon-extension-apis",
+      type: "frame",
+      filePath: extensionExtraPreload,
+    });
+    ses.registerPreloadScript({
+      id: "moon-extension-apis-worker",
+      type: "service-worker",
+      filePath: extensionExtraPreload,
+    });
+
     // Our patched copy of the chrome.* API preload replaces the library's
     // own, which would leave its IPC bridge reachable by extension code.
     for (const [id, type] of [
@@ -175,8 +213,39 @@ export class Extensions {
     // The icons of the toolbar's extension buttons.
     ElectronChromeExtensions.handleCRXProtocol(browser.uiSession);
 
-    ses.extensions.on("extension-loaded", () => this.changed());
-    ses.extensions.on("extension-unloaded", () => this.changed());
+    ses.extensions.on("extension-loaded", (_event, extension) => {
+      this.icons.delete(extension.id);
+      // Web Store installs load without their service worker running.
+      void this.startWorker(extension);
+      this.changed();
+    });
+    ses.extensions.on("extension-unloaded", (_event, extension) => {
+      for (const win of browser.windows) win.closeSidePanel(extension.id);
+      this.changed();
+    });
+
+    // Errors of extensions — their service workers, pages and content
+    // scripts — for the extensions page, like Chrome's "Errors" button.
+    ses.serviceWorkers.on("console-message", (_event, details) => {
+      const id = extensionIdOf(details.sourceUrl);
+      if (details.level >= 3 && id)
+        this.recordError(
+          id,
+          `${details.message} (${shortSource(details.sourceUrl)}:${details.lineNumber})`,
+        );
+    });
+    app.on("web-contents-created", (_event, contents) => {
+      if (contents.session !== ses) return;
+      contents.on("console-message", (details) => {
+        if (details.level !== "error") return;
+        const id = extensionIdOf(details.sourceId) ?? extensionIdOf(contents.getURL());
+        if (id)
+          this.recordError(
+            id,
+            `${details.message} (${shortSource(details.sourceId)}:${details.lineNumber})`,
+          );
+      });
+    });
 
     await installChromeWebStore({
       session: ses,
@@ -238,7 +307,8 @@ export class Extensions {
     }
   }
 
-  private windowFor(windowId: number | undefined): MoonWindow {
+  /** A normal (not private) window: this one, the focused one, any — or a new one. */
+  windowFor(windowId: number | undefined): MoonWindow {
     const normal = [...this.browser.windows].filter((w) => !w.isPrivate && !w.closed);
     return (
       normal.find((w) => w.win.id === windowId) ??
@@ -313,19 +383,30 @@ export class Extensions {
     const ses = this.session;
     if (!ses || ses.extensions.getExtension(ext.id)) return;
     try {
-      const loaded = await ses.extensions.loadExtension(ext.path);
-      const manifest = loaded.manifest as {
-        manifest_version?: number;
-        background?: { service_worker?: string };
-      };
-      if (manifest.manifest_version === 3 && manifest.background?.service_worker) {
-        await ses.serviceWorkers
-          .startWorkerForScope(`chrome-extension://${loaded.id}`)
-          .catch(() => undefined);
-      }
+      await ses.extensions.loadExtension(ext.path);
     } catch (err) {
       console.error(`[moon] could not load extension ${ext.id}:`, err);
+      this.recordError(
+        ext.id,
+        `Could not load: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
+  }
+
+  private async startWorker(extension: Extension): Promise<void> {
+    const manifest = extension.manifest as {
+      manifest_version?: number;
+      background?: { service_worker?: string };
+    };
+    if (manifest.manifest_version !== 3 || !manifest.background?.service_worker) return;
+    await this.session?.serviceWorkers
+      .startWorkerForScope(`chrome-extension://${extension.id}`)
+      .catch((err: unknown) =>
+        this.recordError(
+          extension.id,
+          `The service worker didn't start: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
   }
 
   private disabled(): Set<string> {
@@ -362,6 +443,7 @@ export class Extensions {
         hasOptions: optionsPage(ext.manifest) !== null,
         permissions: describePermissions(ext.manifest),
         unsupported: unsupportedFeatures(ext.manifest),
+        errors: this.errors.get(ext.id) ?? [],
       });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
@@ -398,7 +480,10 @@ export class Extensions {
     const ses = this.session;
     if (!ses || !EXTENSION_ID.test(id)) return;
     await uninstallExtension(id, { session: ses, extensionsPath: this.path });
+    // Its storage goes with it, as in Chrome.
+    await ses.clearStorageData({ origin: `chrome-extension://${id}` }).catch(() => undefined);
     this.setDisabled(id, false);
+    this.errors.delete(id);
     this.changed();
   }
 
@@ -420,8 +505,165 @@ export class Extensions {
     return Array.isArray(permissions) && permissions.includes(permission);
   }
 
+  // ---- Toolbar and extensions menu ----
+
+  /** The loaded extensions as a window's toolbar and extensions menu show them. */
+  entries(pageUrl: string): ExtensionEntry[] {
+    const ses = this.session;
+    if (!ses) return [];
+    const unpinned = new Set(this.browser.profile.extensions.get().unpinned);
+    const webPage = /^(https?|file):/i.test(pageUrl);
+    return ses.extensions
+      .getAllExtensions()
+      .map((ext): ExtensionEntry => {
+        const manifest = ext.manifest as ManifestLike;
+        return {
+          id: ext.id,
+          name: ext.name,
+          icon: this.iconOf(ext),
+          pinned: !unpinned.has(ext.id),
+          access: webPage && hasSiteAccess(manifest, pageUrl) ? "full" : "none",
+          hasOptions: optionsPage(manifest) !== null,
+          opensSidePanel: this.panelBehavior(ext.id) && this.panelUrl(ext.id) !== null,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  entry(id: string): ExtensionEntry | undefined {
+    return this.entries("").find((e) => e.id === id);
+  }
+
+  private iconOf(ext: Extension): string | null {
+    const cached = this.icons.get(ext.id);
+    if (cached !== undefined) return cached;
+    const iconPath = pickIcon(ext.manifest as ManifestLike, 32);
+    const file = iconPath ? inside(ext.path, iconPath) : null;
+    const image = file ? nativeImage.createFromPath(file) : null;
+    const icon =
+      image && !image.isEmpty() ? image.resize({ width: 32, height: 32 }).toDataURL() : null;
+    this.icons.set(ext.id, icon);
+    return icon;
+  }
+
+  setPinned(id: string, pinned: boolean): void {
+    const prefs = this.browser.profile.extensions.get();
+    prefs.unpinned = prefs.unpinned.filter((x) => x !== id);
+    if (!pinned) prefs.unpinned.push(id);
+    this.browser.profile.extensions.changed();
+    this.browser.updateAllWindows();
+  }
+
+  /** The ⋮ menu of an extension in the extensions menu (or a right click on its button). */
+  showMenu(win: MoonWindow, id: string, x: number, y: number): void {
+    const entry = this.entry(id);
+    if (!entry) return;
+    Menu.buildFromTemplate([
+      { label: entry.name, enabled: false },
+      { type: "separator" },
+      { label: "Options", enabled: entry.hasOptions, click: () => void this.openOptions(id) },
+      {
+        label: entry.pinned ? "Unpin from toolbar" : "Pin to toolbar",
+        click: () => this.setPinned(id, !entry.pinned),
+      },
+      { type: "separator" },
+      {
+        label: "Manage extension",
+        click: () => win.openTab({ url: internalUrl("extensions") }),
+      },
+      {
+        label: "Remove from Moon Browser…",
+        click: () => {
+          void dialog
+            .showMessageBox(win.win, {
+              type: "question",
+              buttons: ["Remove", "Cancel"],
+              defaultId: 1,
+              cancelId: 1,
+              noLink: true,
+              title: "Remove extension",
+              message: `Remove “${entry.name}”?`,
+              detail: "Its data in Moon Browser is deleted with it.",
+            })
+            .then(({ response }) => {
+              if (response === 0) void this.remove(id);
+            });
+        },
+      },
+    ]).popup({ window: win.win, x: Math.round(x), y: Math.round(y) });
+  }
+
+  // ---- Side panel (chrome.sidePanel) ----
+
+  panelBehavior(id: string): boolean {
+    return this.panelBehaviors.get(id) === true;
+  }
+
+  setPanelBehavior(id: string, openOnActionClick: boolean): void {
+    this.panelBehaviors.set(id, openOnActionClick);
+    this.browser.updateAllWindows();
+  }
+
+  panelOptions(id: string, tabId?: number): { enabled: boolean; path?: string } {
+    const ext = this.session?.extensions.getExtension(id);
+    const fallback = ext ? sidePanelPage(ext.manifest as ManifestLike) : null;
+    const global = this.panelDefaults.get(id) ?? {};
+    const own = tabId !== undefined ? this.panelPerTab.get(id)?.get(tabId) : undefined;
+    const path = own?.path ?? global.path ?? fallback ?? undefined;
+    return { enabled: own?.enabled ?? global.enabled ?? !!path, path };
+  }
+
+  setPanelOptions(id: string, options: PanelOptions & { tabId?: number }): void {
+    const { tabId, ...values } = options;
+    if (values.path !== undefined && !extensionPageUrl(id, values.path)) return;
+    if (tabId === undefined) {
+      this.panelDefaults.set(id, { ...this.panelDefaults.get(id), ...values });
+    } else {
+      let perTab = this.panelPerTab.get(id);
+      if (!perTab) this.panelPerTab.set(id, (perTab = new Map<number, PanelOptions>()));
+      perTab.set(tabId, { ...perTab.get(tabId), ...values });
+    }
+    for (const win of this.browser.windows) win.refreshSidePanel();
+    this.browser.updateAllWindows();
+  }
+
+  /** The side panel page of an extension for a tab, or null if it has none there. */
+  panelUrl(id: string, tabId?: number): string | null {
+    const { enabled, path } = this.panelOptions(id, tabId);
+    return enabled && path ? extensionPageUrl(id, path) : null;
+  }
+
+  panelOpened(win: MoonWindow, id: string, url: string): void {
+    const path = url.replace(`chrome-extension://${id}/`, "");
+    this.apis?.emit(id, "sidePanel.onOpened", { windowId: win.win.id, path });
+  }
+
+  panelClosed(win: MoonWindow, id: string, url: string): void {
+    const path = url.replace(`chrome-extension://${id}/`, "");
+    this.apis?.emit(id, "sidePanel.onClosed", { windowId: win.win.id, path });
+  }
+
+  // ---- Errors ----
+
+  recordError(id: string, text: string): void {
+    const list = this.errors.get(id) ?? [];
+    list.push(text.length > 500 ? `${text.slice(0, 499)}…` : text);
+    this.errors.set(id, list.slice(-MAX_ERRORS));
+    this.browser.notifyInternal("extensions");
+  }
+
+  clearErrors(id: string): void {
+    this.errors.delete(id);
+    this.browser.notifyInternal("extensions");
+  }
+
   private changed(): void {
     this.browser.notifyInternal("extensions");
     this.browser.updateAllWindows();
   }
+}
+
+/** "chrome-extension://…/js/background.js" → "js/background.js". */
+function shortSource(url: string): string {
+  return url.replace(/^chrome-extension:\/\/[a-p]{32}\//, "") || url;
 }

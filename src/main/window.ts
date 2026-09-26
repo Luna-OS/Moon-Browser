@@ -12,7 +12,7 @@ import {
   type Result,
   type Session,
   type WebContents,
-  type WebContentsView,
+  WebContentsView,
   type WebPreferences,
 } from "electron";
 import { FRAME_COLORS, TAB_STRIP_HEIGHT } from "@shared/chrome-colors";
@@ -24,7 +24,15 @@ import {
   type UiCommand,
   type UiEvent,
 } from "@shared/ipc";
-import { clampRatio, contentArea, splitRects, type Insets } from "@shared/layout";
+import {
+  clampPanelWidth,
+  clampRatio,
+  contentArea,
+  SIDE_PANEL_WIDTH,
+  sidePanelRects,
+  splitRects,
+  type Insets,
+} from "@shared/layout";
 import { resolveInput } from "@shared/omnibox";
 import { protectionSiteOf } from "@shared/sites";
 import type { FindState, Rect, SplitState, WindowState } from "@shared/types";
@@ -57,6 +65,9 @@ export class MoonWindow {
   private readonly attached = new Set<WebContentsView>();
   private overlayOpen = false;
   private htmlFullscreen: Tab | null = null;
+  /** An extension's side panel next to the tabs. */
+  private sidePanel: { extensionId: string; url: string; view: WebContentsView } | null = null;
+  private sidePanelWidth = SIDE_PANEL_WIDTH;
   private fullscreenByPage = false;
   private updateScheduled = false;
   private softTimer: NodeJS.Timeout | null = null;
@@ -150,6 +161,9 @@ export class MoonWindow {
         }
       }
       this.tabs = [];
+      const panel = this.sidePanel;
+      this.sidePanel = null;
+      if (panel && !panel.view.webContents.isDestroyed()) panel.view.webContents.close();
       browser.windowClosed(this);
     });
 
@@ -266,6 +280,7 @@ export class MoonWindow {
     tab.lastActive = Date.now();
     for (const t of this.visibleTabs()) t.wake();
     if (tab.wc) this.browser.extensions.selectTab(tab.wc);
+    this.refreshSidePanel();
     if (this.find && this.find.tabId !== tab.id) this.stopFind();
     this.layout();
     this.update();
@@ -357,7 +372,12 @@ export class MoonWindow {
       if (this.htmlFullscreen?.view) {
         wanted.set(this.htmlFullscreen.view, { x: 0, y: 0, width, height });
       } else {
-        const area = contentArea(width, height, this.insets);
+        let area = contentArea(width, height, this.insets);
+        if (this.sidePanel) {
+          const rects = sidePanelRects(area, this.sidePanelWidth);
+          wanted.set(this.sidePanel.view, rects.view);
+          area = rects.pages;
+        }
         const visible = this.visibleTabs();
         const rects =
           visible.length === 2 && this.split ? splitRects(area, this.split.ratio) : [area];
@@ -375,6 +395,76 @@ export class MoonWindow {
         this.attached.add(view);
       }
       view.setBounds(rect);
+    }
+  }
+
+  // ---- Side panel ----
+
+  /** Shows an extension's side panel (chrome.sidePanel); false if it has none. */
+  openSidePanel(extensionId: string): boolean {
+    if (this.isPrivate || this.closed) return false;
+    const url = this.browser.extensions.panelUrl(extensionId, this.activeTab?.wc?.id);
+    if (!url) return false;
+    if (this.sidePanel?.extensionId === extensionId) return true;
+    this.closeSidePanel();
+    const view = new WebContentsView({
+      webPreferences: {
+        session: this.session,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false,
+        safeDialogs: true,
+      },
+    });
+    view.setBackgroundColor("#ffffff");
+    const wc = view.webContents;
+    // The panel shows the extension's pages; links to the web open as tabs.
+    wc.setWindowOpenHandler(({ url: target }) => {
+      if (/^(https?|chrome-extension):/i.test(target)) this.openTab({ url: target });
+      return { action: "deny" };
+    });
+    wc.on("will-frame-navigate", (details) => {
+      if (!details.isMainFrame || details.url.startsWith(`chrome-extension://${extensionId}/`))
+        return;
+      details.preventDefault();
+      if (/^https?:/i.test(details.url)) this.openTab({ url: details.url });
+    });
+    wc.on("render-process-gone", () => this.closeSidePanel(extensionId));
+    this.sidePanel = { extensionId, url, view };
+    wc.loadURL(url).catch(() => undefined);
+    this.browser.extensions.panelOpened(this, extensionId, url);
+    this.layout();
+    this.update();
+    return true;
+  }
+
+  closeSidePanel(extensionId?: string): void {
+    const panel = this.sidePanel;
+    if (!panel || (extensionId && panel.extensionId !== extensionId)) return;
+    this.sidePanel = null;
+    this.detach(panel.view);
+    if (!panel.view.webContents.isDestroyed()) panel.view.webContents.close();
+    this.browser.extensions.panelClosed(this, panel.extensionId, panel.url);
+    if (this.closed) return;
+    this.layout();
+    this.update();
+  }
+
+  toggleSidePanel(extensionId: string): void {
+    if (this.sidePanel?.extensionId === extensionId) this.closeSidePanel();
+    else this.openSidePanel(extensionId);
+  }
+
+  /** Follows chrome.sidePanel.setOptions: another page for this tab, or none. */
+  refreshSidePanel(): void {
+    const panel = this.sidePanel;
+    if (!panel) return;
+    const url = this.browser.extensions.panelUrl(panel.extensionId, this.activeTab?.wc?.id);
+    if (!url) this.closeSidePanel();
+    else if (url !== panel.url) {
+      panel.url = url;
+      panel.view.webContents.loadURL(url).catch(() => undefined);
     }
   }
 
@@ -493,6 +583,20 @@ export class MoonWindow {
       isDefaultBrowser: this.isPrivate || this.browser.defaultBrowser.isDefault,
       extensionTab:
         !this.isPrivate && this.browser.extensions.count() > 0 ? (active?.wc?.id ?? null) : null,
+      extensions: this.isPrivate ? [] : this.browser.extensions.entries(active?.url ?? ""),
+      sidePanel: this.sidePanelState(),
+    };
+  }
+
+  private sidePanelState(): WindowState["sidePanel"] {
+    const panel = this.sidePanel;
+    if (!panel) return null;
+    const entry = this.browser.extensions.entry(panel.extensionId);
+    return {
+      extensionId: panel.extensionId,
+      name: entry?.name ?? "Extension",
+      icon: entry?.icon ?? null,
+      width: this.sidePanelWidth,
     };
   }
 
@@ -763,6 +867,25 @@ export class MoonWindow {
       case "makeDefaultBrowser":
         void this.browser.defaultBrowser.make();
         break;
+      case "extensionPin":
+        this.browser.extensions.setPinned(cmd.extensionId, cmd.pinned);
+        break;
+      case "extensionMenu":
+        this.browser.extensions.showMenu(this, cmd.extensionId, cmd.x, cmd.y);
+        break;
+      case "sidePanelToggle":
+        this.toggleSidePanel(cmd.extensionId);
+        break;
+      case "sidePanelClose":
+        this.closeSidePanel();
+        break;
+      case "sidePanelWidth": {
+        const [width] = this.win.getContentSize();
+        this.sidePanelWidth = clampPanelWidth(cmd.width, contentArea(width, 0, this.insets).width);
+        this.layout();
+        this.update();
+        break;
+      }
       case "activate":
         this.activate(cmd.tabId);
         break;

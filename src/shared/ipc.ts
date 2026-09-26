@@ -39,6 +39,13 @@ export type UiCommand =
   /** Restart Moon Browser and install the downloaded update. */
   | { type: "installUpdate" }
   | { type: "makeDefaultBrowser" }
+  /** Show or hide an extension's button in the toolbar. */
+  | { type: "extensionPin"; extensionId: string; pinned: boolean }
+  /** The ⋮ menu of an extension (options, pin, remove, …). */
+  | { type: "extensionMenu"; extensionId: string; x: number; y: number }
+  | { type: "sidePanelToggle"; extensionId: string }
+  | { type: "sidePanelClose" }
+  | { type: "sidePanelWidth"; width: number }
   | { type: "insets"; top: number; bottom: number };
 
 export type DownloadAction = "open" | "show" | "cancel" | "pause" | "resume" | "remove";
@@ -94,6 +101,7 @@ export type InternalMethod =
   | "extensions.setEnabled"
   | "extensions.remove"
   | "extensions.options"
+  | "extensions.clearErrors"
   | "update.status"
   | "update.check"
   | "update.install"
@@ -144,6 +152,7 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "extensions.setEnabled",
     "extensions.remove",
     "extensions.options",
+    "extensions.clearErrors",
   ],
   about: [...COMMON, "about.info", "update.status", "update.check", "update.install"],
 };

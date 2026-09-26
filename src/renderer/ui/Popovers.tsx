@@ -30,7 +30,7 @@ import {
 import type { UiCommand } from "@shared/ipc";
 import { ui } from "./store";
 
-export type PopoverKind = "menu" | "shield" | "downloads";
+export type PopoverKind = "menu" | "shield" | "downloads" | "extensions";
 
 const run = (cmd: UiCommand) => void ui.command(cmd);
 

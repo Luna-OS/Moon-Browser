@@ -359,3 +359,30 @@ export const PuzzleIcon = ({ size = 16 }: P) => (
     <path d="M10 4a2 2 0 1 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 1 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 1 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 1 0 0-4H5V7a1 1 0 0 1 1-1h4Z" />
   </Svg>
 );
+
+/** A thumbtack: pin an extension to the toolbar. */
+export const ThumbtackIcon = ({ size = 15, filled = false }: P & { filled?: boolean }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill={filled ? "currentColor" : "none"}
+    stroke="currentColor"
+    strokeWidth={2}
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+    className="shrink-0"
+  >
+    <path d="M9 4h6l-1 5 4 4H6l4-4Z" />
+    <path d="M12 13v7" fill="none" />
+  </svg>
+);
+
+export const MoreIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <circle cx="12" cy="5" r="1.2" />
+    <circle cx="12" cy="12" r="1.2" />
+    <circle cx="12" cy="19" r="1.2" />
+  </Svg>
+);

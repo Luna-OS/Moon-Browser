@@ -7,3 +7,5 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
   if (message === "ping") reply({ pong: true, fromTab: sender.tab ? sender.tab.id : null });
 });
+// Shows up under "Errors" on moon://extensions.
+console.error("moon-test: an error the extensions page should list");

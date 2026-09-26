@@ -102,6 +102,27 @@ function ExtensionRow({ ext }: { ext: ExtensionInfo }) {
             <WarningIcon size={12} /> {text}
           </p>
         ))}
+        {ext.errors.length > 0 && (
+          <details className="mt-2 rounded-[0.6rem] border border-(--mb-border) bg-(--mb-inset) px-2.5 py-1.5 text-xs">
+            <summary className="cursor-pointer text-(--mb-danger)">
+              Errors ({ext.errors.length})
+            </summary>
+            <ul className="m-0 mt-1.5 flex list-none flex-col gap-1 p-0">
+              {ext.errors.map((error, i) => (
+                <li key={i} className="font-mono break-words text-(--mb-text-muted)">
+                  {error}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              className="mb-btn mb-btn-sm mb-btn-ghost mt-1.5"
+              onClick={() => void api.clearExtensionErrors(ext.id)}
+            >
+              Clear
+            </button>
+          </details>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           {ext.hasOptions && ext.enabled && (
             <button

@@ -47,6 +47,7 @@ await build({
   entryPoints: {
     "preload/ui": resolve(root, "src/preload/ui.ts"),
     "preload/internal": resolve(root, "src/preload/internal.ts"),
+    "preload/extension-apis": resolve(root, "src/preload/extension-apis.ts"),
   },
   outdir: resolve(root, "out"),
   outExtension: { ".js": ".cjs" },
@@ -83,6 +84,9 @@ await copyFile(
       "function mainWorldScript(bridge) {\n      const electron = bridge || electronContext;",
     ],
     ["func: mainWorldScript\n", "func: mainWorldScript,\n          args: [electronContext]\n"],
+    // Left extensible so src/preload/extension-apis.ts can add the APIs the
+    // library lacks (sidePanel, identity, …), whichever preload runs first.
+    ["Object.freeze(chrome);", ""],
   ];
   for (const [from, to] of patches) {
     if (preload.split(from).length !== 2)
