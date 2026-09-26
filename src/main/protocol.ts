@@ -22,19 +22,20 @@ const TYPES: Record<string, string> = {
   ".txt": "text/plain; charset=utf-8",
 };
 
-const CSP = [
-  "default-src 'none'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  // Favicons of visited sites.
-  "img-src 'self' data: https: http:",
-  "font-src 'self'",
-  "connect-src 'self'",
-  "base-uri 'none'",
-  "form-action 'none'",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-].join("; ");
+const csp = (ui: boolean) =>
+  [
+    "default-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    // Favicons of visited sites; in the UI also the extension buttons' icons.
+    `img-src 'self' data: https: http:${ui ? " crx:" : ""}`,
+    "font-src 'self'",
+    "connect-src 'self'",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+  ].join("; ");
 
 /** Must run before the app is ready. */
 export function registerSchemes(): void {
@@ -43,6 +44,10 @@ export function registerSchemes(): void {
       scheme: INTERNAL_SCHEME,
       privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true },
     },
+    // The extension buttons' icons in the browser UI, as
+    // electron-chrome-extensions registers it (a later call replaces an
+    // earlier one, so both are listed here).
+    { scheme: "crx", privileges: { bypassCSP: true } },
   ]);
 }
 
@@ -77,7 +82,7 @@ export function handleInternalProtocol(ses: Session, options: { ui: boolean }): 
       return new Response(body, {
         headers: {
           "content-type": TYPES[extname(file)] ?? "application/octet-stream",
-          "content-security-policy": CSP,
+          "content-security-policy": csp(kind === "ui"),
           "x-content-type-options": "nosniff",
           "cross-origin-opener-policy": "same-origin",
           "referrer-policy": "no-referrer",

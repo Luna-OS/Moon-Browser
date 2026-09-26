@@ -1,0 +1,161 @@
+import { useState } from "react";
+import { WEB_STORE_URL, webStoreDetailUrl } from "@shared/extensions";
+import type { ExtensionInfo } from "@shared/types";
+import { ExternalIcon, PuzzleIcon, SettingsIcon, TrashIcon, WarningIcon } from "@theme/icons";
+import { api, useLive } from "./api";
+import { Card, EmptyState, PageShell } from "./ui";
+
+/** Password managers people usually look for first. */
+const SUGGESTIONS = [
+  { name: "NordPass", id: "eiaeiblijfjekdanodkjadfinkhbfgcd" },
+  { name: "Bitwarden", id: "nngceckbapebfimnlniiiahkandclblb" },
+  { name: "1Password", id: "aeblfdkhhhdcdjpifhhbdiojplfjncoa" },
+];
+
+export function ExtensionsPage() {
+  const [list] = useLive(api.extensions, ["extensions"]);
+  return (
+    <PageShell
+      title="Extensions"
+      subtitle="From the Chrome Web Store — in normal windows, never in private ones."
+      actions={
+        <a
+          className="mb-btn mb-btn-primary no-underline"
+          href={WEB_STORE_URL}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <ExternalIcon /> Chrome Web Store
+        </a>
+      }
+    >
+      {list && list.length === 0 && (
+        <Card>
+          <EmptyState title="No extensions yet">
+            Open an extension in the Chrome Web Store and choose “Add to Moon Browser”. Before
+            anything is added, Moon Browser shows what the extension will be able to do.
+          </EmptyState>
+          <div className="flex flex-wrap items-center justify-center gap-2 px-5 pb-7">
+            <span className="text-xs text-(--mb-text-muted)">Password managers:</span>
+            {SUGGESTIONS.map((s) => (
+              <a
+                key={s.id}
+                className="mb-chip no-underline hover:border-(--mb-accent)"
+                href={webStoreDetailUrl(s.id)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {s.name}
+              </a>
+            ))}
+          </div>
+        </Card>
+      )}
+      {list && list.length > 0 && (
+        <Card>
+          <ul className="m-0 list-none p-1.5">
+            {list.map((ext) => (
+              <ExtensionRow key={ext.id} ext={ext} />
+            ))}
+          </ul>
+        </Card>
+      )}
+      <p className="m-0 text-center text-xs leading-relaxed text-(--mb-text-faint)">
+        Extensions are updated from the Chrome Web Store automatically. Moon Shield keeps blocking
+        ads and trackers on its own — no ad-blocking extension needed.
+      </p>
+    </PageShell>
+  );
+}
+
+function ExtensionRow({ ext }: { ext: ExtensionInfo }) {
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <li className="flex items-start gap-3.5 rounded-[0.7rem] px-3 py-3 hover:bg-(--mb-hover)">
+      <span
+        className="mb-glass flex h-11 w-11 shrink-0 items-center justify-center"
+        style={{ borderRadius: "0.8rem", opacity: ext.enabled ? 1 : 0.5 }}
+      >
+        {ext.icon ? <img src={ext.icon} width={28} height={28} alt="" /> : <PuzzleIcon size={20} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-sm font-medium">{ext.name}</span>
+          <span className="text-xs text-(--mb-text-faint)">{ext.version}</span>
+          {!ext.enabled && <span className="mb-chip h-5! text-[0.65rem]!">Off</span>}
+        </div>
+        {ext.description && (
+          <p className="m-0 mt-0.5 line-clamp-2 text-xs leading-relaxed text-(--mb-text-muted)">
+            {ext.description}
+          </p>
+        )}
+        {ext.permissions.length > 0 && (
+          <p className="m-0 mt-1.5 text-xs leading-relaxed text-(--mb-text-faint)">
+            Can: {ext.permissions.join(" · ")}
+          </p>
+        )}
+        {ext.unsupported.map((text) => (
+          <p
+            key={text}
+            className="m-0 mt-1.5 flex items-center gap-1.5 text-xs text-(--mb-warning)"
+          >
+            <WarningIcon size={12} /> {text}
+          </p>
+        ))}
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          {ext.hasOptions && ext.enabled && (
+            <button
+              type="button"
+              className="mb-btn mb-btn-sm mb-btn-ghost"
+              onClick={() => void api.extensionOptions(ext.id)}
+            >
+              <SettingsIcon size={13} /> Options
+            </button>
+          )}
+          <a
+            className="mb-btn mb-btn-sm mb-btn-ghost no-underline"
+            href={webStoreDetailUrl(ext.id)}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Web Store
+          </a>
+          {confirming ? (
+            <>
+              <span className="ml-1 text-xs text-(--mb-text-muted)">Remove {ext.name}?</span>
+              <button
+                type="button"
+                className="mb-btn mb-btn-sm mb-btn-danger"
+                onClick={() => void api.removeExtension(ext.id)}
+              >
+                Remove
+              </button>
+              <button
+                type="button"
+                className="mb-btn mb-btn-sm"
+                onClick={() => setConfirming(false)}
+              >
+                Keep
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="mb-btn mb-btn-sm mb-btn-ghost"
+              onClick={() => setConfirming(true)}
+            >
+              <TrashIcon size={13} /> Remove
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        type="checkbox"
+        className="mb-switch mt-1"
+        aria-label={`${ext.name} on or off`}
+        checked={ext.enabled}
+        onChange={(e) => void api.setExtensionEnabled(ext.id, e.target.checked)}
+      />
+    </li>
+  );
+}

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { formatNumber } from "@shared/format";
+import { formatNumber, timeAgo } from "@shared/format";
 import { SLEEP_CHOICES } from "@shared/settings";
 import type {
   AdblockStatus,
@@ -20,9 +20,11 @@ import {
   ShieldIcon,
   TabIcon,
   TrashIcon,
+  UpdateIcon,
 } from "@theme/icons";
 import { api, useLive, type SettingsInfo } from "./api";
 import { Card, Row, Segmented, Toggle } from "./ui";
+import { UpdateRow } from "./UpdateRow";
 
 const SECTIONS: { id: string; label: string; icon: ReactNode }[] = [
   { id: "appearance", label: "Appearance", icon: <MoonIcon /> },
@@ -33,6 +35,7 @@ const SECTIONS: { id: string; label: string; icon: ReactNode }[] = [
   { id: "tabs", label: "Tabs & startup", icon: <TabIcon size={16} /> },
   { id: "downloads", label: "Downloads", icon: <DownloadIcon /> },
   { id: "system", label: "System", icon: <BoltIcon size={16} /> },
+  { id: "updates", label: "Updates", icon: <UpdateIcon size={16} /> },
 ];
 
 const PERMISSION_LABELS: Record<PermissionKind, string> = {
@@ -52,15 +55,6 @@ const CLEAR_RANGES = [
   { value: 24 * 7, label: "Last 7 days" },
   { value: 0, label: "All time" },
 ];
-
-function timeAgo(t: number): string {
-  const minutes = Math.round((Date.now() - t) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} h ago`;
-  return `${Math.round(hours / 24)} days ago`;
-}
 
 export function SettingsPage({ info }: { info: SettingsInfo }) {
   const s = info.settings;
@@ -499,6 +493,14 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
               </button>
             )}
           </Row>
+          <Row
+            label="Extensions"
+            hint="Add-ons from the Chrome Web Store, such as your password manager."
+          >
+            <a href="moon://extensions/" className="mb-btn no-underline">
+              Manage
+            </a>
+          </Row>
           <Toggle
             label="Spell check"
             hint={
@@ -508,6 +510,20 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             }
             checked={s.spellcheck}
             onChange={(v) => set({ spellcheck: v })}
+          />
+        </Card>
+
+        <Card
+          id="updates"
+          title="Updates"
+          description="New versions install over the old one — nothing to uninstall, and your profile stays as it is."
+        >
+          <UpdateRow autoCheck={s.autoUpdate} />
+          <Toggle
+            label="Look for updates automatically"
+            hint="Every few hours, Moon Browser asks GitHub for a new release and downloads it in the background."
+            checked={s.autoUpdate}
+            onChange={(v) => set({ autoUpdate: v })}
           />
         </Card>
       </div>

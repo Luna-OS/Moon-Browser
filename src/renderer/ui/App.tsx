@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { EXTENSIONS_PARTITION } from "@shared/extensions";
 import type { WindowState } from "@shared/types";
 import {
   BackIcon,
@@ -10,6 +11,7 @@ import {
   ReloadIcon,
   ShieldIcon,
   SplitIcon,
+  UpdateIcon,
 } from "@theme/icons";
 import { useDocumentTheme } from "@theme/useTheme";
 import { AddressBar } from "./AddressBar";
@@ -150,6 +152,13 @@ function Browser({ state }: { state: WindowState }) {
                 onDropdownChange={onDropdown}
               />
             </div>
+            {state.extensionTab !== null && (
+              <browser-action-list
+                className="mb-extension-actions"
+                partition={EXTENSIONS_PARTITION}
+                tab={state.extensionTab}
+              />
+            )}
             <button
               type="button"
               className="mb-icon-btn relative"
@@ -201,6 +210,16 @@ function Browser({ state }: { state: WindowState }) {
                   </svg>
                 )}
                 <DownloadIcon />
+              </button>
+            )}
+            {state.updateReady && (
+              <button
+                type="button"
+                className="mb-update-pill"
+                title={`Restart Moon Browser to install version ${state.updateReady}. Your tabs come back.`}
+                onClick={() => void ui.command({ type: "installUpdate" })}
+              >
+                <UpdateIcon size={14} /> Update
               </button>
             )}
             <button

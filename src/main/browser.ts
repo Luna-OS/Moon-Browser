@@ -22,13 +22,16 @@ import type { ClearDataOptions, ResolvedTheme, Settings } from "@shared/types";
 import { hostResolverConfig } from "@shared/security";
 import { acceptLanguages, cleanUserAgent } from "@shared/useragent";
 import { Adblocker } from "./adblock";
+import { DefaultBrowser } from "./default-browser";
 import { Downloads } from "./downloads";
+import { Extensions } from "./extensions";
 import { Permissions } from "./permissions";
 import { Profile, type SavedTab } from "./profile";
 import { Importer } from "./importer";
 import { handleInternalProtocol } from "./protocol";
 import { applySpellcheck, configureBrowsingSession } from "./sessions";
 import type { Tab } from "./tab";
+import { Updater } from "./updater";
 import { MoonWindow, type WindowOptions } from "./window";
 
 interface ClosedTab {
@@ -43,6 +46,12 @@ export class Browser {
   readonly permissions: Permissions;
   readonly downloads: Downloads;
   readonly importer: Importer;
+  readonly updater: Updater;
+  readonly extensions: Extensions;
+  readonly defaultBrowser = new DefaultBrowser(() => {
+    this.updateAllWindows();
+    this.notifyInternal("settings");
+  });
   readonly windows = new Set<MoonWindow>();
   readonly httpsExceptions = new Set<string>();
   /** Hosts whose Moon Shield warning the user chose to pass, until quit. */
@@ -65,10 +74,28 @@ export class Browser {
     this.permissions = new Permissions(this);
     this.downloads = new Downloads(this);
     this.importer = new Importer(this.profile);
+    this.extensions = new Extensions(this);
     this.adblock = new Adblocker({
       annoyances: () => this.settings.adblockAnnoyances,
       totalBlocked: () => this.profile.stats.get().totalBlocked,
       onChange: () => this.notifyInternal("adblock"),
+    });
+    let readyVersion: string | null = null;
+    this.updater = new Updater({
+      autoCheck: () => this.settings.autoUpdate,
+      onChange: (status) => {
+        this.notifyInternal("update");
+        const ready = status.state === "ready" ? status.version : null;
+        if (ready !== readyVersion) {
+          readyVersion = ready;
+          this.updateAllWindows();
+        }
+      },
+      beforeInstall: () => {
+        // Come back with the same tabs, like after any browser update.
+        this.profile.stats.get().restoreAfterUpdate = true;
+        this.profile.stats.changed();
+      },
     });
   }
 
@@ -78,6 +105,11 @@ export class Browser {
 
   engine(): SearchEngine {
     return resolveEngine(this.settings.searchEngine, this.settings.customSearchUrl);
+  }
+
+  /** The user's languages, most preferred first ("de-DE", "en-US"). */
+  languages(): string[] {
+    return app.getPreferredSystemLanguages();
   }
 
   resolvedTheme(): ResolvedTheme {
@@ -112,6 +144,7 @@ export class Browser {
     this.uiSession.webRequest.onBeforeRequest((details, callback) => {
       const allowed =
         details.url.startsWith("moon:") ||
+        details.url.startsWith("crx:") ||
         details.url.startsWith("data:") ||
         details.url.startsWith("devtools:") ||
         (details.resourceType === "image" && /^https?:/.test(details.url));
@@ -132,8 +165,17 @@ export class Browser {
     });
     await this.adblock.start();
 
+    // Chrome extensions, in the normal session only. A broken extension
+    // must never keep the browser from starting.
+    await this.extensions
+      .init(this.normalSession)
+      .catch((err: unknown) => console.error("[moon] extensions failed to start:", err));
+
     // Tabs nobody looked at for a while go to sleep.
     setInterval(() => this.sleepIdleTabs(), 60_000).unref();
+
+    this.updater.start();
+    void this.defaultBrowser.refresh();
   }
 
   private setupBrowsingSession(ses: Session, isPrivate: boolean): void {
@@ -171,6 +213,8 @@ export class Browser {
 
   windowFocused(win: MoonWindow): void {
     this.lastFocused = win;
+    // The default browser may have been changed in the system settings meanwhile.
+    void this.defaultBrowser.refresh();
   }
 
   /** The window showing a page (a tab or the UI itself). */
@@ -384,7 +428,13 @@ export class Browser {
 
   restoreOrOpen(urls: string[]): void {
     const saved = this.profile.session.get().windows;
-    if (this.settings.startup === "restore" && saved.length) {
+    const stats = this.profile.stats.get();
+    const afterUpdate = stats.restoreAfterUpdate;
+    if (afterUpdate) {
+      stats.restoreAfterUpdate = false;
+      this.profile.stats.changed();
+    }
+    if ((this.settings.startup === "restore" || afterUpdate) && saved.length) {
       for (const w of saved) this.createWindow({ saved: w });
       if (urls.length) this.focusedWindow()?.openTab({ url: urls[0] });
       for (const url of urls.slice(1)) this.focusedWindow()?.openTab({ url, background: true });

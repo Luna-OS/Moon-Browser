@@ -19,6 +19,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The installed browsers look for updates under this tag, so it must
+      # name the version they are built with.
+      - name: Check the version
+        env:
+          TAG: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          VERSION="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Tag $TAG does not match package.json ($VERSION)"; exit 1
+          fi
       - name: Install rpm tooling
         run: sudo apt-get update && sudo apt-get install -y rpm
       - run: npm ci
@@ -29,6 +39,8 @@ jobs:
         working-directory: release
         run: sha256sum *.AppImage *.deb *.rpm > ../checksums-linux.txt
 
+      # latest-linux.yml tells installed copies about this release (the
+      # AppImage carries its block map inside).
       - uses: actions/upload-artifact@v4
         with:
           name: moon-browser-linux
@@ -36,7 +48,9 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/*.rpm
+            release/latest-linux.yml
             checksums-linux.txt
+          if-no-files-found: error
 
   build-windows:
     runs-on: windows-latest
@@ -55,12 +69,17 @@ jobs:
         working-directory: release
         run: sha256sum *.exe > ../checksums-windows.txt
 
+      # latest.yml and the block map let installed copies update themselves,
+      # downloading only the parts that changed.
       - uses: actions/upload-artifact@v4
         with:
           name: moon-browser-windows
           path: |
             release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml
             checksums-windows.txt
+          if-no-files-found: error
 
   # macOS comes later.
 
@@ -95,10 +114,14 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "Moon Browser ${{ steps.version.outputs.tag }}"
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             dist/linux/**/*.AppImage
             dist/linux/**/*.deb
             dist/linux/**/*.rpm
+            dist/linux/**/latest-linux.yml
             dist/linux/checksums-linux.txt
             dist/windows/**/*.exe
+            dist/windows/**/*.exe.blockmap
+            dist/windows/**/latest.yml
             dist/windows/checksums-windows.txt

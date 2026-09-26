@@ -35,23 +35,43 @@ electronFuses:
   # file:// gets no extra powers beyond a normal browser's.
   grantFileProtocolExtraPrivileges: false
 
+# Updates come from GitHub Releases: electron-builder writes latest.yml /
+# latest-linux.yml next to the installers, the release workflow uploads
+# them, and the app (electron-updater) installs new versions over the old
+# one — the profile stays untouched.
+publish:
+  provider: github
+  owner: Luna-OS
+  repo: Moon-Browser
+  releaseType: release
+
 win:
   icon: build/icon.png
+  # x64; Windows on ARM runs it through its x64 emulation. One installer per
+  # architecture keeps a single update feed (latest.yml) correct.
   target:
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64]
 
+# The installer: assisted (welcome, folder, progress, finish) in MoonTask's
+# night-sky theme (build/installer/installer.nsh), English and German.
 nsis:
   oneClick: false
   perMachine: false
-  allowElevation: true
+  allowElevation: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Moon Browser
+  runAfterFinish: true
   deleteAppDataOnUninstall: false
-  # Registers Moon Browser with Windows as a web browser (Default apps).
-  include: build/installer.nsh
+  installerSidebar: build/installer/sidebar.bmp
+  uninstallerSidebar: build/installer/sidebar.bmp
+  installerHeader: build/installer/header.bmp
+  multiLanguageInstaller: true
+  installerLanguages: [en_US, de_DE]
+  displayLanguageSelector: false
+  include: build/installer/installer.nsh
 
 linux:
   icon: build/icons

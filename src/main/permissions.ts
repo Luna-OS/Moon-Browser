@@ -31,6 +31,19 @@ const ALWAYS_ALLOWED = new Set([
   "midi",
 ]);
 
+/** Web permissions an extension gets by declaring them in its manifest. */
+const EXTENSION_PERMISSIONS: Record<string, string> = {
+  "clipboard-read": "clipboardRead",
+  notifications: "notifications",
+  geolocation: "geolocation",
+};
+
+/** The extension a page or worker belongs to, from its origin. */
+function extensionIdOf(origin: string): string | null {
+  const m = /^chrome-extension:\/\/([a-p]{32})(\/|$)/.exec(origin);
+  return m ? m[1] : null;
+}
+
 interface Pending {
   prompt: PermissionPrompt;
   resolvers: ((allow: boolean) => void)[];
@@ -150,12 +163,25 @@ export class Permissions {
     });
   }
 
+  /** Extensions get what their manifest declares; null for anything that isn't an extension. */
+  private forExtension(origin: string, permission: string): boolean | null {
+    const id = extensionIdOf(origin);
+    if (!id) return null;
+    if (ALWAYS_ALLOWED.has(permission)) return true;
+    const declared = EXTENSION_PERMISSIONS[permission];
+    return !!declared && this.browser.extensions.declares(id, declared);
+  }
+
   private async onRequest(
     wc: WebContents,
     permission: string,
     details: PermissionRequest,
     isPrivate: boolean,
   ): Promise<boolean> {
+    if (!isPrivate) {
+      const forExtension = this.forExtension(details.requestingUrl || wc.getURL(), permission);
+      if (forExtension !== null) return forExtension;
+    }
     const tab = this.browser.tabFor(wc.id);
     if (!tab || tab.window.isPrivate !== isPrivate) return false;
     if (ALWAYS_ALLOWED.has(permission)) return true;
@@ -203,6 +229,10 @@ export class Permissions {
     details: PermissionCheckHandlerHandlerDetails,
     isPrivate: boolean,
   ): boolean {
+    if (!isPrivate) {
+      const forExtension = this.forExtension(requestingOrigin, permission);
+      if (forExtension !== null) return forExtension;
+    }
     if (!wc) return false;
     const tab = this.browser.tabFor(wc.id);
     if (!tab) return false;

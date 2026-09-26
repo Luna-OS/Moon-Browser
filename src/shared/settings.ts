@@ -39,6 +39,7 @@ export function defaultSettings(platform: string): Settings {
     // opt-in there.
     spellcheck: platform === "win32",
     newTabShortcuts: true,
+    autoUpdate: true,
   };
 }
 
@@ -126,6 +127,7 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
       typeof raw.downloadDir === "string" && raw.downloadDir.length < 4096 ? raw.downloadDir : "",
     spellcheck: bool(raw.spellcheck, d.spellcheck),
     newTabShortcuts: bool(raw.newTabShortcuts, d.newTabShortcuts),
+    autoUpdate: bool(raw.autoUpdate, d.autoUpdate),
   };
 }
 

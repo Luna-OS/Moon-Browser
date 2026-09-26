@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_name__",
+  "description": "__MSG_description__",
+  "default_locale": "en",
+  "version": "1.0.0",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtDCyB6AMIHxaRuqN4f3i1NRSFeED1qJ3YAi53B+Zaqu+BFXToDoU4XhbYSguVJ0yXTIY7Avc4P9PGySXnwElBoF3xU1pVz6i9l+QyS3wDBSRHbHwCuzGt+hsdl0hXvH/bwKEOaaocCAiV/po30LkaG3QOGlGtb1nbilFwoMg6GJkEpog2CFKuDJsCZDJC1oCKVC8iYyx0aFVXZ3RXaWd6YmkqK//009ougumnD18axIAfG4+0Oe3Y232c7Gqre2PIuCIt0R0buUc08dTl9KUI83Am8jcs7tgLluAqN6T8erMA9ZssYTvKsn9KLv5V663mln9jKkmWzAOBJQzhm/pFQIDAQAB",
+  "icons": { "48": "icon.png" },
+  "action": {
+    "default_title": "Moon test extension",
+    "default_popup": "popup.html",
+    "default_icon": { "32": "icon.png" }
+  },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["storage", "tabs", "contextMenus"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "content_scripts": [
+    { "matches": ["http://127.0.0.1/*"], "js": ["content.js"], "run_at": "document_end" }
+  ]
+}

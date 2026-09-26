@@ -3,7 +3,7 @@ import { formatNumber, greeting } from "@shared/format";
 import { moonPhase } from "@shared/moon";
 import type { Settings } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
-import { CloseIcon, FolderIcon, MaskIcon, SearchIcon, ShieldIcon } from "@theme/icons";
+import { CloseIcon, FolderIcon, MaskIcon, MoonIcon, SearchIcon, ShieldIcon } from "@theme/icons";
 import { MoonPhase } from "@theme/MoonPhase";
 import { shortHost } from "@shared/display";
 import { api, useLive } from "./api";
@@ -121,6 +121,34 @@ export function NewTabPage({ settings }: { settings: Settings | null }) {
             aria-label="Don't show again"
             title="Don't show again"
             onClick={() => void api.dismissImportHint().then(reload)}
+          >
+            <CloseIcon size={12} />
+          </button>
+        </div>
+      )}
+
+      {info?.suggestDefault && (
+        <div
+          className={`mb-glass flex max-w-xl items-center gap-3 py-2.5 pr-2 pl-4 text-sm ${info.importFrom ? "mt-3" : "mt-10"}`}
+          style={{ borderRadius: "1rem" }}
+        >
+          <span className="text-(--mb-accent)">
+            <MoonIcon size={17} />
+          </span>
+          <span className="flex-1">Open links from other apps in Moon Browser, too.</span>
+          <button
+            type="button"
+            className="mb-btn mb-btn-primary mb-btn-sm"
+            onClick={() => void api.makeDefaultBrowser().then(reload)}
+          >
+            Make default
+          </button>
+          <button
+            type="button"
+            className="mb-icon-btn h-7! w-7!"
+            aria-label="Don't show again"
+            title="Don't show again"
+            onClick={() => void api.dismissDefaultHint().then(reload)}
           >
             <CloseIcon size={12} />
           </button>

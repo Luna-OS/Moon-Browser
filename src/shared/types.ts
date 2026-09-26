@@ -58,6 +58,8 @@ export interface Settings {
   spellcheck: boolean;
   /** Show the frequently visited sites on the new tab page. */
   newTabShortcuts: boolean;
+  /** Look for a new version of Moon Browser every few hours. */
+  autoUpdate: boolean;
 }
 
 export interface TabInfo {
@@ -97,7 +99,7 @@ export interface TabError {
   rule?: string;
 }
 
-export type SecurityState = "secure" | "insecure" | "internal" | "local" | "error";
+export type SecurityState = "secure" | "insecure" | "internal" | "extension" | "local" | "error";
 
 export interface SplitState {
   leftId: number;
@@ -199,6 +201,15 @@ export interface WindowState {
   showBookmarksBar: boolean;
   searchEngineName: string;
   fullscreen: boolean;
+  /** A downloaded update waiting for a restart: its version. */
+  updateReady: string | null;
+  /** False when another browser opens links (true while unknown). */
+  isDefaultBrowser: boolean;
+  /**
+   * The page whose extension buttons the toolbar shows (its webContents id),
+   * or null when no extensions run in this window.
+   */
+  extensionTab: number | null;
 }
 
 export interface SiteSettingsEntry {
@@ -226,6 +237,38 @@ export interface AboutInfo {
   platform: string;
   arch: string;
   userData: string;
+}
+
+export interface UpdateStatus {
+  /**
+   * "unsupported": this copy can't update itself (a development build or an
+   * unpacked folder); "idle": up to date, or not checked yet.
+   */
+  state: "unsupported" | "idle" | "checking" | "downloading" | "ready" | "error";
+  current: string;
+  /** The new version, while it downloads and once it is ready. */
+  version: string | null;
+  /** Download progress, 0 … 100. */
+  percent: number;
+  checkedAt: number | null;
+  error: string | null;
+  /** Installing asks for the administrator password (.deb and .rpm installs). */
+  needsAdmin: boolean;
+}
+
+export interface ExtensionInfo {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  enabled: boolean;
+  /** A data: URL. */
+  icon: string | null;
+  hasOptions: boolean;
+  /** "Read and change all your data on all websites", … */
+  permissions: string[];
+  /** Features Moon Browser can't offer this extension. */
+  unsupported: string[];
 }
 
 export interface ImportableProfile {

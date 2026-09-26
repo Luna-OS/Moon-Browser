@@ -17,6 +17,7 @@ import {
   InfoIcon,
   LockIcon,
   MoonIcon,
+  PuzzleIcon,
   SearchIcon,
   StarIcon,
   TabIcon,
@@ -179,6 +180,8 @@ export function AddressBar({
       <WarningIcon size={13} />
     ) : security === "internal" ? (
       <MoonIcon size={13} />
+    ) : security === "extension" ? (
+      <PuzzleIcon size={13} />
     ) : (
       <InfoIcon size={13} />
     );
@@ -189,9 +192,11 @@ export function AddressBar({
         ? "Not secure: this page is loaded over plain HTTP"
         : security === "internal"
           ? "Moon Browser page"
-          : security === "error"
-            ? "The page could not be loaded"
-            : "Local page";
+          : security === "extension"
+            ? "A page of an extension"
+            : security === "error"
+              ? "The page could not be loaded"
+              : "Local page";
 
   const [host, rest] = splitDisplay(text);
   const rect = anchor;
