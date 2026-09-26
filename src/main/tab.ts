@@ -43,12 +43,23 @@ function pickFavicon(favicons: string[]): string | null {
 }
 
 /** Addresses a page may open or navigate to by itself. */
+/** The extension ID of a chrome-extension: URL (URL.origin is "null" for those). */
+function extensionHost(url: string): string | null {
+  try {
+    const u = new URL(url);
+    return u.protocol === "chrome-extension:" ? u.host : null;
+  } catch {
+    return null;
+  }
+}
+
 function isOpenable(url: string, from: string): boolean {
   if (/^(https?|about|blob|data):/i.test(url))
     return !/^data:/i.test(url) || /^data:image\//i.test(url);
   if (isInternalUrl(url)) return isInternalUrl(from);
   // An extension's own pages may open more of its pages.
-  if (/^chrome-extension:/i.test(url)) return originOf(url) === originOf(from);
+  if (/^chrome-extension:/i.test(url))
+    return extensionHost(url) !== null && extensionHost(url) === extensionHost(from);
   return false;
 }
 

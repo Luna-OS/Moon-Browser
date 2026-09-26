@@ -29,6 +29,7 @@ export interface ManifestLike {
   options_page?: unknown;
   options_ui?: unknown;
   homepage_url?: unknown;
+  side_panel?: unknown;
 }
 
 const strings = (v: unknown): string[] =>
@@ -127,8 +128,8 @@ export function unsupportedFeatures(manifest: ManifestLike): string[] {
     ...strings(manifest.optional_permissions),
   ]);
   const out: string[] = [];
-  if (permissions.has("nativeMessaging"))
-    out.push("Connecting to a desktop app (native messaging) isn't available in Moon Browser.");
+  if (permissions.has("tabGroups"))
+    out.push("Tab groups aren't available in Moon Browser; the extension works without them.");
   return out;
 }
 
@@ -152,4 +153,75 @@ export function pickIcon(manifest: ManifestLike, size: number): string | null {
     .sort((a, b) => a[0] - b[0]);
   if (!entries.length) return null;
   return (entries.find(([s]) => s >= size) ?? entries[entries.length - 1])[1];
+}
+
+/** The page an extension shows in the side panel, relative to its root. */
+export function sidePanelPage(manifest: ManifestLike): string | null {
+  const panel = manifest.side_panel;
+  if (!panel || typeof panel !== "object") return null;
+  const path = (panel as { default_path?: unknown }).default_path;
+  return typeof path === "string" && path ? path : null;
+}
+
+/**
+ * The address of a page inside an extension, or null for anything that
+ * would leave it (another origin, `..`, a full URL).
+ */
+export function extensionPageUrl(id: string, path: string): string | null {
+  if (!EXTENSION_ID.test(id) || typeof path !== "string" || path.length > 2048) return null;
+  try {
+    const base = `chrome-extension://${id}/`;
+    const url = new URL(path.replace(/^\/+/, ""), base);
+    // (URL.origin is "null" for chrome-extension: URLs.)
+    return url.protocol === "chrome-extension:" && url.host === id ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const WEB_SCHEMES = new Set(["http:", "https:", "ws:", "wss:", "file:"]);
+
+/** Whether a Chrome match pattern (`*://*.example.com/*`, `<all_urls>`, …) covers a URL. */
+export function matchesPattern(pattern: string, url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  if (pattern === "<all_urls>") return WEB_SCHEMES.has(u.protocol);
+  const m = /^(\*|https?|wss?|file|ftp):\/\/([^/]*)(\/.*)$/.exec(pattern);
+  if (!m) return false;
+  const [, scheme, host, path] = m;
+  const protocol = u.protocol.slice(0, -1);
+  if (scheme === "*" ? protocol !== "http" && protocol !== "https" : scheme !== protocol)
+    return false;
+  if (scheme !== "file") {
+    const hostname = u.hostname.toLowerCase();
+    const want = host.replace(/:\d+$/, "").toLowerCase();
+    if (want !== "*") {
+      if (want.startsWith("*.")) {
+        const base = want.slice(2);
+        if (hostname !== base && !hostname.endsWith(`.${base}`)) return false;
+      } else if (hostname !== want) {
+        return false;
+      }
+    }
+  }
+  const glob = new RegExp(`^${path.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
+  return glob.test(u.pathname + u.search);
+}
+
+/** Whether an extension may read and change the page at `url` (Chrome's "Full access"). */
+export function hasSiteAccess(manifest: ManifestLike, url: string): boolean {
+  const patterns = [
+    ...strings(manifest.host_permissions),
+    ...strings(manifest.permissions).filter((p) => p.includes("://") || p === "<all_urls>"),
+    ...(Array.isArray(manifest.content_scripts)
+      ? manifest.content_scripts.flatMap((cs: unknown) =>
+          cs && typeof cs === "object" ? strings((cs as { matches?: unknown }).matches) : [],
+        )
+      : []),
+  ];
+  return patterns.some((p) => matchesPattern(p, url));
 }

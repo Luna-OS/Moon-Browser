@@ -187,8 +187,8 @@ export class Profile {
   readonly downloads: JsonStore<DownloadInfo[]>;
   readonly permissions: JsonStore<PermissionMap>;
   readonly zoom: JsonStore<Record<string, number>>;
-  /** Extensions the user switched off. */
-  readonly extensions: JsonStore<{ disabled: string[] }>;
+  /** Extensions the user switched off, and the ones not shown in the toolbar. */
+  readonly extensions: JsonStore<{ disabled: string[]; unpinned: string[] }>;
   readonly session: JsonStore<SavedSession>;
   readonly stats: JsonStore<Stats>;
 
@@ -204,11 +204,11 @@ export class Profile {
     this.downloads = JsonStore.load(profilePath("downloads.json"), parseDownloads);
     this.permissions = JsonStore.load(profilePath("permissions.json"), parsePermissions);
     this.zoom = JsonStore.load(profilePath("zoom.json"), parseZoom);
+    const ids = (v: unknown) =>
+      Array.isArray(v) ? v.filter((s): s is string => typeof s === "string").slice(0, 1000) : [];
     this.extensions = JsonStore.load(profilePath("extensions.json"), (raw) => ({
-      disabled:
-        isObj(raw) && Array.isArray(raw.disabled)
-          ? raw.disabled.filter((s): s is string => typeof s === "string").slice(0, 1000)
-          : [],
+      disabled: ids(isObj(raw) ? raw.disabled : null),
+      unpinned: ids(isObj(raw) ? raw.unpinned : null),
     }));
     this.session = JsonStore.load(profilePath("session.json"), parseSession, { delay: 2000 });
     this.stats = JsonStore.load(profilePath("stats.json"), (raw): Stats => ({

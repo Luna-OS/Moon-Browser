@@ -79,6 +79,7 @@ export const api = {
     m().invoke("extensions.setEnabled", id, enabled) as Promise<void>,
   removeExtension: (id: string) => m().invoke("extensions.remove", id) as Promise<void>,
   extensionOptions: (id: string) => m().invoke("extensions.options", id) as Promise<void>,
+  clearExtensionErrors: (id: string) => m().invoke("extensions.clearErrors", id) as Promise<void>,
   updateStatus: () => m().invoke("update.status") as Promise<UpdateStatus>,
   checkForUpdate: () => m().invoke("update.check") as Promise<UpdateStatus>,
   installUpdate: () => m().invoke("update.install") as Promise<void>,

@@ -210,6 +210,33 @@ export interface WindowState {
    * or null when no extensions run in this window.
    */
   extensionTab: number | null;
+  /** The extensions running in this window (none in private windows). */
+  extensions: ExtensionEntry[];
+  /** An extension's page shown next to the tabs, like Chrome's side panel. */
+  sidePanel: SidePanelState | null;
+}
+
+/** An extension as the toolbar and the extensions menu show it. */
+export interface ExtensionEntry {
+  id: string;
+  name: string;
+  /** A data: URL. */
+  icon: string | null;
+  /** Shown as a button in the toolbar (otherwise only in the extensions menu). */
+  pinned: boolean;
+  /** "full": it can read and change the current page; "none": it doesn't need to. */
+  access: "full" | "none";
+  hasOptions: boolean;
+  /** Clicking its button opens its side panel instead of a pop-up. */
+  opensSidePanel: boolean;
+}
+
+export interface SidePanelState {
+  extensionId: string;
+  name: string;
+  icon: string | null;
+  /** Width of the panel in pixels. */
+  width: number;
 }
 
 export interface SiteSettingsEntry {
@@ -269,6 +296,8 @@ export interface ExtensionInfo {
   permissions: string[];
   /** Features Moon Browser can't offer this extension. */
   unsupported: string[];
+  /** Recent errors from the extension's pages and service worker, newest last. */
+  errors: string[];
 }
 
 export interface ImportableProfile {

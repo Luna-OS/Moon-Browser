@@ -3,6 +3,10 @@ import {
   compareVersions,
   describePermissions,
   EXTENSION_ID,
+  extensionPageUrl,
+  hasSiteAccess,
+  matchesPattern,
+  sidePanelPage,
   localize,
   optionsPage,
   pickIcon,
@@ -10,6 +14,7 @@ import {
   unsupportedFeatures,
 } from "./extensions";
 import { timeAgo } from "./format";
+import { clampPanelWidth, SIDE_PANEL_HEADER, sidePanelRects, SPLIT_GAP } from "./layout";
 import { internalPageOf, INTERNAL_ALIASES } from "./internal";
 import { PAGE_METHODS } from "./ipc";
 import { defaultSettings, sanitizeSettings } from "./settings";
@@ -74,8 +79,10 @@ describe("extension manifests", () => {
     expect(describePermissions({ permissions: ["storage", "alarms"] })).toEqual([]);
   });
 
-  it("warns about native messaging", () => {
-    expect(unsupportedFeatures({ optional_permissions: ["nativeMessaging"] })).toHaveLength(1);
+  it("notes what Moon Browser can't offer", () => {
+    // Native messaging works (through desktop apps' registrations for Chrome).
+    expect(unsupportedFeatures({ permissions: ["nativeMessaging"] })).toEqual([]);
+    expect(unsupportedFeatures({ optional_permissions: ["tabGroups"] })).toHaveLength(1);
     expect(unsupportedFeatures({ permissions: ["storage"] })).toEqual([]);
   });
 
@@ -123,5 +130,60 @@ describe("updates", () => {
     expect(timeAgo(now - 5 * 60_000, now)).toBe("5 min ago");
     expect(timeAgo(now - 3 * 3_600_000, now)).toBe("3 h ago");
     expect(timeAgo(now - 4 * 86_400_000, now)).toBe("4 days ago");
+  });
+});
+
+describe("extension site access", () => {
+  it("matches Chrome's match patterns", () => {
+    expect(matchesPattern("<all_urls>", "https://example.com/")).toBe(true);
+    expect(matchesPattern("<all_urls>", "moon://settings/")).toBe(false);
+    expect(matchesPattern("*://*.nordpass.com/*", "https://app.nordpass.com/login")).toBe(true);
+    expect(matchesPattern("*://*.nordpass.com/*", "https://nordpass.com/")).toBe(true);
+    expect(matchesPattern("*://*.nordpass.com/*", "https://evilnordpass.com/")).toBe(false);
+    expect(matchesPattern("*://*/*", "ftp://example.com/")).toBe(false);
+    expect(matchesPattern("https://example.com/docs/*", "https://example.com/docs/a?b=1")).toBe(
+      true,
+    );
+    expect(matchesPattern("https://example.com/docs/*", "https://example.com/blog/")).toBe(false);
+    expect(matchesPattern("http://127.0.0.1/*", "http://127.0.0.1:8080/page")).toBe(true);
+  });
+
+  it("puts extensions into Full access or No access needed", () => {
+    const manifest = {
+      host_permissions: ["https://*.example.com/*"],
+      content_scripts: [{ matches: ["https://moon.test/*"] }],
+    };
+    expect(hasSiteAccess(manifest, "https://www.example.com/")).toBe(true);
+    expect(hasSiteAccess(manifest, "https://moon.test/x")).toBe(true);
+    expect(hasSiteAccess(manifest, "https://other.org/")).toBe(false);
+    expect(hasSiteAccess({ permissions: ["activeTab"] }, "https://other.org/")).toBe(false);
+  });
+});
+
+describe("side panel", () => {
+  const id = "eiaeiblijfjekdanodkjadfinkhbfgcd";
+
+  it("only shows the extension's own pages", () => {
+    expect(extensionPageUrl(id, "panel.html")).toBe(`chrome-extension://${id}/panel.html`);
+    expect(extensionPageUrl(id, "/ui/panel.html?x=1")).toBe(
+      `chrome-extension://${id}/ui/panel.html?x=1`,
+    );
+    expect(extensionPageUrl(id, "https://evil.example/")).toBeNull();
+    expect(extensionPageUrl(id, `chrome-extension://${"a".repeat(32)}/x.html`)).toBeNull();
+    expect(extensionPageUrl("not-an-id", "panel.html")).toBeNull();
+    expect(sidePanelPage({ side_panel: { default_path: "sp.html" } })).toBe("sp.html");
+    expect(sidePanelPage({})).toBeNull();
+  });
+
+  it("splits the page area between the pages and the panel", () => {
+    const area = { x: 0, y: 100, width: 1200, height: 700 };
+    const { pages, panel, view } = sidePanelRects(area, 400);
+    expect(panel.width).toBe(400);
+    expect(pages.width + SPLIT_GAP + panel.width).toBe(1200);
+    expect(view.y).toBe(100 + SIDE_PANEL_HEADER);
+    expect(view.height).toBe(700 - SIDE_PANEL_HEADER);
+    // Never so wide that the pages disappear, never too narrow to use.
+    expect(clampPanelWidth(5000, 1200)).toBeLessThanOrEqual(1200 - 320 - SPLIT_GAP);
+    expect(clampPanelWidth(10, 1200)).toBe(280);
   });
 });

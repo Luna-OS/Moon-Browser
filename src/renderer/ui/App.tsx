@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { EXTENSIONS_PARTITION } from "@shared/extensions";
 import type { WindowState } from "@shared/types";
 import {
   BackIcon,
@@ -8,6 +7,7 @@ import {
   ForwardIcon,
   HomeIcon,
   MenuIcon,
+  PuzzleIcon,
   ReloadIcon,
   ShieldIcon,
   SplitIcon,
@@ -17,6 +17,8 @@ import { useDocumentTheme } from "@theme/useTheme";
 import { AddressBar } from "./AddressBar";
 import { BookmarksBar, FindBar, PromptBar } from "./Bars";
 import { ContentArea } from "./ContentArea";
+import { useBrowserActions } from "./extension-actions";
+import { ExtensionButtons, ExtensionsMenu } from "./Extensions";
 import { useOverlay } from "./overlay";
 import { DownloadsPanel, MainMenu, Popover, ShieldPanel, type PopoverKind } from "./Popovers";
 import { onUiEvent, ui, useWindowState } from "./store";
@@ -37,6 +39,7 @@ function Browser({ state }: { state: WindowState }) {
   const [findTab, setFindTab] = useState<number | null>(null);
   const findOpen = findTab === state.activeId;
   const snapshots = useOverlay(popover !== null || dropdown || dragging);
+  const actions = useBrowserActions(!state.private);
   const content = useRef<HTMLDivElement>(null);
   const activeRef = useRef(state.activeId);
   useEffect(() => {
@@ -152,12 +155,18 @@ function Browser({ state }: { state: WindowState }) {
                 onDropdownChange={onDropdown}
               />
             </div>
-            {state.extensionTab !== null && (
-              <browser-action-list
-                className="mb-extension-actions"
-                partition={EXTENSIONS_PARTITION}
-                tab={state.extensionTab}
-              />
+            {!state.private && <ExtensionButtons state={state} actions={actions} />}
+            {!state.private && (
+              <button
+                type="button"
+                className="mb-icon-btn"
+                aria-label="Extensions"
+                title="Extensions"
+                aria-expanded={popover?.kind === "extensions"}
+                onClick={toggle("extensions")}
+              >
+                <PuzzleIcon />
+              </button>
             )}
             <button
               type="button"
@@ -247,19 +256,35 @@ function Browser({ state }: { state: WindowState }) {
       {popover && (
         <Popover
           anchor={popover.anchor}
-          width={popover.kind === "menu" ? 290 : popover.kind === "shield" ? 320 : 340}
+          width={
+            popover.kind === "menu"
+              ? 290
+              : popover.kind === "shield" || popover.kind === "extensions"
+                ? 320
+                : 340
+          }
           label={
             popover.kind === "menu"
               ? "Menu"
               : popover.kind === "shield"
                 ? "Moon Shield"
-                : "Downloads"
+                : popover.kind === "extensions"
+                  ? "Extensions"
+                  : "Downloads"
           }
           onClose={closePopover}
         >
           {popover.kind === "menu" && <MainMenu state={state} onClose={closePopover} />}
           {popover.kind === "shield" && <ShieldPanel state={state} onClose={closePopover} />}
           {popover.kind === "downloads" && <DownloadsPanel state={state} onClose={closePopover} />}
+          {popover.kind === "extensions" && (
+            <ExtensionsMenu
+              state={state}
+              actions={actions}
+              anchor={popover.anchor}
+              onClose={closePopover}
+            />
+          )}
         </Popover>
       )}
     </div>

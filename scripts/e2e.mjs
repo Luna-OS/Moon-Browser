@@ -234,43 +234,99 @@ try {
     );
   });
 
-  await check("the extension's toolbar button opens its pop-up", async () => {
-    const button = await waitFor(
-      () =>
-        ui.evaluate(() => {
-          const action = document
-            .querySelector("browser-action-list")
-            ?.shadowRoot?.querySelector(".action");
-          if (!action) return null;
-          const r = action.getBoundingClientRect();
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-        }),
-      "the extension button",
+  /** Evaluates `code` in the extension's pop-up. */
+  const inPopup = (code) =>
+    app.evaluate(
+      ({ webContents }, js) =>
+        webContents
+          .getAllWebContents()
+          .find((w) => w.getURL().endsWith("/popup.html"))
+          ?.executeJavaScript(js),
+      code,
     );
+  const extensionButton = () =>
+    waitFor(async () => {
+      const box = await ui
+        .getByRole("button", { name: "Moon test extension", exact: true })
+        .boundingBox()
+        .catch(() => null);
+      return box && { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+    }, "the extension button");
+
+  await check("the extension's toolbar button opens its pop-up", async () => {
+    const button = await extensionButton();
     await ui.mouse.click(button.x, button.y);
     // The pop-up asks chrome.tabs which tab is active and shows its title.
     await waitFor(
       () =>
-        app
-          .evaluate(({ webContents }) => {
-            const popup = webContents
-              .getAllWebContents()
-              .find((w) => w.getURL().endsWith("/popup.html"));
-            return popup?.executeJavaScript("document.getElementById('tab').textContent");
-          })
-          .then((title) => title === "Moon test page"),
+        inPopup("document.getElementById('tab').textContent").then(
+          (title) => title === "Moon test page",
+        ),
       "the pop-up to name the active tab",
     );
     // Extension pages get chrome.* functions, never the raw IPC bridge
     // behind them (it would let them act with another extension's ID).
-    const bridge = await app.evaluate(({ webContents }) =>
-      webContents
-        .getAllWebContents()
-        .find((w) => w.getURL().endsWith("/popup.html"))
-        .executeJavaScript("typeof globalThis.electron + '/' + typeof chrome.tabs.query"),
-    );
+    const bridge = await inPopup("typeof globalThis.electron + '/' + typeof chrome.tabs.query");
     if (bridge !== "undefined/function") throw new Error(`the pop-up sees ${bridge}`);
+    // chrome.identity, which Moon Browser adds itself.
+    const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
+    if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)
+      throw new Error(`identity.getRedirectURL gave ${redirect}`);
     await ui.mouse.click(button.x, button.y);
+  });
+
+  await check("the extensions menu lists the extension and pins it", async () => {
+    await ui.getByRole("button", { name: "Extensions", exact: true }).click();
+    const menu = ui.getByRole("menu", { name: "Extensions" });
+    await waitFor(() => menu.isVisible(), "the extensions menu");
+    // The test page is on 127.0.0.1, which the extension may read.
+    await waitFor(() => menu.getByText("Full access").isVisible(), "the Full access group");
+    await new Promise((r) => setTimeout(r, 500));
+    await shot("03-extensions-menu");
+    await menu.getByRole("button", { name: "Unpin Moon Test Extension" }).click();
+    await waitFor(
+      async () =>
+        (await ui.getByRole("button", { name: "Moon test extension", exact: true }).count()) === 0,
+      "the button to leave the toolbar",
+    );
+    await menu.getByRole("button", { name: "Pin Moon Test Extension" }).click();
+    await ui.keyboard.press("Escape");
+    await extensionButton();
+  });
+
+  await check("an extension can open its side panel", async () => {
+    const button = await extensionButton();
+    await ui.mouse.click(button.x, button.y);
+    await waitFor(() => inPopup("!!chrome.sidePanel"), "the pop-up again");
+    await inPopup("chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })");
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.webContents.getURL().endsWith("/popup.html"))
+        ?.destroy(),
+    );
+    // Now the button opens the side panel instead of the pop-up.
+    await ui.mouse.click(button.x, button.y);
+    await waitFor(
+      () =>
+        app.evaluate(({ webContents }) =>
+          webContents.getAllWebContents().some((w) => w.getURL().endsWith("/panel.html")),
+        ),
+      "the side panel page",
+    );
+    await waitFor(
+      () => ui.getByRole("button", { name: "Close side panel" }).isVisible(),
+      "the side panel's title bar",
+    );
+    await new Promise((r) => setTimeout(r, 600));
+    await shot("04-side-panel");
+    await ui.getByRole("button", { name: "Close side panel" }).click();
+    await waitFor(
+      () =>
+        app.evaluate(({ webContents }) =>
+          webContents.getAllWebContents().every((w) => !w.getURL().endsWith("/panel.html")),
+        ),
+      "the side panel to close",
+    );
   });
 
   await check("tracking parameters are removed before a page loads", async () => {
@@ -397,7 +453,7 @@ try {
     await waitFor(() => ui.getByRole("button", { name: "Home" }).isVisible(), "the home button");
   });
   await new Promise((r) => setTimeout(r, 600));
-  await shot("03-settings");
+  await shot("05-settings");
 
   await check("internal pages may only use their own methods", async () => {
     const err = await app.evaluate(async ({ webContents }) => {
@@ -424,7 +480,7 @@ try {
     });
     if (!found) throw new Error("the test page is not in the history");
   });
-  await shot("04-history");
+  await shot("06-history");
 
   await check("bookmarks and history import from Comet", async () => {
     const result = await app.evaluate(async ({ webContents }) => {
@@ -451,7 +507,7 @@ try {
     if (!bookmarked) throw new Error("settings page gone");
   });
   await new Promise((r) => setTimeout(r, 400));
-  await shot("05-import");
+  await shot("07-import");
 
   await check("the extensions page lists, switches off and on", async () => {
     const result = await app.evaluate(async ({ webContents, session }, id) => {
@@ -465,13 +521,16 @@ try {
       const off = !session.defaultSession.extensions.getExtension(id);
       await wc.executeJavaScript(`window.moon.invoke('extensions.setEnabled', '${id}', true)`);
       const on = !!session.defaultSession.extensions.getExtension(id);
-      return { names: list.map((e) => e.name), off, on };
+      return { names: list.map((e) => e.name), errors: list[0]?.errors ?? [], off, on };
     }, EXTENSION_ID);
     if (result.names.join() !== "Moon Test Extension" || !result.off || !result.on)
       throw new Error(JSON.stringify(result));
+    // The service worker's console.error is listed, like Chrome's "Errors".
+    if (!result.errors.some((e) => e.includes("moon-test: an error")))
+      throw new Error(`errors: ${JSON.stringify(result.errors)}`);
   });
   await new Promise((r) => setTimeout(r, 500));
-  await shot("06-extensions");
+  await shot("08-extensions");
 
   await check("the menu opens above the page", async () => {
     await ui.getByRole("button", { name: "Menu" }).click();
@@ -480,7 +539,7 @@ try {
       "the menu",
     );
     await new Promise((r) => setTimeout(r, 500));
-    await shot("07-menu");
+    await shot("09-menu");
     await ui.keyboard.press("Escape");
   });
 
@@ -491,7 +550,7 @@ try {
       "split view",
     );
     await new Promise((r) => setTimeout(r, 800));
-    await shot("08-split");
+    await shot("10-split");
     await ui.getByRole("button", { name: "Close split view" }).first().click();
   });
 

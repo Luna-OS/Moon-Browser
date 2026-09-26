@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { OverlaySnapshot } from "@shared/ipc";
-import { splitRects, SPLIT_GAP } from "@shared/layout";
+import { SIDE_PANEL_HEADER, sidePanelRects, splitRects, SPLIT_GAP } from "@shared/layout";
 import type { Rect, TabInfo, WindowState } from "@shared/types";
+import { CloseIcon, PuzzleIcon } from "@theme/icons";
 import { MoonPhase } from "@theme/MoonPhase";
 import { describeError } from "./errors";
 import { ui } from "./store";
@@ -114,7 +115,10 @@ export function ContentArea({
 
   const active = state.tabs.find((t) => t.id === state.activeId);
   const split = state.split;
-  const area: Rect = { x: 0, y: 0, width: size.width, height: size.height };
+  const whole: Rect = { x: 0, y: 0, width: size.width, height: size.height };
+  // The side panel takes the right part; the pages get the rest.
+  const panel = state.sidePanel ? sidePanelRects(whole, state.sidePanel.width) : null;
+  const area = panel ? panel.pages : whole;
   let panes: { tab: TabInfo; rect: Rect }[] = [];
   const splitVisible =
     !!split && !!active && (split.leftId === active.id || split.rightId === active.id);
@@ -154,6 +158,25 @@ export function ContentArea({
 
   const divider = splitVisible && panes.length === 2 ? panes[0].rect.x + panes[0].rect.width : null;
 
+  const startPanelDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const target = event.currentTarget;
+    target.setPointerCapture(event.pointerId);
+    onDividerDrag(true);
+    const move = (e: PointerEvent) => {
+      void ui.command({ type: "sidePanelWidth", width: origin.x + size.width - e.clientX });
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      onDividerDrag(false);
+    };
+    target.addEventListener("pointermove", move);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  };
+
   return (
     <div ref={ref} className="relative min-h-0 flex-1 bg-(--mb-bg)">
       {panes.map(({ tab, rect }) => (
@@ -183,6 +206,48 @@ export function ContentArea({
           onPointerDown={startDrag}
           onDoubleClick={() => void ui.command({ type: "splitRatio", ratio: 0.5 })}
         />
+      )}
+      {panel && state.sidePanel && (
+        <>
+          <div
+            className="mb-side-panel-head"
+            style={{
+              left: panel.panel.x,
+              top: 0,
+              width: panel.panel.width,
+              height: SIDE_PANEL_HEADER,
+            }}
+          >
+            {state.sidePanel.icon ? (
+              <img src={state.sidePanel.icon} width={16} height={16} alt="" />
+            ) : (
+              <PuzzleIcon size={16} />
+            )}
+            <span className="min-w-0 flex-1 truncate">{state.sidePanel.name}</span>
+            <button
+              type="button"
+              className="mb-icon-btn h-7! w-7!"
+              aria-label="Close side panel"
+              title="Close side panel"
+              onClick={() => void ui.command({ type: "sidePanelClose" })}
+            >
+              <CloseIcon size={14} />
+            </button>
+          </div>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize side panel"
+            className="mb-divider"
+            style={{
+              left: panel.pages.width - 4,
+              top: 0,
+              width: SPLIT_GAP + 8,
+              height: size.height,
+            }}
+            onPointerDown={startPanelDrag}
+          />
+        </>
       )}
     </div>
   );

@@ -43,3 +43,44 @@ export function contentArea(width: number, height: number, insets: Insets): Rect
     height: Math.max(0, Math.round(height - insets.top - insets.bottom)),
   };
 }
+
+/** The side panel: its title bar, the gap to the pages, and its width limits. */
+export const SIDE_PANEL_HEADER = 40;
+export const SIDE_PANEL_WIDTH = 380;
+const SIDE_PANEL_MIN = 280;
+const PAGES_MIN = 320;
+
+export function clampPanelWidth(width: number, areaWidth: number): number {
+  const max = Math.max(SIDE_PANEL_MIN, Math.min(720, areaWidth - PAGES_MIN - SPLIT_GAP));
+  const w = Number.isFinite(width) ? width : SIDE_PANEL_WIDTH;
+  return Math.round(Math.min(max, Math.max(SIDE_PANEL_MIN, w)));
+}
+
+/**
+ * The page area split for the side panel: the pages on the left, the panel
+ * on the right with its title bar (drawn by the UI) above the extension's
+ * page (a native view placed by the main process).
+ */
+export function sidePanelRects(
+  area: Rect,
+  width: number,
+): { pages: Rect; panel: Rect; view: Rect } {
+  const w = clampPanelWidth(width, area.width);
+  const pagesWidth = Math.max(0, area.width - w - SPLIT_GAP);
+  const panel: Rect = {
+    x: area.x + pagesWidth + SPLIT_GAP,
+    y: area.y,
+    width: w,
+    height: area.height,
+  };
+  return {
+    pages: { x: area.x, y: area.y, width: pagesWidth, height: area.height },
+    panel,
+    view: {
+      x: panel.x,
+      y: panel.y + SIDE_PANEL_HEADER,
+      width: panel.width,
+      height: Math.max(0, panel.height - SIDE_PANEL_HEADER),
+    },
+  };
+}

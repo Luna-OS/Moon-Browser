@@ -132,10 +132,14 @@ never imported.
 
 ## Known limitations
 
-- Extensions run on Electron's extension support plus electron-chrome-extensions, which cover
-  the common APIs but not all of Chrome's: native messaging (talking to desktop apps),
-  `declarativeNetRequest`, side panels and keyboard commands are missing, and
-  `chrome.webRequest` listeners get no events (Moon Shield handles the requests itself).
+- Extensions run on Electron's extension support plus electron-chrome-extensions and Moon
+  Browser's own additions (side panel, identity, search, debugger), which cover the common APIs
+  but not all of Chrome's: tab groups, `declarativeNetRequest` rules and keyboard commands are
+  missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
+  itself). Native messaging starts the desktop apps registered for Google Chrome, only for the
+  extensions those apps name, as Chrome does.
+- `chrome.debugger` (for extensions that declare it, with the install warning "Access the page
+  debugger") can attach to web pages only, never to Moon Browser's own pages.
 - Extension packages are checked for the right ID and come over HTTPS from Google, but their
   signature isn't verified beyond that the way Chrome does.
 - Chromium's Safe Browsing service isn't part of Electron; the Moon Shield lists (including
