@@ -29,7 +29,7 @@ jobs:
         working-directory: release
         run: sha256sum *.AppImage *.deb *.rpm > ../checksums-linux.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-linux
           path: |
@@ -55,7 +55,7 @@ jobs:
         working-directory: release
         run: sha256sum *.exe > ../checksums-windows.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-windows
           path: |
