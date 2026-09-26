@@ -265,6 +265,7 @@ export class MoonWindow {
     this.activeId = tab.id;
     tab.lastActive = Date.now();
     for (const t of this.visibleTabs()) t.wake();
+    if (tab.wc) this.browser.extensions.selectTab(tab.wc);
     if (this.find && this.find.tabId !== tab.id) this.stopFind();
     this.layout();
     this.update();
@@ -488,6 +489,10 @@ export class MoonWindow {
       showBookmarksBar: settings.showBookmarksBar,
       searchEngineName: this.browser.engine().name,
       fullscreen: this.win.isFullScreen(),
+      updateReady: this.browser.updater.readyVersion(),
+      isDefaultBrowser: this.isPrivate || this.browser.defaultBrowser.isDefault,
+      extensionTab:
+        !this.isPrivate && this.browser.extensions.count() > 0 ? (active?.wc?.id ?? null) : null,
     };
   }
 
@@ -751,6 +756,12 @@ export class MoonWindow {
         break;
       case "quit":
         app.quit();
+        break;
+      case "installUpdate":
+        this.browser.updater.install();
+        break;
+      case "makeDefaultBrowser":
+        void this.browser.defaultBrowser.make();
         break;
       case "activate":
         this.activate(cmd.tabId);

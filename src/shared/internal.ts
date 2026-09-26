@@ -12,6 +12,7 @@ export const INTERNAL_PAGES = [
   "history",
   "bookmarks",
   "downloads",
+  "extensions",
   "about",
 ] as const;
 
@@ -51,6 +52,7 @@ export const INTERNAL_ALIASES: Record<string, string> = {
   "about:history": "moon://history/",
   "about:bookmarks": "moon://bookmarks/",
   "about:downloads": "moon://downloads/",
+  "about:extensions": "moon://extensions/",
   "about:newtab": NEWTAB_URL,
   "about:home": NEWTAB_URL,
   "about:moon": "moon://about/",
@@ -58,5 +60,6 @@ export const INTERNAL_ALIASES: Record<string, string> = {
   "chrome://history": "moon://history/",
   "chrome://bookmarks": "moon://bookmarks/",
   "chrome://downloads": "moon://downloads/",
+  "chrome://extensions": "moon://extensions/",
   "chrome://newtab": NEWTAB_URL,
 };

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { AboutInfo } from "@shared/types";
 import { api } from "./api";
 import { Card, Row } from "./ui";
+import { UpdateRow } from "./UpdateRow";
 
 const CREDITS: { name: string; url: string; what: string; license: string }[] = [
   {
@@ -14,6 +15,24 @@ const CREDITS: { name: string; url: string; what: string; license: string }[] = 
     name: "Electron",
     url: "https://www.electronjs.org/",
     what: "Chromium as a building block",
+    license: "MIT",
+  },
+  {
+    name: "electron-chrome-extensions",
+    url: "https://github.com/samuelmaddock/electron-browser-shell",
+    what: "Chrome extension APIs, toolbar buttons and pop-ups",
+    license: "GPL-3.0",
+  },
+  {
+    name: "electron-chrome-web-store",
+    url: "https://github.com/samuelmaddock/electron-browser-shell",
+    what: "installing and updating extensions from the Chrome Web Store",
+    license: "MIT",
+  },
+  {
+    name: "electron-updater",
+    url: "https://www.electron.build/auto-update",
+    what: "updates without reinstalling",
     license: "MIT",
   },
   {
@@ -75,6 +94,7 @@ export function AboutPage() {
       </div>
 
       <Card title="This build">
+        <UpdateRow />
         {info ? (
           <>
             <Row
@@ -91,7 +111,7 @@ export function AboutPage() {
 
       <Card
         title="Open source"
-        description="Moon Browser is free software under the MIT license — made by Luna, standing on the shoulders of:"
+        description="Moon Browser is free software under the GNU General Public License, version 3 or later — made by Luna, standing on the shoulders of:"
       >
         <ul className="m-0 list-none p-1.5">
           {CREDITS.map((c) => (

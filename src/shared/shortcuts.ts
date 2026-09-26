@@ -24,7 +24,7 @@ export type ShortcutCommand =
   | { type: "findNext" }
   | { type: "findPrevious" }
   | { type: "bookmark" }
-  | { type: "openPage"; page: "history" | "downloads" | "bookmarks" | "settings" }
+  | { type: "openPage"; page: "history" | "downloads" | "bookmarks" | "settings" | "extensions" }
   | { type: "clearData" }
   | { type: "zoomIn" }
   | { type: "zoomOut" }

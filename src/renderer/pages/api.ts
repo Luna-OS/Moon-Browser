@@ -12,12 +12,14 @@ import type {
   Bookmark,
   ClearDataOptions,
   DownloadInfo,
+  ExtensionInfo,
   HistoryEntry,
   ImportableProfile,
   ImportResult,
   ResolvedTheme,
   Settings,
   SiteSettingsEntry,
+  UpdateStatus,
 } from "@shared/types";
 import type { DownloadAction } from "@shared/ipc";
 
@@ -36,6 +38,8 @@ export interface NewTabInfo {
   private: boolean;
   /** A browser to offer importing from on a fresh profile. */
   importFrom: string | null;
+  /** Offer to make Moon Browser the default browser. */
+  suggestDefault: boolean;
 }
 
 export const api = {
@@ -69,6 +73,15 @@ export const api = {
     m().invoke("protection.remove", site) as Promise<void>,
   isDefaultBrowser: () => m().invoke("defaultBrowser.get") as Promise<boolean>,
   makeDefaultBrowser: () => m().invoke("defaultBrowser.set") as Promise<boolean>,
+  dismissDefaultHint: () => m().invoke("defaultBrowser.dismissHint") as Promise<void>,
+  extensions: () => m().invoke("extensions.list") as Promise<ExtensionInfo[]>,
+  setExtensionEnabled: (id: string, enabled: boolean) =>
+    m().invoke("extensions.setEnabled", id, enabled) as Promise<void>,
+  removeExtension: (id: string) => m().invoke("extensions.remove", id) as Promise<void>,
+  extensionOptions: (id: string) => m().invoke("extensions.options", id) as Promise<void>,
+  updateStatus: () => m().invoke("update.status") as Promise<UpdateStatus>,
+  checkForUpdate: () => m().invoke("update.check") as Promise<UpdateStatus>,
+  installUpdate: () => m().invoke("update.install") as Promise<void>,
   about: () => m().invoke("about.info") as Promise<AboutInfo>,
   detectImports: () => m().invoke("import.detect") as Promise<ImportableProfile[]>,
   chooseImportFolder: () => m().invoke("import.choose") as Promise<ImportableProfile | null>,

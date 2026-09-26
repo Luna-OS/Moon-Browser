@@ -346,3 +346,16 @@ export const PopupIcon = ({ size = 15 }: P) => (
     <path d="M8 7V5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-3" />
   </Svg>
 );
+
+export const UpdateIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 16V8M8.5 11.5 12 8l3.5 3.5" />
+  </Svg>
+);
+
+export const PuzzleIcon = ({ size = 16 }: P) => (
+  <Svg size={size}>
+    <path d="M10 4a2 2 0 1 1 4 0v2h4a1 1 0 0 1 1 1v4h-2a2 2 0 1 0 0 4h2v4a1 1 0 0 1-1 1h-4v-2a2 2 0 1 0-4 0v2H6a1 1 0 0 1-1-1v-4h2a2 2 0 1 0 0-4H5V7a1 1 0 0 1 1-1h4Z" />
+  </Svg>
+);

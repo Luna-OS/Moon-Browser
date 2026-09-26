@@ -57,7 +57,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            targets: --linux deb AppImage --x64
+            targets: --linux deb AppImage rpm --x64
           - os: windows-latest
             targets: --win nsis --x64
     runs-on: ${{ matrix.os }}
@@ -67,6 +67,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Install rpm tooling
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm
       - run: npm ci
       - run: npm run build
       - run: npx electron-builder ${{ matrix.targets }} --publish never
@@ -96,12 +99,41 @@ jobs:
           }
           Stop-Process -Id $app.Id -Force
 
+      # The installer on real Windows: install, update over it the way the
+      # built-in updater does (--updated), then uninstall. The browser
+      # registration must survive the update and go with the uninstall.
+      - name: Install, update and uninstall (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem release\*.exe | Select-Object -First 1).FullName
+          $dir = "$env:LOCALAPPDATA\Programs\moon-browser"
+          $reg = "HKCU:\Software\RegisteredApplications"
+          function Registered { (Get-ItemProperty $reg -ErrorAction SilentlyContinue)."Moon Browser" }
+
+          Start-Process -Wait -FilePath $setup -ArgumentList "/S"
+          if (-not (Test-Path "$dir\moon-browser.exe")) { throw "not installed" }
+          if (-not (Registered)) { throw "not registered as a browser" }
+          $command = (Get-ItemProperty "HKCU:\Software\Classes\MoonBrowserURL\shell\open\command")."(default)"
+          if ($command -notlike '*" -- "%1"') { throw "unsafe link command: $command" }
+
+          Start-Process -Wait -FilePath $setup -ArgumentList "--updated", "/S"
+          if (-not (Test-Path "$dir\moon-browser.exe")) { throw "gone after the update" }
+          if (-not (Registered)) { throw "registration lost in the update" }
+
+          $uninstaller = (Get-ChildItem "$dir\Uninstall*.exe" | Select-Object -First 1).FullName
+          Start-Process -Wait -FilePath $uninstaller -ArgumentList "/S", "_?=$dir"
+          if (Test-Path "$dir\moon-browser.exe") { throw "still installed" }
+          if (Registered) { throw "still registered after uninstalling" }
+          Write-Host "Installed, updated and uninstalled cleanly."
+
       - uses: actions/upload-artifact@v4
         with:
           name: moon-browser-${{ runner.os }}
           path: |
             release/*.exe
             release/*.deb
+            release/*.rpm
             release/*.AppImage
           if-no-files-found: error
           retention-days: 7

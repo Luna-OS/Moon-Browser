@@ -3,6 +3,7 @@
  * UI never gets Node.js or raw IPC access.
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
+import { injectBrowserAction } from "electron-chrome-extensions/browser-action";
 import type { MoonUiApi, SuggestResult } from "../shared/api";
 import { UI_CHANNELS, type OverlaySnapshot, type UiCommand, type UiEvent } from "../shared/ipc";
 import type { WindowState } from "../shared/types";
@@ -26,3 +27,7 @@ const api: MoonUiApi = {
 };
 
 contextBridge.exposeInMainWorld("moonUI", api);
+
+// <browser-action-list>: the extensions' toolbar buttons, drawn by
+// electron-chrome-extensions. Clicking one opens its pop-up window.
+injectBrowserAction();

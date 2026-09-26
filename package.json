@@ -5,7 +5,7 @@
   "type": "module",
   "version": "0.1.0",
   "description": "Moon Browser – the web, calmly under the moon. A private, open-source Chromium browser.",
-  "license": "MIT",
+  "license": "GPL-3.0-or-later",
   "author": {
     "name": "Luna",
     "url": "https://github.com/Luna-OS"
@@ -44,6 +44,9 @@
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
+    "electron-chrome-extensions": "^4.9.0",
+    "electron-chrome-web-store": "^0.13.0",
+    "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",

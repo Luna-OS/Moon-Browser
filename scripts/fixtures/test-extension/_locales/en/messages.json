@@ -1,0 +1,6 @@
+{
+  "name": { "message": "Moon Test Extension" },
+  "description": {
+    "message": "Checks that Chrome extensions work in Moon Browser's end-to-end test."
+  }
+}

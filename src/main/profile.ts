@@ -175,6 +175,9 @@ interface Stats {
   totalBlocked: number;
   hiddenTopSites: string[];
   importHintDismissed: boolean;
+  defaultBrowserHintDismissed: boolean;
+  /** Moon Browser quit to install an update: restore the session on the next start. */
+  restoreAfterUpdate: boolean;
 }
 
 export class Profile {
@@ -184,6 +187,8 @@ export class Profile {
   readonly downloads: JsonStore<DownloadInfo[]>;
   readonly permissions: JsonStore<PermissionMap>;
   readonly zoom: JsonStore<Record<string, number>>;
+  /** Extensions the user switched off. */
+  readonly extensions: JsonStore<{ disabled: string[] }>;
   readonly session: JsonStore<SavedSession>;
   readonly stats: JsonStore<Stats>;
 
@@ -199,6 +204,12 @@ export class Profile {
     this.downloads = JsonStore.load(profilePath("downloads.json"), parseDownloads);
     this.permissions = JsonStore.load(profilePath("permissions.json"), parsePermissions);
     this.zoom = JsonStore.load(profilePath("zoom.json"), parseZoom);
+    this.extensions = JsonStore.load(profilePath("extensions.json"), (raw) => ({
+      disabled:
+        isObj(raw) && Array.isArray(raw.disabled)
+          ? raw.disabled.filter((s): s is string => typeof s === "string").slice(0, 1000)
+          : [],
+    }));
     this.session = JsonStore.load(profilePath("session.json"), parseSession, { delay: 2000 });
     this.stats = JsonStore.load(profilePath("stats.json"), (raw): Stats => ({
       totalBlocked: isObj(raw) ? num(raw.totalBlocked) : 0,
@@ -207,6 +218,8 @@ export class Profile {
           ? raw.hiddenTopSites.filter((s): s is string => typeof s === "string").slice(0, 500)
           : [],
       importHintDismissed: isObj(raw) && raw.importHintDismissed === true,
+      defaultBrowserHintDismissed: isObj(raw) && raw.defaultBrowserHintDismissed === true,
+      restoreAfterUpdate: isObj(raw) && raw.restoreAfterUpdate === true,
     }));
   }
 
@@ -218,6 +231,7 @@ export class Profile {
       this.downloads,
       this.permissions,
       this.zoom,
+      this.extensions,
       this.session,
       this.stats,
     ] as JsonStore<unknown>[]) {

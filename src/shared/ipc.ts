@@ -36,6 +36,9 @@ export type UiCommand =
   /** Continue past an HTTPS or Moon Shield warning for this tab's page. */
   | { type: "proceed"; tabId: number }
   | { type: "focusPage" }
+  /** Restart Moon Browser and install the downloaded update. */
+  | { type: "installUpdate" }
+  | { type: "makeDefaultBrowser" }
   | { type: "insets"; top: number; bottom: number };
 
 export type DownloadAction = "open" | "show" | "cancel" | "pause" | "resume" | "remove";
@@ -84,8 +87,16 @@ export type InternalMethod =
   | "protection.remove"
   | "defaultBrowser.get"
   | "defaultBrowser.set"
+  | "defaultBrowser.dismissHint"
   | "downloads.chooseFolder"
   | "about.info"
+  | "extensions.list"
+  | "extensions.setEnabled"
+  | "extensions.remove"
+  | "extensions.options"
+  | "update.status"
+  | "update.check"
+  | "update.install"
   | "import.detect"
   | "import.choose"
   | "import.run"
@@ -95,7 +106,14 @@ export type InternalMethod =
 const COMMON: InternalMethod[] = ["settings.get", "navigate", "openUrl"];
 
 export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
-  newtab: [...COMMON, "newtab.info", "topSites.hide", "import.dismissHint"],
+  newtab: [
+    ...COMMON,
+    "newtab.info",
+    "topSites.hide",
+    "import.dismissHint",
+    "defaultBrowser.set",
+    "defaultBrowser.dismissHint",
+  ],
   settings: [
     ...COMMON,
     "settings.set",
@@ -110,6 +128,9 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "defaultBrowser.set",
     "downloads.chooseFolder",
     "about.info",
+    "update.status",
+    "update.check",
+    "update.install",
     "import.detect",
     "import.choose",
     "import.run",
@@ -117,10 +138,18 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
   history: [...COMMON, "history.query", "history.remove", "data.clear"],
   bookmarks: [...COMMON, "bookmarks.list", "bookmarks.update", "bookmarks.remove"],
   downloads: [...COMMON, "downloads.list", "downloads.action", "downloads.clear"],
-  about: [...COMMON, "about.info"],
+  extensions: [
+    ...COMMON,
+    "extensions.list",
+    "extensions.setEnabled",
+    "extensions.remove",
+    "extensions.options",
+  ],
+  about: [...COMMON, "about.info", "update.status", "update.check", "update.install"],
 };
 
 export const INTERNAL_CHANNEL = "moon:invoke";
 export const INTERNAL_EVENT_CHANNEL = "moon:event";
 
-export type InternalEvent = "settings" | "downloads" | "bookmarks" | "history" | "adblock";
+export type InternalEvent =
+  "settings" | "downloads" | "bookmarks" | "history" | "adblock" | "extensions" | "update";

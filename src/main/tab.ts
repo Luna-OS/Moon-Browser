@@ -47,6 +47,8 @@ function isOpenable(url: string, from: string): boolean {
   if (/^(https?|about|blob|data):/i.test(url))
     return !/^data:/i.test(url) || /^data:image\//i.test(url);
   if (isInternalUrl(url)) return isInternalUrl(from);
+  // An extension's own pages may open more of its pages.
+  if (/^chrome-extension:/i.test(url)) return originOf(url) === originOf(from);
   return false;
 }
 
@@ -119,6 +121,7 @@ export class Tab {
     this.contents = wc;
     this.contentsId = wc.id;
     this.browser.registerTab(wc.id, this);
+    this.browser.extensions.addTab(wc, this.window);
     wc.setAudioMuted(this.muted);
     wc.setWebRTCIPHandlingPolicy(
       this.browser.settings.webrtcProtection ? "default_public_interface_only" : "default",
@@ -170,6 +173,7 @@ export class Tab {
     this.contents = null;
     if (view) this.window.detach(view);
     this.browser.unregisterTab(this.contentsId);
+    if (wc) this.browser.extensions.removeTab(wc);
     if (wc && !wc.isDestroyed()) wc.close();
   }
 
@@ -309,6 +313,7 @@ export class Tab {
   private security(): SecurityState {
     if (this.error) return "error";
     if (isInternalUrl(this.url)) return "internal";
+    if (this.url.startsWith("chrome-extension:")) return "extension";
     if (this.url.startsWith("https:")) return "secure";
     if (this.url.startsWith("file:")) return "local";
     if (this.url.startsWith("http:")) {

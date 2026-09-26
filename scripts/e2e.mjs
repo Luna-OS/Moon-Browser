@@ -4,7 +4,7 @@
 //
 //   node scripts/e2e.mjs [--screenshots dir]
 import { _electron as electron } from "playwright-core";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -35,6 +35,22 @@ const base = `http://127.0.0.1:${server.address().port}`;
 
 const profile = await mkdtemp(join(tmpdir(), "moon-e2e-"));
 if (shotsDir) await mkdir(shotsDir, { recursive: true });
+
+// A small Chrome extension, installed the way the Chrome Web Store installs
+// them: Extensions/<id>/<version>_0 in the profile.
+const EXTENSION_ID = "cbjmnpnjdiaanhmjfcndgpnieioncein";
+await cp(
+  join(root, "scripts", "fixtures", "test-extension"),
+  join(profile, "Extensions", EXTENSION_ID, "1.0.0_0"),
+  { recursive: true },
+);
+// The same package under another ID: its key doesn't match, so it must not load.
+const IMPOSTOR_ID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+await cp(
+  join(root, "scripts", "fixtures", "test-extension"),
+  join(profile, "Extensions", IMPOSTOR_ID, "1.0.0_0"),
+  { recursive: true },
+);
 
 // A fake Comet profile to import from, where Comet keeps it: under
 // %LOCALAPPDATA% on Windows, under $XDG_CONFIG_HOME on Linux.
@@ -192,6 +208,70 @@ try {
   });
   await new Promise((r) => setTimeout(r, 500));
   await shot("02-web-page");
+
+  await check("a Chrome extension loads and its content script runs", async () => {
+    await waitFor(
+      () =>
+        app.evaluate(
+          ({ session }, id) => !!session.defaultSession.extensions.getExtension(id),
+          EXTENSION_ID,
+        ),
+      "the extension to load",
+    );
+    const loaded = await app.evaluate(({ session }) =>
+      session.defaultSession.extensions.getAllExtensions().map((e) => e.id),
+    );
+    if (loaded.join() !== EXTENSION_ID) throw new Error(`loaded: ${loaded.join()}`);
+    await waitFor(
+      () =>
+        app.evaluate(({ webContents }) => {
+          const wc = webContents.getAllWebContents().find((w) => w.getTitle() === "Moon test page");
+          return wc.executeJavaScript(
+            "document.documentElement.dataset.moonExtension === 'content-script' && document.documentElement.dataset.moonPong === 'yes'",
+          );
+        }),
+      "the content script and its answer from the service worker",
+    );
+  });
+
+  await check("the extension's toolbar button opens its pop-up", async () => {
+    const button = await waitFor(
+      () =>
+        ui.evaluate(() => {
+          const action = document
+            .querySelector("browser-action-list")
+            ?.shadowRoot?.querySelector(".action");
+          if (!action) return null;
+          const r = action.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }),
+      "the extension button",
+    );
+    await ui.mouse.click(button.x, button.y);
+    // The pop-up asks chrome.tabs which tab is active and shows its title.
+    await waitFor(
+      () =>
+        app
+          .evaluate(({ webContents }) => {
+            const popup = webContents
+              .getAllWebContents()
+              .find((w) => w.getURL().endsWith("/popup.html"));
+            return popup?.executeJavaScript("document.getElementById('tab').textContent");
+          })
+          .then((title) => title === "Moon test page"),
+      "the pop-up to name the active tab",
+    );
+    // Extension pages get chrome.* functions, never the raw IPC bridge
+    // behind them (it would let them act with another extension's ID).
+    const bridge = await app.evaluate(({ webContents }) =>
+      webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().endsWith("/popup.html"))
+        .executeJavaScript("typeof globalThis.electron + '/' + typeof chrome.tabs.query"),
+    );
+    if (bridge !== "undefined/function") throw new Error(`the pop-up sees ${bridge}`);
+    await ui.mouse.click(button.x, button.y);
+  });
 
   await check("tracking parameters are removed before a page loads", async () => {
     const box = ui.getByRole("combobox", { name: "Address and search bar" });
@@ -373,6 +453,26 @@ try {
   await new Promise((r) => setTimeout(r, 400));
   await shot("05-import");
 
+  await check("the extensions page lists, switches off and on", async () => {
+    const result = await app.evaluate(async ({ webContents, session }, id) => {
+      const wc = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().startsWith("moon://settings"));
+      await wc.loadURL("moon://extensions/");
+      await new Promise((r) => setTimeout(r, 500));
+      const list = await wc.executeJavaScript("window.moon.invoke('extensions.list')");
+      await wc.executeJavaScript(`window.moon.invoke('extensions.setEnabled', '${id}', false)`);
+      const off = !session.defaultSession.extensions.getExtension(id);
+      await wc.executeJavaScript(`window.moon.invoke('extensions.setEnabled', '${id}', true)`);
+      const on = !!session.defaultSession.extensions.getExtension(id);
+      return { names: list.map((e) => e.name), off, on };
+    }, EXTENSION_ID);
+    if (result.names.join() !== "Moon Test Extension" || !result.off || !result.on)
+      throw new Error(JSON.stringify(result));
+  });
+  await new Promise((r) => setTimeout(r, 500));
+  await shot("06-extensions");
+
   await check("the menu opens above the page", async () => {
     await ui.getByRole("button", { name: "Menu" }).click();
     await waitFor(
@@ -380,7 +480,7 @@ try {
       "the menu",
     );
     await new Promise((r) => setTimeout(r, 500));
-    await shot("06-menu");
+    await shot("07-menu");
     await ui.keyboard.press("Escape");
   });
 
@@ -391,7 +491,7 @@ try {
       "split view",
     );
     await new Promise((r) => setTimeout(r, 800));
-    await shot("07-split");
+    await shot("08-split");
     await ui.getByRole("button", { name: "Close split view" }).first().click();
   });
 

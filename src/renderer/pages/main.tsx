@@ -8,6 +8,7 @@ import { api, useLive } from "./api";
 import { AboutPage } from "./AboutPage";
 import { BookmarksPage } from "./BookmarksPage";
 import { DownloadsPage } from "./DownloadsPage";
+import { ExtensionsPage } from "./ExtensionsPage";
 import { HistoryPage } from "./HistoryPage";
 import { NewTabPage } from "./NewTabPage";
 import { SettingsPage } from "./SettingsPage";
@@ -18,6 +19,7 @@ const TITLES: Record<InternalPage, string> = {
   history: "History",
   bookmarks: "Bookmarks",
   downloads: "Downloads",
+  extensions: "Extensions",
   about: "About Moon Browser",
 };
 
@@ -44,6 +46,9 @@ function Root({ page }: { page: InternalPage }) {
       break;
     case "downloads":
       body = <DownloadsPage />;
+      break;
+    case "extensions":
+      body = <ExtensionsPage />;
       break;
     case "about":
       body = <AboutPage />;

@@ -65,9 +65,42 @@ can never be read as a command-line switch.
   be chosen for strict mode.
 - The user agent is a plain, version-reduced Chrome user agent, and `Accept-Language` carries
   only the preferred language, so Moon Browser doesn't stand out.
-- Moon Browser itself only contacts the filter-list mirror (every few days). There is no
-  telemetry, crash reporting, sync or update check. Spell-check dictionaries (downloaded from
-  Google on Linux) are only fetched if spell checking is switched on.
+- Moon Browser itself only contacts the filter-list mirror (every few days), GitHub to look for a
+  new release (every few hours; *Settings → Updates* switches it off) and, when extensions are
+  installed, Google's extension update server for them. There is no telemetry, crash reporting
+  or sync. Spell-check dictionaries (downloaded from Google on Linux) are only fetched if spell
+  checking is switched on.
+
+### Updates
+
+Installed copies look for a newer release of `Luna-OS/Moon-Browser` on GitHub (`latest.yml`,
+`latest-linux.yml`), download it over HTTPS and check it against the SHA-512 hash in that file
+before installing. Downgrades and pre-releases are never installed. On Windows the new
+installer runs over the installed version (per user, no administrator rights); an AppImage is
+replaced; `.deb` and `.rpm` packages are installed through `pkexec`/`sudo`, which asks for the
+administrator password, and only when the user clicks *Update*. Because the builds aren't
+code-signed yet, an update is as trustworthy as the GitHub release it comes from.
+
+The Windows installer only removes the browser registration when Moon Browser is really
+uninstalled, not while an update replaces it; the profile is never deleted by the installer.
+
+### Extensions
+
+- Extensions only come from the **Chrome Web Store** (Manifest V3 only; unpacked or side-loaded
+  extensions are not loaded). The package is downloaded over HTTPS from Google's update server,
+  and its extension ID must match the key inside it.
+- Before an extension is added, Moon Browser shows what it may do (the permission warnings
+  Chrome would show) and adds nothing without a click on *Add extension*. Optional permissions
+  requested later are asked for the same way.
+- Extensions run **only in normal windows**, never in private ones, and web pages get none of
+  their APIs: the extension API preloads only act on `chrome-extension://` pages and the
+  Chrome Web Store's own pages.
+- Extension pages get only the web permissions their manifest declares (notifications,
+  clipboard reading, location); everything else is refused.
+- Links in extension pop-ups open as normal tabs. Extensions are updated from the Chrome Web
+  Store; *Menu → Extensions* switches them off or removes them with their files.
+- The toolbar's extension buttons live in the browser UI; the only thing they can reach is the
+  extension system of the normal browsing session.
 
 ### Permissions
 
@@ -99,7 +132,12 @@ never imported.
 
 ## Known limitations
 
-- Chrome Web Store extensions are not supported.
+- Extensions run on Electron's extension support plus electron-chrome-extensions, which cover
+  the common APIs but not all of Chrome's: native messaging (talking to desktop apps),
+  `declarativeNetRequest`, side panels and keyboard commands are missing, and
+  `chrome.webRequest` listeners get no events (Moon Shield handles the requests itself).
+- Extension packages are checked for the right ID and come over HTTPS from Google, but their
+  signature isn't verified beyond that the way Chrome does.
 - Chromium's Safe Browsing service isn't part of Electron; the Moon Shield lists (including
   uBlock Origin's *Badware risks* list) and, optionally, Quad9 DNS cover part of it.
 - The builds are not code-signed yet.

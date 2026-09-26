@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="57" viewBox="0 0 150 57">
+  <!-- Header image of the Windows installer's inner pages (150×57), like MoonTask's. -->
+  <defs>
+    <radialGradient id="glow" cx="24" cy="28" r="42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b9aefb" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#b9aefb" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="moon" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#fdfbff"/>
+      <stop offset="0.55" stop-color="#ddd6ff"/>
+      <stop offset="1" stop-color="#a89cf2"/>
+    </linearGradient>
+    <linearGradient id="orbit" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#9ad7f5"/>
+      <stop offset="1" stop-color="#7fe3c6"/>
+    </linearGradient>
+    <linearGradient id="word" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f4f1ff"/>
+      <stop offset="1" stop-color="#b9aefb"/>
+    </linearGradient>
+    <mask id="crescent">
+      <rect width="150" height="57" fill="#fff"/>
+      <circle cx="30" cy="22" r="12" fill="#000"/>
+    </mask>
+    <clipPath id="front">
+      <rect x="0" y="28" width="60" height="29"/>
+    </clipPath>
+  </defs>
+  <!-- The header strip's own color (MUI_BGCOLOR in theme.nsh), so the image has no edge. -->
+  <rect width="150" height="57" fill="#1d1742"/>
+  <rect width="150" height="57" fill="url(#glow)"/>
+  <circle cx="132" cy="10" r="0.9" fill="#fff" opacity="0.8"/>
+  <circle cx="142" cy="44" r="0.8" fill="#d6cffd" opacity="0.7"/>
+  <circle cx="64" cy="9" r="0.7" fill="#fff" opacity="0.6"/>
+  <ellipse cx="24" cy="28" rx="21" ry="6.5" transform="rotate(-18 24 28)" fill="none" stroke="url(#orbit)" stroke-width="1.8" stroke-opacity="0.45"/>
+  <circle cx="24" cy="28" r="15" fill="url(#moon)" mask="url(#crescent)"/>
+  <g clip-path="url(#front)">
+    <ellipse cx="24" cy="28" rx="21" ry="6.5" transform="rotate(-18 24 28)" fill="none" stroke="url(#orbit)" stroke-width="1.8"/>
+  </g>
+  <circle cx="42" cy="20.5" r="1.8" fill="#7fe3c6"/>
+  <text x="50" y="30" font-family="URW Gothic" font-weight="600" font-size="14" fill="url(#word)">Moon</text>
+  <text x="50" y="44" font-family="URW Gothic" font-weight="600" font-size="14" fill="url(#word)">Browser</text>
+</svg>

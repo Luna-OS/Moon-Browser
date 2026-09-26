@@ -4,8 +4,7 @@
  * frame of a tab showing that internal page — and each page may only use
  * the methods listed for it in PAGE_METHODS.
  */
-import { app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
-import { execFile } from "node:child_process";
+import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { BANGS } from "@shared/bangs";
 import { SEARCH_ENGINES } from "@shared/engines";
 import { internalPageOf } from "@shared/internal";
@@ -76,11 +75,15 @@ export function validateCommand(raw: unknown): UiCommand | null {
     case "toggleProtection":
     case "unsplit":
     case "focusPage":
+    case "installUpdate":
+    case "makeDefaultBrowser":
       return { type: c.type } as UiCommand;
     case "selectTab":
       return isNum(c.index) ? { type: "selectTab", index: c.index } : null;
     case "openPage":
-      return ["history", "downloads", "bookmarks", "settings"].includes(c.page as string)
+      return ["history", "downloads", "bookmarks", "settings", "extensions"].includes(
+        c.page as string,
+      )
         ? { type: "openPage", page: c.page as "history" }
         : null;
     case "activate":
@@ -253,6 +256,10 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       totalBlocked: profile.stats.get().totalBlocked,
       engine: browser.engine().name,
       private: tab.window.isPrivate,
+      suggestDefault:
+        !tab.window.isPrivate &&
+        !profile.stats.get().defaultBrowserHintDismissed &&
+        !(await browser.defaultBrowser.refresh()),
     }),
     "import.detect": () => browser.importer.detect(),
     "import.choose": (tab) => browser.importer.chooseFolder(tab.window.win),
@@ -368,8 +375,26 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
         });
       }
     },
-    "defaultBrowser.get": () => isDefaultBrowser(),
-    "defaultBrowser.set": () => makeDefaultBrowser(),
+    "extensions.list": () => browser.extensions.list(),
+    "extensions.setEnabled": (_tab, id, enabled) => {
+      if (isStr(id, 64) && typeof enabled === "boolean")
+        return browser.extensions.setEnabled(id, enabled);
+    },
+    "extensions.remove": (_tab, id) => {
+      if (isStr(id, 64)) return browser.extensions.remove(id);
+    },
+    "extensions.options": (_tab, id) => {
+      if (isStr(id, 64)) return browser.extensions.openOptions(id);
+    },
+    "update.status": () => browser.updater.status(),
+    "update.check": () => browser.updater.check(),
+    "update.install": () => browser.updater.install(),
+    "defaultBrowser.get": () => browser.defaultBrowser.refresh(true),
+    "defaultBrowser.set": () => browser.defaultBrowser.make(),
+    "defaultBrowser.dismissHint": () => {
+      profile.stats.get().defaultBrowserHintDismissed = true;
+      profile.stats.changed();
+    },
     "about.info": (): AboutInfo => ({
       version: app.getVersion(),
       electron: process.versions.electron,
@@ -381,46 +406,4 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       userData: app.getPath("userData"),
     }),
   } satisfies Record<InternalMethod, Handler>;
-}
-
-const execText = (cmd: string, args: string[]) =>
-  new Promise<string>((resolve) =>
-    execFile(cmd, args, { timeout: 5000 }, (_err, stdout) => resolve(String(stdout ?? ""))),
-  );
-
-const LINUX_DESKTOP_FILE = () => process.env.CHROME_DESKTOP || "moon-browser.desktop";
-
-async function isDefaultBrowser(): Promise<boolean> {
-  if (process.platform === "win32") {
-    // The user's choice, as Windows records it.
-    const out = await execText("reg", [
-      "query",
-      "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice",
-      "/v",
-      "ProgId",
-    ]);
-    return /MoonBrowserURL/.test(out);
-  }
-  if (process.platform === "linux") {
-    const out = await execText("xdg-settings", ["get", "default-web-browser"]);
-    return out.trim() === LINUX_DESKTOP_FILE();
-  }
-  return app.isDefaultProtocolClient("https");
-}
-
-/**
- * Windows doesn't let apps make themselves the default browser: the
- * installer registers Moon Browser, and this opens the system settings to
- * choose it. On Linux, xdg-settings does it directly.
- */
-async function makeDefaultBrowser(): Promise<boolean> {
-  if (process.platform === "win32") {
-    await shell.openExternal("ms-settings:defaultapps?registeredAppUser=Moon%20Browser");
-  } else if (process.platform === "linux") {
-    await execText("xdg-settings", ["set", "default-web-browser", LINUX_DESKTOP_FILE()]);
-  } else {
-    app.setAsDefaultProtocolClient("http");
-    app.setAsDefaultProtocolClient("https");
-  }
-  return isDefaultBrowser();
 }

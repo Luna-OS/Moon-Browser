@@ -14,14 +14,17 @@ import {
   InfoIcon,
   MaskIcon,
   MinusIcon,
+  MoonIcon,
   PauseIcon,
   PlayIcon,
   PlusIcon,
   PrintIcon,
+  PuzzleIcon,
   SettingsIcon,
   ShieldIcon,
   SplitIcon,
   TabIcon,
+  UpdateIcon,
   WindowIcon,
 } from "@theme/icons";
 import type { UiCommand } from "@shared/ipc";
@@ -81,15 +84,23 @@ function Item({
   icon,
   label,
   keys,
+  accent = false,
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   keys?: string;
+  /** Stands out: something waiting for the user. */
+  accent?: boolean;
   onClick: () => void;
 }) {
   return (
-    <button type="button" role="menuitem" className="mb-menu-item" onClick={onClick}>
+    <button
+      type="button"
+      role="menuitem"
+      className={`mb-menu-item ${accent ? "text-(--mb-accent) font-medium" : ""}`}
+      onClick={onClick}
+    >
       {icon}
       <span className="flex-1">{label}</span>
       {keys && <span className="text-xs text-(--mb-text-faint)">{keys}</span>}
@@ -108,6 +119,17 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
   };
   return (
     <div role="menu" aria-label="Moon Browser menu">
+      {state.updateReady && (
+        <>
+          <Item
+            accent
+            icon={<UpdateIcon size={16} />}
+            label={`Restart to update to ${state.updateReady}`}
+            onClick={act({ type: "installUpdate" })}
+          />
+          <Sep />
+        </>
+      )}
       <Item icon={<TabIcon />} label="New tab" keys={`${mod}T`} onClick={act({ type: "newTab" })} />
       <Item
         icon={<WindowIcon />}
@@ -139,6 +161,11 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
         label="Bookmarks"
         keys={`${mod}Shift+O`}
         onClick={act({ type: "openPage", page: "bookmarks" })}
+      />
+      <Item
+        icon={<PuzzleIcon />}
+        label="Extensions"
+        onClick={act({ type: "openPage", page: "extensions" })}
       />
       <Sep />
       <div className="flex h-9 items-center gap-1 px-2">
@@ -203,6 +230,13 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
         keys={`${mod},`}
         onClick={act({ type: "openPage", page: "settings" })}
       />
+      {!state.isDefaultBrowser && (
+        <Item
+          icon={<MoonIcon size={16} />}
+          label="Set as default browser"
+          onClick={act({ type: "makeDefaultBrowser" })}
+        />
+      )}
       <Item
         icon={<InfoIcon size={16} />}
         label="About Moon Browser"

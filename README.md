@@ -24,6 +24,12 @@ and nothing phoning home. It wears the same night-sky design as
   and scriptlets. Optional cookie-banner and annoyance lists. One click switches it off per site.
 - **Import from Comet** — bookmarks and history from Comet, Chrome, Brave, Edge, Helium, Vivaldi
   or any other Chromium browser, read directly from its profile folder
+- **Chrome extensions** from the Chrome Web Store — your password manager (NordPass, Bitwarden,
+  1Password, …) with its toolbar button and pop-up. Before an extension is added, Moon Browser
+  shows what it will be able to do; *Menu → Extensions* switches them off or removes them.
+- **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
+  click on *Update* installs it over the old one and brings your tabs back
+- **Default browser in one click** — from the new tab page, the menu or *Settings → System*
 - **Split view** — two tabs side by side, with a divider to resize
 - **Sleeping tabs** — tabs you haven't looked at for a while give their memory back and wake up
   when you return
@@ -43,9 +49,11 @@ and nothing phoning home. It wears the same night-sky design as
 
 Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for the details.
 
-- **No telemetry, no accounts, no sync.** Moon Browser only goes online for the pages you open
-  and to refresh its filter lists every few days. Even Chromium's spell-check dictionaries are
-  not fetched from Google unless you switch spell checking on (Linux).
+- **No telemetry, no accounts, no sync.** Moon Browser only goes online for the pages you open,
+  to refresh its filter lists every few days and to look for a new release on GitHub (every few
+  hours; *Settings → Updates* switches it off). Installed extensions are kept up to date from the
+  Chrome Web Store. Even Chromium's spell-check dictionaries are not fetched from Google unless
+  you switch spell checking on (Linux).
 - **HTTPS first** — every site is tried over HTTPS; if a site has no working HTTPS, or sends you
   back to HTTP, Moon Browser warns before loading it insecurely. Nothing is downgraded silently.
 - **Dangerous pages are stopped** before they load: sites on the malware, scam and tracker lists
@@ -64,8 +72,10 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 - **Hardened app** — Electron fuses are flipped in the shipped binary: no running as Node.js,
   no `--inspect`, no `NODE_OPTIONS`, only the integrity-checked `app.asar` is loaded, and
   **cookies are encrypted on disk** with the system's key store.
-- **No password store** — on purpose. Keep passwords in a dedicated password manager (Bitwarden,
-  KeePassXC, …) that works in every browser.
+- **No built-in password store** — on purpose. Add your password manager's extension (NordPass,
+  Bitwarden, 1Password, …) from the Chrome Web Store instead.
+- **Extensions only with your OK** — each one shows its permissions before it is added, only
+  comes from the Chrome Web Store, and never runs in private windows.
 - Optional: delete cookies and site data every time Moon Browser closes.
 
 ## Keyboard
@@ -93,18 +103,48 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 
 ## Installation
 
-Installers for **Windows** (`.exe`, x64 and ARM64) and **Linux** (`.AppImage`, `.deb`, `.rpm`)
-are published on the [Releases](https://github.com/Luna-OS/Moon-Browser/releases) page. macOS
-follows later.
+Installers for **Windows** (`.exe`, x64; runs on ARM64 through Windows' emulation) and **Linux**
+(`.AppImage`, `.deb`, `.rpm`) are published on the
+[Releases](https://github.com/Luna-OS/Moon-Browser/releases) page. macOS follows later.
 
-- **Windows:** run the installer. Moon Browser registers itself as a web browser; choose it
-  under *Settings → Apps → Default apps* (or with *Make default* in Moon Browser's settings).
+- **Windows:** run the installer — it installs for your user account, needs no administrator
+  rights and lets you choose the folder. Moon Browser registers itself as a web browser; *Make
+  default* (new tab page, menu or settings) opens Windows' *Default apps* with Moon Browser
+  preselected.
 - **Linux:** install the `.deb` or `.rpm`, or make the `.AppImage` executable and start it.
   On Ubuntu 24.04 and newer, prefer the `.deb`: it sets up Chromium's sandbox helper, which the
   AppImage can't.
 
 The builds are not code-signed yet, so Windows SmartScreen asks once before the first start
 (*More info → Run anyway*).
+
+### Updates
+
+Moon Browser looks for a new release every few hours and downloads it in the background. When
+it is ready, an **Update** button appears next to the menu: click it and Moon Browser restarts
+into the new version with your tabs. Nothing has to be uninstalled, and your profile —
+bookmarks, history, settings, extensions — stays where it is. *Settings → Updates* shows the
+state and has a *Check now* button.
+
+- **Windows:** the new installer runs silently over the installed version (also when you quit).
+- **AppImage:** the AppImage file is replaced.
+- **.deb / .rpm:** the package is installed with your system's package tool, which asks for your
+  password — so only when you click *Update*.
+
+Running the installer of a newer version by hand works too: it updates in place.
+
+### Using NordPass (or another password manager)
+
+1. Open *Menu → Extensions* and click **Chrome Web Store** (or go straight to
+   [NordPass in the Chrome Web Store](https://chromewebstore.google.com/detail/eiaeiblijfjekdanodkjadfinkhbfgcd)).
+2. Click **Add to Moon Browser** and confirm what the extension may do.
+3. The NordPass button appears in the toolbar: sign in there. Autofill, saved logins and the
+   2FA codes of NordPass Authenticator all live in the extension.
+
+Extensions get the Chrome APIs password managers rely on — storage, alarms, idle, tabs, windows,
+scripting, cookies, context menus, notifications, offscreen documents, pop-ups and content
+scripts. What doesn't work is talking to a *desktop app* (native messaging, e.g. unlocking the
+extension through the NordPass app): sign in to the extension directly.
 
 ### Coming from Comet
 
@@ -117,10 +157,13 @@ from Comet into a password manager.
 ## How it compares to Helium
 
 Helium is a patched Chromium (on top of ungoogled-chromium). Moon Browser takes Helium's ideas —
-unbiased blocking, bangs, a quiet interface, privacy by default, split view — and builds them on
-[Electron](https://www.electronjs.org), which ships the same Chromium engine and security fixes
-but can be built on an ordinary machine in minutes instead of hours on a build farm. The
-trade-off: no Chrome Web Store extensions; the most important one, an ad blocker, is built in.
+unbiased blocking, bangs, a quiet interface, privacy by default, split view, extensions from the
+Chrome Web Store — and builds them on [Electron](https://www.electronjs.org), which ships the
+same Chromium engine and security fixes but can be built on an ordinary machine in minutes
+instead of hours on a build farm. The trade-off: Electron's extension support covers the common
+Chrome extension APIs (pop-ups, content scripts, storage, tabs, windows, context menus, cookies,
+notifications), not all of them — native messaging and `chrome.webRequest` events are missing,
+for example. The most important extension, an ad blocker, is built in.
 
 ## Development
 
@@ -129,7 +172,7 @@ npm install
 npm run dev              # build and start Moon Browser
 npm test                 # unit tests (address bar, bangs, settings, import, security rules, …)
 npm run lint && npm run typecheck && npm run format:check
-npm run test:e2e         # drives the real browser (needs a display; xvfb-run on Linux CI)
+npm run test:e2e         # drives the real browser, with a test extension (needs a display)
 npm run dist:linux       # AppImage, .deb, .rpm in release/
 npm run dist:win         # Windows installer in release/
 ```
@@ -139,15 +182,18 @@ Set `MOON_BROWSER_PROFILE=/some/folder` to start with a separate profile.
 ```
 src/
   main/       the browser: windows, tabs, the request pipeline (HTTPS first, Moon Shield,
-              cookies), permissions, downloads, import, the moon:// protocol, IPC
+              cookies), permissions, downloads, import, extensions, updates, the moon://
+              protocol, IPC
   preload/    the small APIs the browser UI and the internal pages get — nothing else
   renderer/
     ui/       the browser UI: tab strip, toolbar, address bar, menus (moon://ui)
-    pages/    new tab, settings, history, bookmarks, downloads, about (moon://…)
+    pages/    new tab, settings, history, bookmarks, downloads, extensions, about (moon://…)
     theme/    the night-sky design tokens, icons and the moon
   shared/     pure logic, unit-tested: address bar input, bangs, search engines,
-              settings, suggestions, sites, HTTPS rules, security helpers, import
-build/        icons and the Windows installer's browser registration
+              settings, suggestions, sites, HTTPS rules, security helpers, import,
+              extension manifests
+build/        icons and the Windows installer (theme, artwork, browser registration)
+scripts/      build, end-to-end test (with a test extension in fixtures/), artwork rendering
 ```
 
 ## Credits
@@ -157,9 +203,13 @@ build/        icons and the Windows installer's browser registration
 the [Ghostery adblocker](https://github.com/ghostery/adblocker) engine (MPL-2.0) with the filter
 lists of [uBlock Origin](https://github.com/uBlockOrigin/uAssets),
 [EasyList](https://easylist.to) and [Peter Lowe](https://pgl.yoyo.org/adservers/);
-[tldts](https://github.com/remusao/tldts) for the Public Suffix List.
+[tldts](https://github.com/remusao/tldts) for the Public Suffix List;
+[electron-chrome-extensions](https://github.com/samuelmaddock/electron-browser-shell) (GPL-3.0)
+and electron-chrome-web-store (MIT) for Chrome extensions;
+[electron-updater](https://www.electron.build/auto-update) (MIT) for updates.
 
 ## License
 
-This repository is licensed under the [MIT License](LICENSE). The filter lists Moon Browser
-downloads keep their own licenses.
+Moon Browser is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License](LICENSE), version 3 or (at your option) any later version.
+Copyright © 2026 Luna. The filter lists Moon Browser downloads keep their own licenses.

@@ -2,7 +2,13 @@
  * The right-click menu of pages: links, images, selected text, editable
  * fields — the essentials, without the noise.
  */
-import { clipboard, Menu, type ContextMenuParams, type MenuItemConstructorOptions } from "electron";
+import {
+  clipboard,
+  Menu,
+  MenuItem,
+  type ContextMenuParams,
+  type MenuItemConstructorOptions,
+} from "electron";
 import { searchUrl } from "@shared/engines";
 import { isInternalUrl } from "@shared/internal";
 import type { Tab } from "./tab";
@@ -149,7 +155,17 @@ export function showPageMenu(tab: Tab, params: ContextMenuParams): void {
     ]);
   }
 
+  // Items the extensions added with chrome.contextMenus.
+  const extensionItems = win.isPrivate ? [] : browser.extensions.contextMenuItems(wc, params);
+
   section([{ label: "Inspect", click: () => wc.inspectElement(params.x, params.y) }]);
 
-  Menu.buildFromTemplate(items.filter((i) => i.visible !== false)).popup({ window: win.win });
+  const menu = Menu.buildFromTemplate(items.filter((i) => i.visible !== false));
+  if (extensionItems.length) {
+    // Just above "Inspect", in a group of their own.
+    const at = Math.max(0, menu.items.length - 2);
+    extensionItems.forEach((item, i) => menu.insert(at + i, item));
+    menu.insert(at, new MenuItem({ type: "separator" }));
+  }
+  menu.popup({ window: win.win });
 }
