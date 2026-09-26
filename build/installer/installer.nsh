@@ -76,11 +76,12 @@
 ; Sharp images on high-DPI screens. MUI stretches the 100 % bitmaps to the
 ; size of their controls, which blurs them at 125 % and above; these are the
 ; same images rendered at larger scales, and the closest one replaces MUI's.
+; (Backslashes: makensis on Windows splits a path at the last one.)
 !macro MOON_EXTRACT_IMAGES NAME
-  File "/oname=$PLUGINSDIR\moon-${NAME}-125.bmp" "${__FILEDIR__}/hidpi/${NAME}-125.bmp"
-  File "/oname=$PLUGINSDIR\moon-${NAME}-150.bmp" "${__FILEDIR__}/hidpi/${NAME}-150.bmp"
-  File "/oname=$PLUGINSDIR\moon-${NAME}-200.bmp" "${__FILEDIR__}/hidpi/${NAME}-200.bmp"
-  File "/oname=$PLUGINSDIR\moon-${NAME}-250.bmp" "${__FILEDIR__}/hidpi/${NAME}-250.bmp"
+  File "/oname=$PLUGINSDIR\moon-${NAME}-125.bmp" "${__FILEDIR__}\hidpi\${NAME}-125.bmp"
+  File "/oname=$PLUGINSDIR\moon-${NAME}-150.bmp" "${__FILEDIR__}\hidpi\${NAME}-150.bmp"
+  File "/oname=$PLUGINSDIR\moon-${NAME}-200.bmp" "${__FILEDIR__}\hidpi\${NAME}-200.bmp"
+  File "/oname=$PLUGINSDIR\moon-${NAME}-250.bmp" "${__FILEDIR__}\hidpi\${NAME}-250.bmp"
 !macroend
 
 !macro _MOON_PICK_SCALE WIDTH SCALE
