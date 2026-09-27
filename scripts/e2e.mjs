@@ -318,6 +318,15 @@ try {
     // behind them (it would let them act with another extension's ID).
     const bridge = await inPopup("typeof globalThis.electron + '/' + typeof chrome.tabs.query");
     if (bridge !== "undefined/function") throw new Error(`the pop-up sees ${bridge}`);
+    // `browser` is the same object as `chrome` (Chromium's own `browser`
+    // lacks everything added to `chrome`; NordPass uses `browser`).
+    const alias = await inPopup("globalThis.browser === chrome && typeof browser.contextMenus");
+    if (alias !== "object") throw new Error(`browser namespace: ${alias}`);
+    // chrome.privacy answers instead of never resolving.
+    const privacy = await inPopup(
+      "chrome.privacy.services.passwordSavingEnabled.get({}).then((r) => r.levelOfControl)",
+    );
+    if (privacy !== "not_controllable") throw new Error(`privacy: ${privacy}`);
     // chrome.identity, which Moon Browser adds itself.
     const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
     if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)

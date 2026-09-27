@@ -150,6 +150,8 @@ never imported.
   of web pages in normal windows, before Moon Shield: block, allow, allowAllRequests,
   upgradeScheme, redirect and modifyHeaders. Redirects and header changes need host access to
   the request's site, as in Chrome.
+- `chrome.privacy` settings can be read but not changed: Moon Browser has no password saving or
+  autofill of its own, so extensions (password managers turn these off) find them off already.
 - `chrome.proxy` sets the proxy of normal windows (the extension that set it last controls it,
   until it's switched off or removed); private windows always use the system's proxy. Native messaging starts the desktop apps registered for Google Chrome, only for the
   extensions those apps name, as Chrome does.
