@@ -14,6 +14,7 @@ await build({
       import koffi from "koffi";
       import { WindowsWebAuthn } from "./src/main/webauthn-win";
       import { clientDataJSON } from "./src/shared/webauthn";
+      (async () => {
       const desktop = koffi.load("user32.dll").func("__stdcall", "GetDesktopWindow", "intptr_t", [])();
       const consoleWin = koffi.load("kernel32.dll").func("__stdcall", "GetConsoleWindow", "intptr_t", [])();
       const api = WindowsWebAuthn.load();
@@ -48,6 +49,7 @@ await build({
       try {
         await api.getAssertion({ hwnd: BigInt(desktop), rpId: ext, clientData: clientDataJSON("webauthn.get", new Uint8Array(32), "chrome-extension://abcdefghijklmnopabcdefghijklmnop"), timeout: 3000, allow: [], userVerification: 1 });
       } catch (e) { console.log("get ext-rp ->", e.domName, e.message, Date.now() - t0, "ms"); }
+      })().then(() => process.exit(0), (e) => { console.error(e); process.exit(1); });
     `,
     resolveDir: root,
     loader: "ts",
@@ -58,6 +60,7 @@ await build({
   target: "node22",
   outfile: out,
   alias: { "@shared": resolve(root, "src/shared"), koffi: require.resolve("koffi") },
+  external: ["@koromix/*"],
   logLevel: "error",
 });
 await import(`file://${out.replace(/\\/g, "/")}`);
