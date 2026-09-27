@@ -22,6 +22,11 @@ window.moonUI.onEvent((event) => {
   for (const l of eventListeners) l(event);
 });
 
+/** The latest state, outside React. */
+export function latestState(): WindowState | null {
+  return current;
+}
+
 export function useWindowState(): WindowState | null {
   return useSyncExternalStore(
     (listener) => {

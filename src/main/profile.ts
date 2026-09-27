@@ -16,6 +16,33 @@ import type {
 import { profilePath } from "./paths";
 import { JsonStore } from "./store";
 
+export interface ExtensionPrefs {
+  disabled: string[];
+  unpinned: string[];
+  /** The extensions page shows developer tools and runs unpacked extensions. */
+  developerMode: boolean;
+  /** Extensions loaded from a folder in developer mode, with the ID they got. */
+  unpacked: UnpackedExtension[];
+}
+
+export interface UnpackedExtension {
+  path: string;
+  id: string;
+}
+
+function parseUnpacked(raw: unknown): UnpackedExtension[] {
+  if (!Array.isArray(raw)) return [];
+  const out: UnpackedExtension[] = [];
+  for (const item of raw.slice(0, 100)) {
+    if (!isObj(item)) continue;
+    const { path, id } = item;
+    if (typeof path !== "string" || !path || path.length > 1024) continue;
+    if (typeof id !== "string" || !/^[a-p]{32}$/.test(id)) continue;
+    if (!out.some((u) => u.id === id)) out.push({ path, id });
+  }
+  return out;
+}
+
 const HISTORY_LIMIT = 20_000;
 const HISTORY_DAYS = 180;
 const DOWNLOADS_LIMIT = 300;
@@ -207,7 +234,7 @@ export class Profile {
   readonly permissions: JsonStore<PermissionMap>;
   readonly zoom: JsonStore<Record<string, number>>;
   /** Extensions the user switched off, and the ones not shown in the toolbar. */
-  readonly extensions: JsonStore<{ disabled: string[]; unpinned: string[] }>;
+  readonly extensions: JsonStore<ExtensionPrefs>;
   readonly session: JsonStore<SavedSession>;
   readonly stats: JsonStore<Stats>;
 
@@ -228,6 +255,8 @@ export class Profile {
     this.extensions = JsonStore.load(profilePath("extensions.json"), (raw) => ({
       disabled: ids(isObj(raw) ? raw.disabled : null),
       unpinned: ids(isObj(raw) ? raw.unpinned : null),
+      developerMode: isObj(raw) && raw.developerMode === true,
+      unpacked: parseUnpacked(isObj(raw) ? raw.unpacked : null),
     }));
     this.session = JsonStore.load(profilePath("session.json"), parseSession, { delay: 2000 });
     this.stats = JsonStore.load(profilePath("stats.json"), (raw): Stats => ({

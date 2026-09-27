@@ -429,6 +429,17 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
     "extensions.clearErrors": (_tab, id) => {
       if (isExtensionId(id)) browser.extensions.clearErrors(id);
     },
+    "extensions.developerMode": () => browser.extensions.developerMode(),
+    "extensions.setDeveloperMode": (_tab, on) => {
+      if (typeof on === "boolean") return browser.extensions.setDeveloperMode(on);
+    },
+    "extensions.loadUnpacked": (tab) => browser.extensions.loadUnpacked(tab.window.win),
+    "extensions.reload": (_tab, id) => {
+      if (isExtensionId(id)) return browser.extensions.reload(id);
+    },
+    "extensions.repair": (_tab, id) => {
+      if (isExtensionId(id)) return browser.extensions.repair(id);
+    },
     "update.status": () => browser.updater.status(),
     "update.check": () => browser.updater.check(),
     "update.install": () => browser.updater.install(),

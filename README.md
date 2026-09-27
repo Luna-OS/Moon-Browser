@@ -29,7 +29,9 @@ and nothing phoning home. It wears the same night-sky design as
   puzzle button lists them like Chrome does (*Full access* / *No access needed* on the current
   site), pins them to the toolbar and opens their options. Before an extension is added, Moon
   Browser shows what it will be able to do; `moon://extensions` switches them off, removes them
-  and shows their errors.
+  and shows their errors, and repairs an extension whose files got damaged.
+- **Developer mode** on `moon://extensions` — load your own extension from a folder (*Load
+  unpacked*), reload it after changes, see its ID and errors
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
   click on *Update* installs it over the old one and brings your tabs back
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*

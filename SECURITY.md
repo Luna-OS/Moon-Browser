@@ -86,9 +86,17 @@ uninstalled, not while an update replaces it; the profile is never deleted by th
 
 ### Extensions
 
-- Extensions only come from the **Chrome Web Store** (Manifest V3 only; unpacked or side-loaded
-  extensions are not loaded). The package is downloaded over HTTPS from Google's update server,
-  and its extension ID must match the key inside it.
+- Extensions only come from the **Chrome Web Store** (Manifest V3 only). The package is
+  downloaded over HTTPS from Google's update server, and its extension ID must match the key
+  inside it. Nothing side-loaded into the profile's Extensions folder is loaded.
+- **Developer mode** (off by default, a switch on `moon://extensions`) adds one exception: an
+  extension loaded from a folder the user picks. It gets the same permission confirmation as a
+  Web Store install, can't take the ID of an installed Web Store extension, and runs only while
+  developer mode is on.
+- When an extension's service worker script no longer compiles (a damaged file), the
+  extensions page says so and offers *Repair*: the package is downloaded from the Web Store
+  again, and the old copy is only replaced once the new one has arrived. The script is compiled
+  for this check, never run.
 - Before an extension is added, Moon Browser shows what it may do (the permission warnings
   Chrome would show) and adds nothing without a click on *Add extension*. Optional permissions
   requested later are asked for the same way.

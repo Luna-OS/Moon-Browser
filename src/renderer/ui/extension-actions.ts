@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { EXTENSIONS_PARTITION } from "@shared/extensions";
 import type { ExtensionEntry, WindowState } from "@shared/types";
 import type { BrowserActionInfo, BrowserActionState } from "../env";
-import { ui } from "./store";
+import { latestState, ui } from "./store";
 
 /** The extensions' button states (icons, badges, titles), kept up to date. */
 export function useBrowserActions(enabled: boolean): BrowserActionState | null {
@@ -49,8 +49,33 @@ export function badgeColor(color: unknown): string | undefined {
   return undefined;
 }
 
-/** Opens an extension's pop-up (or side panel) below `anchor`. */
+/**
+ * The pop-up that was open when a toolbar button was pressed. Pressing the
+ * button usually focuses the browser window, which closes the pop-up before
+ * the click arrives, so the click must not open it again.
+ */
+let popupAtPress: string | null = null;
+
+export function rememberPopup(state: WindowState) {
+  popupAtPress = state.extensionPopup;
+}
+
+/** Opens an extension's pop-up (or side panel) below `anchor`; a second click closes it. */
 export function activateExtension(state: WindowState, entry: ExtensionEntry, anchor: DOMRect) {
+  const wasOpen = popupAtPress === entry.id;
+  popupAtPress = null;
+  if (wasOpen) {
+    // Still open a moment later (the press didn't move the focus): the
+    // click closes it, as a second click does in Chrome.
+    setTimeout(() => {
+      if (latestState()?.extensionPopup === entry.id) trigger(state, entry, anchor);
+    }, 150);
+    return;
+  }
+  trigger(state, entry, anchor);
+}
+
+function trigger(state: WindowState, entry: ExtensionEntry, anchor: DOMRect) {
   if (entry.opensSidePanel) {
     void ui.command({ type: "sidePanelToggle", extensionId: entry.id });
     return;

@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { WEB_STORE_URL, webStoreDetailUrl } from "@shared/extensions";
 import type { ExtensionInfo } from "@shared/types";
-import { ExternalIcon, PuzzleIcon, SettingsIcon, TrashIcon, WarningIcon } from "@theme/icons";
+import {
+  ExternalIcon,
+  FolderIcon,
+  PuzzleIcon,
+  ReloadIcon,
+  SettingsIcon,
+  TrashIcon,
+  UpdateIcon,
+  WarningIcon,
+} from "@theme/icons";
 import { api, useLive } from "./api";
 import { Card, EmptyState, PageShell } from "./ui";
 
@@ -14,21 +23,65 @@ const SUGGESTIONS = [
 
 export function ExtensionsPage() {
   const [list] = useLive(api.extensions, ["extensions"]);
+  const [developer] = useLive(api.developerMode, ["extensions"]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   return (
     <PageShell
       title="Extensions"
       subtitle="From the Chrome Web Store — in normal windows, never in private ones."
       actions={
-        <a
-          className="mb-btn mb-btn-primary no-underline"
-          href={WEB_STORE_URL}
-          target="_blank"
-          rel="noreferrer"
-        >
-          <ExternalIcon /> Chrome Web Store
-        </a>
+        <>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-(--mb-text-muted)">
+            Developer mode
+            <input
+              type="checkbox"
+              className="mb-switch"
+              checked={developer === true}
+              onChange={(e) => {
+                setLoadError(null);
+                void api.setDeveloperMode(e.target.checked);
+              }}
+            />
+          </label>
+          <a
+            className="mb-btn mb-btn-primary no-underline"
+            href={WEB_STORE_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <ExternalIcon /> Chrome Web Store
+          </a>
+        </>
       }
     >
+      {developer && (
+        <Card>
+          <div className="flex flex-wrap items-center gap-3 px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Your own extensions</div>
+              <p className="m-0 mt-0.5 text-xs leading-relaxed text-(--mb-text-muted)">
+                Load an extension from a folder with a manifest.json. It runs only while developer
+                mode is on, and “Reload” picks up your changes.
+              </p>
+              {loadError && (
+                <p className="m-0 mt-1.5 flex items-center gap-1.5 text-xs text-(--mb-danger)">
+                  <WarningIcon size={12} /> {loadError}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              className="mb-btn"
+              onClick={() => {
+                setLoadError(null);
+                void api.loadUnpacked().then(setLoadError);
+              }}
+            >
+              <FolderIcon /> Load unpacked
+            </button>
+          </div>
+        </Card>
+      )}
       {list && list.length === 0 && (
         <Card>
           <EmptyState title="No extensions yet">
@@ -55,7 +108,7 @@ export function ExtensionsPage() {
         <Card>
           <ul className="m-0 list-none p-1.5">
             {list.map((ext) => (
-              <ExtensionRow key={ext.id} ext={ext} />
+              <ExtensionRow key={ext.id} ext={ext} developer={developer === true} />
             ))}
           </ul>
         </Card>
@@ -68,8 +121,9 @@ export function ExtensionsPage() {
   );
 }
 
-function ExtensionRow({ ext }: { ext: ExtensionInfo }) {
+function ExtensionRow({ ext, developer }: { ext: ExtensionInfo; developer: boolean }) {
   const [confirming, setConfirming] = useState(false);
+  const [repairing, setRepairing] = useState(false);
   return (
     <li className="flex items-start gap-3.5 rounded-[0.7rem] px-3 py-3 hover:bg-(--mb-hover)">
       <span
@@ -83,7 +137,14 @@ function ExtensionRow({ ext }: { ext: ExtensionInfo }) {
           <span className="text-sm font-medium">{ext.name}</span>
           <span className="text-xs text-(--mb-text-faint)">{ext.version}</span>
           {!ext.enabled && <span className="mb-chip h-5! text-[0.65rem]!">Off</span>}
+          {ext.unpacked && <span className="mb-chip h-5! text-[0.65rem]!">Unpacked</span>}
         </div>
+        {developer && (
+          <p className="m-0 mt-0.5 font-mono text-[0.7rem] break-all text-(--mb-text-faint)">
+            ID {ext.id}
+            {ext.path && <> · {ext.path}</>}
+          </p>
+        )}
         {ext.description && (
           <p className="m-0 mt-0.5 line-clamp-2 text-xs leading-relaxed text-(--mb-text-muted)">
             {ext.description}
@@ -102,6 +163,26 @@ function ExtensionRow({ ext }: { ext: ExtensionInfo }) {
             <WarningIcon size={12} /> {text}
           </p>
         ))}
+        {ext.damaged && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[0.6rem] border border-(--mb-border) bg-(--mb-inset) px-2.5 py-2 text-xs">
+            <WarningIcon size={13} />
+            <span className="min-w-0 flex-1 text-(--mb-text-muted)">
+              Its files are damaged, so it can't work. Repairing installs it again from the Chrome
+              Web Store; your settings and logins in it stay.
+            </span>
+            <button
+              type="button"
+              className="mb-btn mb-btn-sm mb-btn-primary"
+              disabled={repairing}
+              onClick={() => {
+                setRepairing(true);
+                void api.repairExtension(ext.id).finally(() => setRepairing(false));
+              }}
+            >
+              <UpdateIcon size={13} /> {repairing ? "Repairing…" : "Repair"}
+            </button>
+          </div>
+        )}
         {ext.errors.length > 0 && (
           <details className="mt-2 rounded-[0.6rem] border border-(--mb-border) bg-(--mb-inset) px-2.5 py-1.5 text-xs">
             <summary className="cursor-pointer text-(--mb-danger)">
@@ -133,17 +214,29 @@ function ExtensionRow({ ext }: { ext: ExtensionInfo }) {
               <SettingsIcon size={13} /> Options
             </button>
           )}
-          <a
-            className="mb-btn mb-btn-sm mb-btn-ghost no-underline"
-            href={webStoreDetailUrl(ext.id)}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Web Store
-          </a>
+          {ext.unpacked ? (
+            <button
+              type="button"
+              className="mb-btn mb-btn-sm mb-btn-ghost"
+              onClick={() => void api.reloadExtension(ext.id)}
+            >
+              <ReloadIcon size={13} /> Reload
+            </button>
+          ) : (
+            <a
+              className="mb-btn mb-btn-sm mb-btn-ghost no-underline"
+              href={webStoreDetailUrl(ext.id)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Web Store
+            </a>
+          )}
           {confirming ? (
             <>
-              <span className="ml-1 text-xs text-(--mb-text-muted)">Remove {ext.name}?</span>
+              <span className="ml-1 text-xs text-(--mb-text-muted)">
+                Remove {ext.name}?{ext.unpacked && " Its folder stays."}
+              </span>
               <button
                 type="button"
                 className="mb-btn mb-btn-sm mb-btn-danger"
