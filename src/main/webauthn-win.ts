@@ -269,17 +269,42 @@ export class WindowsWebAuthn {
       errorName: fn("WebAuthNGetErrorName", WSTR, ["int32_t"]),
     };
     this.apiVersion = this.fns.version() as number;
+    if (process.platform === "win32") {
+      const user32 = koffi.load("user32.dll");
+      this.foreground = user32.func("__stdcall", "GetForegroundWindow", "intptr_t", []);
+      this.desktop = user32.func("__stdcall", "GetDesktopWindow", "intptr_t", []);
+    }
+  }
+
+  private foreground?: KoffiFunction;
+  private desktop?: KoffiFunction;
+
+  /**
+   * The window for the system dialog. Windows refuses a request without one
+   * at once (NTE_INVALID_PARAMETER, no dialog), so if the page's window
+   * can't be found, the one in front — or the desktop — takes its place.
+   */
+  windowFor(hwnd: bigint): bigint {
+    if (hwnd) return hwnd;
+    const pick = (fn?: KoffiFunction) => BigInt((fn?.() as number | bigint | undefined) ?? 0);
+    return pick(this.foreground) || pick(this.desktop);
   }
 
   /** The system's WebAuthn API, or null where there is none (before Windows 10 1903). */
   static load(path = "webauthn.dll"): WindowsWebAuthn | null {
     try {
-      const api = new WindowsWebAuthn(path);
-      return api.apiVersion >= 1 ? api : null;
+      return WindowsWebAuthn.open(path);
     } catch (err) {
       console.warn("[moon] no system WebAuthn API:", err);
       return null;
     }
+  }
+
+  /** Like load(), but says why there's no API. */
+  static open(path = "webauthn.dll"): WindowsWebAuthn {
+    const api = new WindowsWebAuthn(path);
+    if (api.apiVersion < 1) throw new Error(`WebAuthn API version ${api.apiVersion}`);
+    return api;
   }
 
   /** Whether Windows Hello (or another built-in authenticator) is set up. */
@@ -399,7 +424,7 @@ export class WindowsWebAuthn {
               : {}),
           });
           this.fns.make.async(
-            c.hwnd,
+            this.windowFor(c.hwnd),
             rp,
             user,
             params,
@@ -456,8 +481,13 @@ export class WindowsWebAuthn {
             pCancellationId: cancellationId,
             pAllowCredentialList: allow,
           });
-          this.fns.get.async(c.hwnd, c.rpId, clientData, options, out, (err: unknown, hr: number) =>
-            done(err ? -1 : hr),
+          this.fns.get.async(
+            this.windowFor(c.hwnd),
+            c.rpId,
+            clientData,
+            options,
+            out,
+            (err: unknown, hr: number) => done(err ? -1 : hr),
           );
         },
         (result) => {

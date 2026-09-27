@@ -820,6 +820,14 @@ try {
     // The service worker's console.error is listed, like Chrome's "Errors".
     if (!result.errors.some((e) => e.includes("moon-test: an error")))
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);
+    // A failed Windows Hello request says why (here: the stand-in's cancelled dialog).
+    if (
+      webauthnMock &&
+      !result.errors.some((e) =>
+        e.includes("Windows Hello (navigator.credentials.create) failed: NotAllowedError"),
+      )
+    )
+      throw new Error(`no WebAuthn diagnosis in ${JSON.stringify(result.errors)}`);
     // Starting the worker while it is still being registered isn't an error,
     // the chrome.* API preloads load (with --no-sandbox too), and a message
     // nobody listened for isn't listed outside developer mode.
