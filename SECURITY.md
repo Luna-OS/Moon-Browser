@@ -87,6 +87,19 @@ code-signed yet, an update is as trustworthy as the GitHub release it comes from
 The Windows installer only removes the browser registration when Moon Browser is really
 uninstalled, not while an update replaces it; the profile is never deleted by the installer.
 
+### Engine security updates
+
+Moon Browser's engine is Chromium, inside Electron. Chromium's security fixes — the ones Chrome
+and Helium ship — reach Moon Browser through Electron's patch releases, which carry them to
+Electron's supported major versions (its latest three), usually within days. The *Security
+updates* workflow (`.github/workflows/security-updates.yml`, `scripts/security-update.mjs`)
+looks for a newer Electron release of Moon Browser's major version every six hours. It installs
+it, runs all of CI with it (unit tests, the end-to-end test on Linux and Windows, packaging, the
+installer test) and, only if everything passes, puts it on `main` and releases the next patch
+version; installed copies then update themselves. A failed test or a new Electron major version
+(which can change APIs) becomes an issue for a person instead. Each run's summary compares
+Moon Browser's Electron with the Chromium version Helium builds on.
+
 ### Extensions
 
 - Extensions only come from the **Chrome Web Store** (Manifest V3 only). The package is
