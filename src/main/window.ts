@@ -46,7 +46,7 @@ import {
   type TabGroupInfo,
 } from "@shared/tab-groups";
 import { protectionSiteOf } from "@shared/sites";
-import type { FindState, Rect, SplitState, WindowState } from "@shared/types";
+import type { BookmarkFolderChoice, FindState, Rect, SplitState, WindowState } from "@shared/types";
 import type { Browser } from "./browser";
 import { internalPreload, uiPreload, windowIcon } from "./paths";
 import type { SavedWindow } from "./profile";
@@ -1057,14 +1057,22 @@ export class MoonWindow {
     };
   }
 
-  /** A new folder next to `after` (in the same folder; the bar's end for null), named in a Moon dialog. */
-  private async newBookmarkFolder(after: string | null): Promise<void> {
+  /**
+   * A new folder, named in a Moon dialog: next to a bookmark or folder
+   * (`after`), or at the end of a folder (`inside`; null is the bookmarks bar).
+   */
+  private async newBookmarkFolder(
+    place: { after: string } | { inside: string | null },
+  ): Promise<void> {
     const profile = this.browser.profile;
-    const sibling = after ? profile.bookmarks.get().find((b) => b.id === after) : undefined;
+    const list = profile.bookmarks.get();
+    const sibling = "after" in place ? list.find((b) => b.id === place.after) : undefined;
+    const parent = "after" in place ? (sibling?.parent ?? null) : place.inside;
+    const where = parent ? folderChoices(list).find((f) => f.id === parent)?.path : undefined;
     const answer = await this.askFull({
       tone: "calm",
       glyph: "folder",
-      eyebrow: "Bookmarks",
+      eyebrow: where ? `In “${where}”` : "On the bookmarks bar",
       title: "New folder",
       input: { value: "" },
       buttons: [
@@ -1075,13 +1083,21 @@ export class MoonWindow {
       cancelId: 0,
     });
     if (answer.response !== 1) return;
-    const parent = sibling?.parent ?? null;
     const folder = profile.addBookmarkFolder(answer.text ?? "", parent);
     if (sibling) {
       const index = profile.bookmarkChildren(parent).findIndex((b) => b.id === sibling.id) + 1;
       profile.updateBookmark(folder.id, { parent, index });
     }
     this.bookmarksChanged();
+  }
+
+  /** A folder at the end of `parent`, made from the star's editor; the choice it adds. */
+  addBookmarkFolder(title: string, parent: string | null): BookmarkFolderChoice {
+    const profile = this.browser.profile;
+    const folder = profile.addBookmarkFolder(title, parent);
+    this.bookmarksChanged();
+    const choice = folderChoices(profile.bookmarks.get()).find((f) => f.id === folder.id);
+    return choice ?? { id: folder.id, path: folder.title };
   }
 
   private async renameBookmarkFolder(id: string): Promise<void> {
@@ -1220,6 +1236,9 @@ export class MoonWindow {
         this.browser.profile.removeBookmark(cmd.id);
         this.bookmarksChanged();
         break;
+      case "newBookmarkFolder":
+        void this.newBookmarkFolder({ inside: cmd.parent });
+        break;
       case "openBookmarkFolder":
         void this.openBookmarkFolder(cmd.id, cmd.disposition);
         break;
@@ -1336,7 +1355,7 @@ export class MoonWindow {
       case "bookmarksBarMenu":
         this.popup(
           [
-            { label: "New folder…", click: () => void this.newBookmarkFolder(null) },
+            { label: "New folder…", click: () => void this.newBookmarkFolder({ inside: null }) },
             { label: "Edit bookmarks…", click: () => this.openInternal("bookmarks") },
             { type: "separator" },
             this.barVisibilityItem(),
@@ -1512,7 +1531,15 @@ export class MoonWindow {
     const common: MenuItemConstructorOptions[] = [
       { type: "separator" },
       { label: "Move to", enabled: moveTo.length > 0, submenu: moveTo },
-      { label: "New folder…", click: () => void this.newBookmarkFolder(id) },
+      { label: "New folder…", click: () => void this.newBookmarkFolder({ after: id }) },
+      ...(entry.isFolder
+        ? [
+            {
+              label: `New folder in “${entry.title || "Folder"}”…`,
+              click: () => void this.newBookmarkFolder({ inside: id }),
+            },
+          ]
+        : []),
       { label: "Edit bookmarks…", click: () => this.openInternal("bookmarks") },
       { label: "Delete", click: () => void this.deleteBookmark(id) },
       { type: "separator" },

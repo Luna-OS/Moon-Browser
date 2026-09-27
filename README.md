@@ -24,7 +24,7 @@ and nothing phoning home. It wears the same night-sky design as
   and scriptlets. Optional cookie-banner and annoyance lists. One click switches it off per site.
 - **Import from Comet** — bookmarks (with their folders, just as they were) and history from
   Comet, Chrome, Brave, Edge, Helium, Vivaldi or any other Chromium browser, read directly from
-  its profile folder
+  its profile folder — Chrome's bookmarks saved in your Google Account included
 - **Chrome extensions** from the Chrome Web Store — your password manager (NordPass, Bitwarden,
   1Password, …) with its toolbar button and pop-up, and side-panel extensions like Claude. The
   puzzle button lists them like Chrome does (*Full access* / *No access needed* on the current
@@ -36,9 +36,10 @@ and nothing phoning home. It wears the same night-sky design as
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
   click on *Update* installs it over the old one and brings your tabs back
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
-- **Signing in to Google works** — Google turns away browsers it doesn't know ("This browser or
-  app may not be secure"), so Moon Browser talks to its sign-in page (`accounts.google.com`, and
-  only there) as Firefox
+- **Signing in to Google works** — Google turns away browsers that look like an app with a
+  browser built in ("This browser or app may not be secure"). Moon Browser gives pages Chrome's
+  whole `window.chrome` and says the same Chromium everywhere: in its user agent, its client
+  hints and to scripts. "Sign in with Google" on other sites opens Google's pop-up
 - **Tab groups** like Chrome's — right-click a tab → *Add tab to new group*, give the group a
   name and a colour, click its label to collapse it, drag tabs in and out, drag the label to move
   the whole group. Extensions can use them through `chrome.tabGroups`.
@@ -54,9 +55,10 @@ and nothing phoning home. It wears the same night-sky design as
 - A quiet taskbar icon: sites can't put their unread counts on it (`navigator.setAppBadge` does
   nothing, as in Chrome for sites that aren't installed apps)
 - **Bookmarks with folders** — on the bookmarks bar a folder opens as a menu (folders inside
-  it too); the star (`Ctrl D`) names a bookmark and puts it in a folder; `moon://bookmarks`
-  sorts them, and a right-click on the bar opens a folder's bookmarks all at once, renames it
-  or moves things to another folder. Show the bar or not — your choice: in the menu, on
+  it too); the star (`Ctrl D`) names a bookmark and puts it in a folder, or in a new one;
+  `moon://bookmarks` sorts them, and a right-click on the bar opens a folder's bookmarks all at
+  once, renames it or moves things to another folder. Folders hold folders: *New folder in …*
+  in a folder's menu, its right-click menu, the star's editor (`+`) and on `moon://bookmarks`. Show the bar or not — your choice: in the menu, on
   `moon://bookmarks`, in the star's editor, with a right-click on the bar or with `Ctrl Shift B`
 - History, downloads, find in page, zoom per site, print, full screen, developer tools
 - **Night and day themes** (or follow the system); websites follow along when they support dark

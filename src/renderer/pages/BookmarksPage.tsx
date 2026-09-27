@@ -44,8 +44,14 @@ export function BookmarksPage() {
     id = f.parent;
   }
 
-  const newFolder = () =>
-    void api.addBookmarkFolder("New folder", here).then((f) => setEditing(f.id));
+  /** A new folder in `parent`, shown there with its name ready to type. */
+  const newFolder = (parent: string | null) =>
+    void api.addBookmarkFolder("New folder", parent).then((f) => {
+      setFilter("");
+      setFolder(parent);
+      setEditing(f.id);
+    });
+  const hereTitle = trail[trail.length - 1]?.title;
 
   return (
     <PageShell
@@ -64,8 +70,9 @@ export function BookmarksPage() {
               />
             </label>
           )}
-          <button type="button" className="mb-btn mb-btn-ghost" onClick={newFolder}>
-            <PlusIcon size={15} /> New folder
+          <button type="button" className="mb-btn mb-btn-ghost" onClick={() => newFolder(here)}>
+            <PlusIcon size={15} />{" "}
+            {here === null ? "New folder" : `New folder in “${hereTitle || "Folder"}”`}
           </button>
         </>
       }
@@ -194,6 +201,17 @@ export function BookmarksPage() {
                           <ChevronDownIcon />
                         </button>
                       </>
+                    )}
+                    {b.isFolder && (
+                      <button
+                        type="button"
+                        className="mb-icon-btn h-7! w-7!"
+                        aria-label={`New folder in “${b.title || "Folder"}”`}
+                        title="New folder inside"
+                        onClick={() => newFolder(b.id)}
+                      >
+                        <PlusIcon size={15} />
+                      </button>
                     )}
                     <MoveTo bookmark={b} all={all} />
                     <button

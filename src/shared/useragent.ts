@@ -3,6 +3,11 @@
  * "Electron/x" token are removed, and the Chrome version is reduced to its
  * major number like Chrome's own reduced user agent. That keeps sites
  * working and makes Moon Browser blend in instead of standing out.
+ *
+ * It is the same everywhere, Google's sign-in included: headers, client
+ * hints and what scripts read (navigator.userAgent, userAgentData) all say
+ * the same Chromium. Google compares them, and a browser that says one thing
+ * in its requests and another to scripts is turned away.
  */
 export function cleanUserAgent(ua: string): string {
   return ua
@@ -14,53 +19,55 @@ export function cleanUserAgent(ua: string): string {
 }
 
 /**
- * Google's sign-in turns away Chromium-based browsers it doesn't know
- * ("This browser or app may not be secure", even with a clean Chrome user
- * agent) but lets Firefox in. Requests to the sign-in host therefore go out
- * as Firefox's; the pages themselves are untouched. qutebrowser, also built
- * on Chromium, has signed in to Google this way since 2020.
+ * The client hints Chrome sends with every request to a secure site:
+ * Sec-CH-UA (the brands), Sec-CH-UA-Mobile and Sec-CH-UA-Platform. Electron
+ * adds them to the requests pages make, but not to the pages themselves
+ * (navigations), which Chrome never sends without them. These are the
+ * renderer's values: Chromium's brand list, with the made-up "GREASE" brand
+ * Chromium derives from the major version (components/embedder_support/
+ * user_agent_utils.cc), so both say the same.
  */
-const FIREFOX_UA_HOSTS = new Set(["accounts.google.com"]);
+export function clientHints(ua: string, platform: string): Record<string, string> {
+  const major = Number(/Chrome\/(\d+)/.exec(ua)?.[1] ?? 0);
+  const chars = [" ", "(", ":", "-", ".", "/", ")", ";", "=", "?", "_"];
+  const grease = {
+    brand: `Not${chars[major % chars.length]}A${chars[(major + 1) % chars.length]}Brand`,
+    version: ["8", "99", "24"][major % 3],
+  };
+  const chromium = { brand: "Chromium", version: String(major) };
+  const brands = major % 2 === 0 ? [grease, chromium] : [chromium, grease];
+  const system = platform === "win32" ? "Windows" : platform === "darwin" ? "macOS" : "Linux";
+  return {
+    "sec-ch-ua": brands.map((b) => `"${b.brand}";v="${b.version}"`).join(", "),
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": `"${system}"`,
+  };
+}
 
-export function wantsFirefoxUserAgent(url: string): boolean {
+/** Client hints go to secure sites only: HTTPS, and this computer. */
+export function getsClientHints(url: string): boolean {
   try {
     const { protocol, hostname } = new URL(url);
-    return protocol === "https:" && FIREFOX_UA_HOSTS.has(hostname);
+    if (protocol === "https:") return true;
+    return (
+      protocol === "http:" &&
+      (hostname === "localhost" ||
+        hostname.endsWith(".localhost") ||
+        hostname === "[::1]" ||
+        /^127(\.\d{1,3}){3}$/.test(hostname))
+    );
   } catch {
     return false;
   }
 }
 
-/**
- * Firefox's user agent on the same system, of the same age as this
- * Chromium: both ship every four weeks, Firefox two versions ahead (Chrome
- * 138 and Firefox 140 came out on the same day).
- */
-export function firefoxUserAgent(chromeUa: string): string {
-  const major = Number(/Chrome\/(\d+)/.exec(chromeUa)?.[1] ?? 0);
-  const version = `${major ? major + 2 : 140}.0`;
-  const system = /\(([^)]*)\)/.exec(chromeUa)?.[1] ?? "";
-  const os = system.includes("Windows")
-    ? "Windows NT 10.0; Win64; x64"
-    : system.includes("Mac OS X")
-      ? "Macintosh; Intel Mac OS X 10.15"
-      : system.includes("Linux")
-        ? system
-        : "X11; Linux x86_64";
-  return `Mozilla/5.0 (${os}; rv:${version}) Gecko/20100101 Firefox/${version}`;
-}
-
-/**
- * Makes a request's headers Firefox's: its user agent, and none of
- * Chromium's client hints (Sec-CH-UA and the rest), which Firefox never
- * sends.
- */
-export function asFirefoxRequest(headers: Record<string, string>, firefoxUa: string): void {
-  for (const name of Object.keys(headers)) {
-    const lower = name.toLowerCase();
-    if (lower === "user-agent" || lower.startsWith("sec-ch-")) delete headers[name];
-  }
-  headers["User-Agent"] = firefoxUa;
+/** Adds the hints a request is missing; hints it has stay as they are. */
+export function addClientHints(
+  headers: Record<string, string>,
+  hints: Record<string, string>,
+): void {
+  const present = new Set(Object.keys(headers).map((name) => name.toLowerCase()));
+  for (const [name, value] of Object.entries(hints)) if (!present.has(name)) headers[name] = value;
 }
 
 /** Only the preferred language and its base, like Helium's reduced header. */

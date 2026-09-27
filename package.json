@@ -3,7 +3,7 @@
   "productName": "Moon Browser",
   "private": true,
   "type": "module",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Moon Browser – the web, calmly under the moon. A private, open-source Chromium browser.",
   "license": "GPL-3.0-or-later",
   "author": {

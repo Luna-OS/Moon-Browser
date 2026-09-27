@@ -32,14 +32,20 @@ const ROOTS: [key: string, name: string][] = [
 ];
 
 /**
- * The bookmarks of a Chromium `Bookmarks` file, folders and all: the
- * bookmarks bar's contents as they are, then "Other bookmarks" and "Mobile
- * bookmarks" as folders of their own (when they hold anything).
+ * The files a Chromium profile keeps bookmarks in: `Bookmarks` for those on
+ * this computer, and since Chrome 128 `AccountBookmarks` for those saved in
+ * the Google Account (signed in without full sync). Chrome shows both
+ * together; both are imported.
  */
-export function bookmarkTree(json: unknown): ImportedNode[] {
-  const roots = (json as { roots?: Record<string, unknown> } | null)?.roots;
-  if (!roots || typeof roots !== "object") return [];
+export const BOOKMARK_FILES = ["Bookmarks", "AccountBookmarks"] as const;
 
+/**
+ * The bookmarks of Chromium bookmark files (see BOOKMARK_FILES), folders
+ * and all: the bookmarks bar's contents as they are, then "Other bookmarks"
+ * and "Mobile bookmarks" as folders of their own (when they hold anything).
+ * Several files come together in one tree, root by root.
+ */
+export function bookmarkTree(...files: unknown[]): ImportedNode[] {
   const read = (node: unknown, depth: number): ImportedNode | null => {
     if (!node || typeof node !== "object" || depth > 32) return null;
     const n = node as { type?: string; url?: string; name?: string; children?: unknown[] };
@@ -54,12 +60,25 @@ export function bookmarkTree(json: unknown): ImportedNode[] {
   const contents = (children: unknown[], depth: number): ImportedNode[] =>
     children.map((c) => read(c, depth)).filter((c): c is ImportedNode => c !== null);
 
-  const bar = read(roots.bookmark_bar, 0);
-  const out = bar?.kind === "folder" ? bar.children : [];
+  /** A root of every file, its contents one after the other. */
+  const root = (key: string): { title: string; children: ImportedNode[] } => {
+    let title = "";
+    const children: ImportedNode[] = [];
+    for (const file of files) {
+      const roots = (file as { roots?: unknown } | null)?.roots;
+      if (!roots || typeof roots !== "object") continue;
+      const node = read((roots as Record<string, unknown>)[key], 0);
+      if (node?.kind !== "folder") continue;
+      title ||= node.title;
+      children.push(...node.children);
+    }
+    return { title, children };
+  };
+
+  const out = root("bookmark_bar").children;
   for (const [key, name] of ROOTS) {
-    const root = read(roots[key], 0);
-    if (root?.kind === "folder" && root.children.length)
-      out.push({ ...root, title: root.title || name });
+    const { title, children } = root(key);
+    if (children.length) out.push({ kind: "folder", title: title || name, children });
   }
   return out;
 }

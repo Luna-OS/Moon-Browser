@@ -22,10 +22,10 @@ import { inlineCompletion, matchScore, suggest } from "./suggest";
 import type { HistoryEntry } from "./types";
 import {
   acceptLanguages,
-  asFirefoxRequest,
+  addClientHints,
   cleanUserAgent,
-  firefoxUserAgent,
-  wantsFirefoxUserAgent,
+  clientHints,
+  getsClientHints,
 } from "./useragent";
 
 const opts = { engine: DEFAULT_ENGINE, bangs: true };
@@ -446,44 +446,39 @@ describe("user agent", () => {
     );
   });
 
-  it("signs in to Google as Firefox of the same age, on the same system", () => {
-    const chrome = (system: string) =>
-      `Mozilla/5.0 (${system}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36`;
-    expect(firefoxUserAgent(chrome("Windows NT 10.0; Win64; x64"))).toBe(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0",
-    );
-    expect(firefoxUserAgent(chrome("Macintosh; Intel Mac OS X 10_15_7"))).toBe(
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:154.0) Gecko/20100101 Firefox/154.0",
-    );
-    expect(firefoxUserAgent(chrome("X11; Linux x86_64"))).toBe(
-      "Mozilla/5.0 (X11; Linux x86_64; rv:154.0) Gecko/20100101 Firefox/154.0",
-    );
-    expect(firefoxUserAgent("")).toBe(
-      "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
-    );
-
-    expect(wantsFirefoxUserAgent("https://accounts.google.com/v3/signin/identifier?x=1")).toBe(
-      true,
-    );
-    expect(wantsFirefoxUserAgent("https://accounts.google.com.evil.example/")).toBe(false);
-    expect(wantsFirefoxUserAgent("https://mail.google.com/")).toBe(false);
-    expect(wantsFirefoxUserAgent("http://accounts.google.com/")).toBe(false);
-    expect(wantsFirefoxUserAgent("not a url")).toBe(false);
-
-    const headers: Record<string, string> = {
-      "User-Agent": chrome("X11; Linux x86_64"),
-      "sec-ch-ua": '"Chromium";v="152", "Not?A_Brand";v="24"',
+  it("sends pages Chrome's client hints, the same as the renderer's", () => {
+    const ua = (major: number) =>
+      `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
+    // What Electron 44's renderer sends (and navigator.userAgentData says).
+    expect(clientHints(ua(152), "linux")).toEqual({
+      "sec-ch-ua": '"Not?A_Brand";v="24", "Chromium";v="152"',
       "sec-ch-ua-mobile": "?0",
-      "Sec-CH-UA-Platform": '"Linux"',
-      "sec-ch-prefers-color-scheme": "dark",
-      "Sec-Fetch-Mode": "navigate",
-      Accept: "text/html",
-    };
-    asFirefoxRequest(headers, "Firefox UA");
+      "sec-ch-ua-platform": '"Linux"',
+    });
+    // Chromium's GREASE brand for other versions, as Chrome sent it.
+    expect(clientHints(ua(131), "win32")).toEqual({
+      "sec-ch-ua": '"Chromium";v="131", "Not_A Brand";v="24"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
+    });
+    expect(clientHints(ua(138), "darwin")["sec-ch-ua"]).toBe(
+      '"Not)A;Brand";v="8", "Chromium";v="138"',
+    );
+
+    expect(getsClientHints("https://accounts.google.com/v3/signin/identifier")).toBe(true);
+    expect(getsClientHints("http://127.0.0.1:8080/")).toBe(true);
+    expect(getsClientHints("http://localhost/")).toBe(true);
+    expect(getsClientHints("http://example.com/")).toBe(false);
+    expect(getsClientHints("moon://settings/")).toBe(false);
+    expect(getsClientHints("not a url")).toBe(false);
+
+    const headers: Record<string, string> = { "Sec-CH-UA-Mobile": "?1", Accept: "text/html" };
+    addClientHints(headers, clientHints(ua(152), "linux"));
     expect(headers).toEqual({
-      "User-Agent": "Firefox UA",
-      "Sec-Fetch-Mode": "navigate",
+      "Sec-CH-UA-Mobile": "?1",
       Accept: "text/html",
+      "sec-ch-ua": '"Not?A_Brand";v="24", "Chromium";v="152"',
+      "sec-ch-ua-platform": '"Linux"',
     });
   });
 

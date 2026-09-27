@@ -13,6 +13,7 @@ import { copyFile, readFile, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import {
+  BOOKMARK_FILES,
   bookmarkTree,
   HISTORY_QUERY,
   historyFromRows,
@@ -90,7 +91,8 @@ async function exists(path: string): Promise<boolean> {
 
 /** A folder is a browser profile if it has a bookmarks file or a history database. */
 async function isProfileDir(dir: string): Promise<boolean> {
-  return (await exists(join(dir, "Bookmarks"))) || (await exists(join(dir, "History")));
+  for (const file of [...BOOKMARK_FILES, "History"]) if (await exists(join(dir, file))) return true;
+  return false;
 }
 
 async function profilesIn(userData: string, browser: string): Promise<ImportableProfile[]> {
@@ -162,12 +164,18 @@ export class Importer {
     const result: ImportResult = { bookmarks: 0, history: 0, errors: [] };
 
     if (what.bookmarks) {
-      try {
-        const json: unknown = JSON.parse(await readFile(join(path, "Bookmarks"), "utf8"));
-        result.bookmarks = this.profile.importBookmarks(bookmarkTree(json));
-      } catch (err) {
-        result.errors.push(`Bookmarks: ${err instanceof Error ? err.message : String(err)}`);
+      // Chrome's bookmarks on this computer and those in the Google Account.
+      const files: unknown[] = [];
+      for (const name of BOOKMARK_FILES) {
+        try {
+          files.push(JSON.parse(await readFile(join(path, name), "utf8")));
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code === "ENOENT") continue;
+          result.errors.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
+      if (files.length) result.bookmarks = this.profile.importBookmarks(bookmarkTree(...files));
+      else if (!result.errors.length) result.errors.push("Bookmarks: this profile has none");
     }
 
     if (what.history) {

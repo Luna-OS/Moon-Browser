@@ -19,6 +19,8 @@ export interface MoonUiApi {
   bookmarkChildren(folder: string): Promise<Bookmark[]>;
   /** Every folder to choose from, the bookmarks bar first. */
   bookmarkFolders(): Promise<BookmarkFolderChoice[]>;
+  /** Makes a folder at the end of `parent` (null: the bookmarks bar), for the star's editor. */
+  addBookmarkFolder(title: string, parent: string | null): Promise<BookmarkFolderChoice | null>;
   openOverlay(): Promise<OverlaySnapshot[]>;
   overlayReady(): void;
   closeOverlay(): Promise<void>;
