@@ -21,9 +21,61 @@ export class WebAuthnError extends Error {
       | "AbortError"
       | "TypeError",
     message: string,
+    /** Windows' HRESULT (unsigned), when the error came from the system. */
+    readonly hresult?: number,
   ) {
     super(message);
   }
+}
+
+/** Windows refusing a request as invalid, before any dialog (NTE_INVALID_PARAMETER). */
+export const NTE_INVALID_PARAMETER = 0x80090027;
+/** A refusal this quick came before anybody was asked anything. */
+export const QUICK_REFUSAL_MS = 2_000;
+
+export interface AttemptLog {
+  label: string;
+  outcome: string;
+  ms: number;
+}
+
+export type AttemptResult<T> =
+  { ok: true; value: T; log: AttemptLog[] } | { ok: false; error: unknown; log: AttemptLog[] };
+
+/**
+ * Asks one way after another while Windows refuses the request straight
+ * away as invalid — never after a dialog was shown, so nobody is asked
+ * twice. The log says what each try got, for the extension's errors.
+ */
+export async function tryInTurn<A extends { label: string }, T>(
+  attempts: A[],
+  run: (attempt: A) => Promise<T>,
+  now: () => number = Date.now,
+): Promise<AttemptResult<T>> {
+  const log: AttemptLog[] = [];
+  let error: unknown = new WebAuthnError("NotAllowedError", "Nothing to try.");
+  for (const attempt of attempts) {
+    const start = now();
+    try {
+      const value = await run(attempt);
+      log.push({ label: attempt.label, outcome: "worked", ms: now() - start });
+      return { ok: true, value, log };
+    } catch (err) {
+      const ms = now() - start;
+      error = err;
+      log.push({
+        label: attempt.label,
+        outcome: err instanceof Error ? err.message : String(err),
+        ms,
+      });
+      const refused =
+        err instanceof WebAuthnError &&
+        err.hresult === NTE_INVALID_PARAMETER &&
+        ms < QUICK_REFUSAL_MS;
+      if (!refused) break;
+    }
+  }
+  return { ok: false, error, log };
 }
 
 export function toBase64Url(bytes: Uint8Array): string {
@@ -108,7 +160,9 @@ export function clampTimeout(ms: unknown): number {
 // Windows' numbering of the options (webauthn.h).
 const ATTACHMENT: Record<string, number> = { platform: 1, "cross-platform": 2 };
 const USER_VERIFICATION: Record<string, number> = { required: 1, preferred: 2, discouraged: 3 };
-const ATTESTATION: Record<string, number> = { none: 1, indirect: 2, direct: 3, enterprise: 3 };
+// Like Chrome, "indirect" asks Windows for direct attestation: its own
+// dialog never offers the indirect kind.
+const ATTESTATION: Record<string, number> = { none: 1, indirect: 3, direct: 3, enterprise: 3 };
 
 export interface CredentialDescriptor {
   id: Uint8Array;
@@ -207,24 +261,61 @@ export function parseRequestOptions(raw: unknown): AssertionRequest {
 
 /** Windows' error names (WebAuthNGetErrorName) as the DOMException the page gets. */
 export function errorFromWindows(name: string, hr: number): WebAuthnError {
-  const hex = `0x${(hr >>> 0).toString(16).padStart(8, "0")}`;
+  const code = hr >>> 0;
+  const hex = `0x${code.toString(16).padStart(8, "0")}`;
   switch (name) {
     case "InvalidStateError":
       return new WebAuthnError(
         "InvalidStateError",
         "The authenticator already has this credential.",
+        code,
       );
     case "NotSupportedError":
-      return new WebAuthnError("NotSupportedError", `The request isn't supported (${hex}).`);
+      return new WebAuthnError("NotSupportedError", `The request isn't supported (${hex}).`, code);
     case "ConstraintError":
-      return new WebAuthnError("ConstraintError", `The authenticator can't do this (${hex}).`);
+      return new WebAuthnError(
+        "ConstraintError",
+        `The authenticator can't do this (${hex}).`,
+        code,
+      );
     default:
       // Cancelled, timed out, no authenticator, anything else: Chrome's answer.
       return new WebAuthnError(
         "NotAllowedError",
         `The operation either timed out or was not allowed (${hex}).`,
+        code,
       );
   }
+}
+
+/**
+ * A request's shape for the extension's errors — never its challenge, user
+ * names or credential IDs.
+ */
+export function describeRequest(options: unknown): string {
+  if (!isObj(options)) return "no options";
+  const rp = isObj(options.rp) ? options.rp : undefined;
+  const sel = isObj(options.authenticatorSelection) ? options.authenticatorSelection : undefined;
+  const user = isObj(options.user) ? options.user : undefined;
+  const count = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+  const shown = (v: unknown) => (v === undefined ? "(none)" : JSON.stringify(v));
+  const parts = [
+    `rp.id: ${shown(rp ? rp.id : options.rpId)}`,
+    sel && `attachment: ${shown(sel.authenticatorAttachment)}`,
+    sel && `residentKey: ${shown(sel.residentKey ?? sel.requireResidentKey)}`,
+    `userVerification: ${shown(sel ? sel.userVerification : options.userVerification)}`,
+    rp && `attestation: ${shown(options.attestation)}`,
+    Array.isArray(options.pubKeyCredParams) &&
+      `algorithms: ${options.pubKeyCredParams.map((p) => String(isObj(p) ? p.alg : p)).join(",")}`,
+    user && typeof user.id === "string" && `user.id: ${Math.floor((user.id.length * 3) / 4)} bytes`,
+    rp && `excludeCredentials: ${count(options.excludeCredentials)}`,
+    !rp && `allowCredentials: ${count(options.allowCredentials)}`,
+    isObj(options.extensions) &&
+      `extensions: ${Object.keys(options.extensions).join(",") || "(none)"}`,
+    Array.isArray(options.hints) && `hints: ${options.hints.join(",")}`,
+    options.timeout !== undefined && `timeout: ${shown(options.timeout)}`,
+  ];
+  return parts.filter(Boolean).join("; ");
 }
 
 /**

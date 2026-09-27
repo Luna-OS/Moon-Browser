@@ -6,12 +6,14 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   nativeTheme,
   session,
   webContents,
   type Input,
   type Session,
 } from "electron";
+import { messageBoxOptions, type DialogSpec } from "@shared/dialogs";
 import { resolveEngine, type SearchEngine } from "@shared/engines";
 import { isInternalUrl } from "@shared/internal";
 import { INTERNAL_EVENT_CHANNEL, type InternalEvent } from "@shared/ipc";
@@ -28,6 +30,7 @@ import { Extensions } from "./extensions";
 import { Permissions } from "./permissions";
 import { Profile, type SavedTab } from "./profile";
 import { Importer } from "./importer";
+import { installPageDialogs } from "./page-dialogs";
 import { handleInternalProtocol } from "./protocol";
 import { applySpellcheck, configureBrowsingSession } from "./sessions";
 import type { Tab } from "./tab";
@@ -159,6 +162,7 @@ export class Browser {
     this.normalSession = session.defaultSession;
     this.setupBrowsingSession(this.normalSession, false);
 
+    installPageDialogs(this);
     this.adblock.registerCosmeticHandlers((event, url) => {
       const tab = this.tabFor(event.sender.id);
       return !!tab && this.protectionActive(tab.url.startsWith("http") ? tab.url : url);
@@ -209,6 +213,17 @@ export class Browser {
     for (const w of this.windows) if (w.win === focused) return w;
     if (this.lastFocused && this.windows.has(this.lastFocused)) return this.lastFocused;
     return [...this.windows].find((w) => !w.isPrivate) ?? [...this.windows][0];
+  }
+
+  /**
+   * Asks in a Moon dialog in `win` (or the window in front); the system's
+   * message box only stands in when no window is left to ask in.
+   */
+  async ask(spec: DialogSpec, win?: MoonWindow): Promise<number> {
+    const target = win && !win.closed ? win : this.focusedWindow();
+    if (target && !target.closed) return target.ask(spec);
+    const { response } = await dialog.showMessageBox(messageBoxOptions(spec));
+    return response;
   }
 
   windowFocused(win: MoonWindow): void {

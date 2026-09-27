@@ -5,22 +5,42 @@
  * taken from the page), and Windows asks for Windows Hello, a security key
  * or a phone in its own dialog.
  */
+import { release } from "node:os";
 import { app, BrowserWindow, type WebContents } from "electron";
 import { matchesPattern } from "@shared/extensions";
 import {
+  type AttemptLog,
   clientDataJSON,
   coseAlgorithm,
+  describeRequest,
   extensionRpId,
   parseCreationOptions,
   parseRequestOptions,
   toBase64Url,
   transportNames,
+  tryInTurn,
   WebAuthnError,
 } from "@shared/webauthn";
 import type { Browser } from "./browser";
 // Loaded when first needed, and only where it's used: koffi's native part
 // ships with the Windows build only.
-import type { Cancelable, WindowsWebAuthn } from "./webauthn-win";
+import type { Cancelable, OptionsLayout, WindowsWebAuthn } from "./webauthn-win";
+
+/** One way of handing Windows the request. */
+interface Attempt {
+  label: string;
+  layout: OptionsLayout;
+  hwnd: bigint;
+}
+
+const hex = (hwnd: bigint) => (hwnd ? `0x${hwnd.toString(16)}` : "none");
+const live = (w: BrowserWindow | null | undefined) => (w && !w.isDestroyed() ? w : null);
+/** A window's HWND (0 for none). */
+const handleOf = (win: BrowserWindow | null): bigint => {
+  if (!win) return 0n;
+  const handle = win.getNativeWindowHandle();
+  return handle.length >= 8 ? handle.readBigUInt64LE(0) : BigInt(handle.readUInt32LE(0));
+};
 
 /** What the page's world gets back: the credential's bytes, or the error to throw. */
 export type WebAuthnReply =
@@ -85,15 +105,66 @@ export class ExtensionWebAuthn {
    * if none is found; the binding then uses the window in front).
    */
   private hwnd(sender: WebContents): bigint {
-    const live = (w: BrowserWindow | null | undefined) => (w && !w.isDestroyed() ? w : null);
     const win =
       live(BrowserWindow.fromWebContents(sender)) ??
       live(this.browser.tabFor(sender.id)?.window.win) ??
       live(BrowserWindow.getFocusedWindow()) ??
       live(this.browser.focusedWindow()?.win);
-    if (!win) return 0n;
-    const handle = win.getNativeWindowHandle();
-    return handle.length >= 8 ? handle.readBigUInt64LE(0) : BigInt(handle.readUInt32LE(0));
+    return handleOf(win);
+  }
+
+  /** The browser window itself (for a pop-up: the one it belongs to). */
+  private browserHwnd(sender: WebContents): bigint {
+    const own = live(BrowserWindow.fromWebContents(sender));
+    return handleOf(
+      live(this.browser.tabFor(sender.id)?.window.win) ??
+        live(own?.getParentWindow()) ??
+        live(this.browser.focusedWindow()?.win),
+    );
+  }
+
+  /**
+   * The ways to ask, in turn: first as Chrome does (its options, the window
+   * in front); if Windows refuses that at once as invalid, from the page's
+   * own window, from the browser window, then with the options Moon Browser
+   * used before.
+   */
+  private attempts(api: WindowsWebAuthn, own: bigint, main: bigint): Attempt[] {
+    const front = api.foregroundWindow();
+    const all: Attempt[] = [
+      {
+        label: `as Chrome asks (window ${hex(front || own)})`,
+        layout: "chrome",
+        hwnd: front || own,
+      },
+      { label: `from the page's window (${hex(own)})`, layout: "chrome", hwnd: own },
+      { label: `from the browser window (${hex(main)})`, layout: "chrome", hwnd: main },
+      {
+        label: `with the older options (window ${hex(own || front)})`,
+        layout: "legacy",
+        hwnd: own || front,
+      },
+    ];
+    return all.filter(
+      (a, i) =>
+        (a.hwnd !== 0n || i === 0) &&
+        !all.slice(0, i).some((b) => b.layout === a.layout && b.hwnd === a.hwnd),
+    );
+  }
+
+  /** What else helps tell why Windows said no: the request's shape and the system. */
+  private context(api: WindowsWebAuthn | null, options: unknown): string {
+    let system = `system ${process.platform} ${release()}`;
+    if (api) {
+      let hello = "unknown";
+      try {
+        hello = api.isPlatformAuthenticatorAvailable() ? "yes" : "no";
+      } catch {
+        // Only for the message.
+      }
+      system = `API version ${api.apiVersion}; Windows Hello set up: ${hello}; ${system}`;
+    }
+    return ` (${describeRequest(options)}; ${system})`;
   }
 
   async request(
@@ -105,7 +176,8 @@ export class ExtensionWebAuthn {
   ): Promise<WebAuthnReply> {
     const api = await this.api();
     const gone = () => this.cancel(extensionId, requestId);
-    const hwnd = this.hwnd(sender);
+    const own = this.hwnd(sender);
+    let log: AttemptLog[] = [];
     try {
       if (!api)
         throw new WebAuthnError(
@@ -118,26 +190,42 @@ export class ExtensionWebAuthn {
       const track = (c: Cancelable) => this.inFlight.set(`${extensionId} ${requestId}`, c);
       // The page going away (its pop-up closed) ends the system dialog too.
       sender.once("destroyed", gone);
+      // Each try's outcome is kept for the diagnosis; the page gets the last.
+      const inTurn = async <T>(run: (a: Attempt) => Promise<T>): Promise<T> => {
+        const outcome = await tryInTurn(this.attempts(api, own, this.browserHwnd(sender)), run);
+        log = outcome.log;
+        if (!outcome.ok) throw outcome.error;
+        if (log.length > 1)
+          this.browser.extensions.recordError(
+            extensionId,
+            `Windows Hello (navigator.credentials.${kind}) worked on try ${log.length}: ${tries(log)}${this.context(api, options)}`,
+          );
+        return outcome.value;
+      };
       if (kind === "create") {
         const req = parseCreationOptions(options);
         const clientData = clientDataJSON("webauthn.create", req.challenge, origin);
-        const result = await api.makeCredential(
-          {
-            hwnd,
-            rpId: extensionRpId(extensionId, req.rpId, hasHostAccess),
-            rpName: req.rpName,
-            user: req.user,
-            algorithms: req.algorithms,
-            clientData,
-            timeout: req.timeout,
-            exclude: req.exclude,
-            attachment: req.attachment,
-            requireResidentKey: req.requireResidentKey,
-            preferResidentKey: req.preferResidentKey,
-            userVerification: req.userVerification,
-            attestation: req.attestation,
-          },
-          track,
+        const rpId = extensionRpId(extensionId, req.rpId, hasHostAccess);
+        const result = await inTurn((a) =>
+          api.makeCredential(
+            {
+              hwnd: a.hwnd,
+              layout: a.layout,
+              rpId,
+              rpName: req.rpName,
+              user: req.user,
+              algorithms: req.algorithms,
+              clientData,
+              timeout: req.timeout,
+              exclude: req.exclude,
+              attachment: req.attachment,
+              requireResidentKey: req.requireResidentKey,
+              preferResidentKey: req.preferResidentKey,
+              userVerification: req.userVerification,
+              attestation: req.attestation,
+            },
+            track,
+          ),
         );
         return {
           ok: true,
@@ -154,16 +242,20 @@ export class ExtensionWebAuthn {
       }
       const req = parseRequestOptions(options);
       const clientData = clientDataJSON("webauthn.get", req.challenge, origin);
-      const result = await api.getAssertion(
-        {
-          hwnd,
-          rpId: extensionRpId(extensionId, req.rpId, hasHostAccess),
-          clientData,
-          timeout: req.timeout,
-          allow: req.allow,
-          userVerification: req.userVerification,
-        },
-        track,
+      const rpId = extensionRpId(extensionId, req.rpId, hasHostAccess);
+      const result = await inTurn((a) =>
+        api.getAssertion(
+          {
+            hwnd: a.hwnd,
+            layout: a.layout,
+            rpId,
+            clientData,
+            timeout: req.timeout,
+            allow: req.allow,
+            userVerification: req.userVerification,
+          },
+          track,
+        ),
       );
       return {
         ok: true,
@@ -186,9 +278,10 @@ export class ExtensionWebAuthn {
             };
       // The page only learns the DOMException's name; the extension's
       // errors on moon://extensions say what happened (as Chrome's console).
+      const tried = log.length ? ` Tried ${tries(log)}.` : ` (window ${hex(own)})`;
       this.browser.extensions.recordError(
         extensionId,
-        `Windows Hello (navigator.credentials.${kind}) failed: ${reply.name}: ${reply.message}${describeRequest(options, hwnd)}`,
+        `Windows Hello (navigator.credentials.${kind}) failed: ${reply.name}: ${reply.message}${tried}${this.context(api, options)}`,
       );
       return reply;
     } finally {
@@ -198,21 +291,7 @@ export class ExtensionWebAuthn {
   }
 }
 
-/** The request's shape for an error message — never its challenge or user data. */
-function describeRequest(options: unknown, hwnd: bigint): string {
-  const window = hwnd ? `window 0x${hwnd.toString(16)}` : "no window of its own";
-  if (!options || typeof options !== "object") return ` (${window})`;
-  const o = options as Record<string, unknown>;
-  const rp = o.rp as Record<string, unknown> | undefined;
-  const sel = o.authenticatorSelection as Record<string, unknown> | undefined;
-  const parts = [
-    `rp.id: ${JSON.stringify(rp ? rp.id : o.rpId)}`,
-    sel && `attachment: ${String(sel.authenticatorAttachment)}`,
-    sel && `residentKey: ${String(sel.residentKey ?? sel.requireResidentKey)}`,
-    `userVerification: ${String(sel ? sel.userVerification : o.userVerification)}`,
-    Array.isArray(o.pubKeyCredParams) &&
-      `algorithms: ${o.pubKeyCredParams.map((p: { alg?: unknown }) => String(p.alg)).join(",")}`,
-    window,
-  ].filter(Boolean);
-  return ` (${parts.join("; ")})`;
+/** Each try and what it got, e.g. "as Chrome asks (window 0x1): … after 12 ms". */
+function tries(log: AttemptLog[]): string {
+  return log.map((t) => `${t.label}: ${t.outcome} after ${t.ms} ms`).join("; ");
 }

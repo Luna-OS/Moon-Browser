@@ -33,6 +33,7 @@ import {
   splitRects,
   type Insets,
 } from "@shared/layout";
+import { type DialogAnswer, DialogQueue, type DialogSpec } from "@shared/dialogs";
 import { resolveInput } from "@shared/omnibox";
 import {
   cleanGroupTitle,
@@ -85,6 +86,8 @@ export class MoonWindow {
   private fullscreenByPage = false;
   private updateScheduled = false;
   private softTimer: NodeJS.Timeout | null = null;
+  /** Questions asked in Moon Browser's own dialogs, one at a time. */
+  private readonly dialogs = new DialogQueue(() => this.dialogChanged());
   closed = false;
 
   constructor(
@@ -166,6 +169,7 @@ export class MoonWindow {
     this.win.on("close", () => browser.windowClosing(this));
     this.win.on("closed", () => {
       this.closed = true;
+      this.dialogs.dismissAll();
       for (const tab of [...this.tabs]) {
         browser.permissions.cancelTab(tab.id);
         const wc = tab.wc;
@@ -759,6 +763,33 @@ export class MoonWindow {
     }, 300);
   }
 
+  /**
+   * Asks in a Moon dialog over the window (pages step aside meanwhile); the
+   * answer is the chosen button's index.
+   */
+  ask(spec: DialogSpec): Promise<number> {
+    if (this.closed) return Promise.resolve(spec.cancelId);
+    return this.dialogs.ask(spec);
+  }
+
+  /** Like ask(), with the text field's value and the checkbox. */
+  askFull(spec: DialogSpec, signal?: AbortSignal): Promise<DialogAnswer> {
+    if (this.closed)
+      return Promise.resolve({ response: spec.cancelId, text: null, checked: false });
+    return this.dialogs.askFull(spec, signal);
+  }
+
+  private dialogChanged(): void {
+    if (this.closed) return;
+    this.update();
+    if (!this.dialogs.current()) return;
+    // Menus make way, and the keys (Enter, Escape) go to the dialog.
+    this.send({ type: "closePopovers" });
+    if (this.win.isMinimized()) this.win.restore();
+    this.win.focus();
+    this.win.webContents.focus();
+  }
+
   send(event: UiEvent): void {
     if (!this.closed) this.win.webContents.send(UI_CHANNELS.event, event);
   }
@@ -804,6 +835,7 @@ export class MoonWindow {
       extensionPopup: this.isPrivate ? null : this.browser.extensions.openPopup(),
       sidePanel: this.sidePanelState(),
       groups: this.groups,
+      dialog: this.dialogs.current(),
     };
   }
 
@@ -1164,6 +1196,9 @@ export class MoonWindow {
         break;
       case "respondPrompt":
         this.browser.permissions.respond(cmd.id, cmd.allow, cmd.remember);
+        break;
+      case "answerDialog":
+        this.dialogs.answer(cmd.id, cmd.response, cmd.text, cmd.checked);
         break;
       case "findInPage":
         this.findInPage(cmd.text, cmd.forward, cmd.findNext);

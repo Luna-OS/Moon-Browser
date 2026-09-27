@@ -133,8 +133,11 @@ USB, serial, HID, Bluetooth and screen capture are refused.
 ### Downloads
 
 Files that run code (`.exe`, `.msi`, `.bat`, `.ps1`, `.js`, `.jar`, `.sh`, `.AppImage`, `.deb`,
-…) are paused until the user confirms. On Windows, every download gets the **Mark of the Web**
-(`Zone.Identifier`), so SmartScreen and Office treat it as coming from the internet.
+…) are downloaded under a name nothing runs (`Unconfirmed <number>.crdownload`, as Chrome does)
+and only get their own name once the user chooses *Keep anyway*; *Discard* deletes them, even
+if they had already finished (up to 0.1.10, a small file could be complete before the question
+was answered). On Windows, every download gets the **Mark of the Web** (`Zone.Identifier`), so
+SmartScreen and Office treat it as coming from the internet.
 
 ### Data at rest
 

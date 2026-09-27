@@ -17,6 +17,7 @@ import { useDocumentTheme } from "@theme/useTheme";
 import { AddressBar } from "./AddressBar";
 import { BookmarksBar, FindBar, PromptBar } from "./Bars";
 import { ContentArea } from "./ContentArea";
+import { MoonDialog } from "./Dialog";
 import { useBrowserActions } from "./extension-actions";
 import { ExtensionButtons, ExtensionsMenu } from "./Extensions";
 import { useOverlay } from "./overlay";
@@ -43,7 +44,7 @@ function Browser({ state }: { state: WindowState }) {
   /** The tab the find bar was opened for; switching tabs closes it, like Chrome. */
   const [findTab, setFindTab] = useState<number | null>(null);
   const findOpen = findTab === state.activeId;
-  const snapshots = useOverlay(popover !== null || dropdown || dragging);
+  const snapshots = useOverlay(popover !== null || dropdown || dragging || state.dialog !== null);
   const actions = useBrowserActions(!state.private);
   const content = useRef<HTMLDivElement>(null);
   const activeRef = useRef(state.activeId);
@@ -326,6 +327,7 @@ function Browser({ state }: { state: WindowState }) {
           )}
         </Popover>
       )}
+      {state.dialog && <MoonDialog key={state.dialog.id} dialog={state.dialog} />}
     </div>
   );
 }

@@ -2,7 +2,7 @@
  * One tab: a page in a WebContentsView, or — while asleep — just its
  * address, title and back/forward history, ready to wake up.
  */
-import { dialog, WebContentsView, type NavigationEntry, type WebContents } from "electron";
+import { WebContentsView, type NavigationEntry, type WebContents } from "electron";
 import { shouldFallBackToHttp } from "@shared/https";
 import { isInternalUrl, isNewTabUrl, NEWTAB_URL } from "@shared/internal";
 import { displayUrl } from "@shared/display";
@@ -511,19 +511,26 @@ export class Tab {
     wc.on("will-prevent-unload", () => {
       if (!this.closing || this.dialogOpen) return;
       this.dialogOpen = true;
-      void dialog
-        .showMessageBox(this.window.win, {
-          type: "question",
-          buttons: ["Leave", "Stay"],
-          defaultId: 1,
-          cancelId: 1,
-          title: "Leave site?",
-          message: "Leave site?",
-          detail: "Changes you made may not be saved.",
-        })
-        .then(({ response }) => {
+      void this.window.browser
+        .ask(
+          {
+            tone: "calm",
+            glyph: "leave",
+            eyebrow: displayUrl(originOf(this.url)) || undefined,
+            title: "Leave site?",
+            message: "Changes you made may not be saved.",
+            buttons: [
+              { label: "Stay", style: "secondary" },
+              { label: "Leave", style: "primary" },
+            ],
+            defaultId: 0,
+            cancelId: 0,
+          },
+          this.window,
+        )
+        .then((response) => {
           this.dialogOpen = false;
-          if (response === 0) this.finishClose();
+          if (response === 1) this.finishClose();
           else this.closing = false;
         });
     });

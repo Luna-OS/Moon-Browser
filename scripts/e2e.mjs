@@ -5,6 +5,7 @@
 //   node scripts/e2e.mjs [--screenshots dir]
 import { _electron as electron } from "playwright-core";
 import { createHash, generateKeyPairSync } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
 import { access, cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -24,6 +25,8 @@ const PAGES = {
     <a id="blank" href="/second" target="_blank">New tab</a>
     <a id="internal" href="moon://settings/">Sneaky settings link</a></body>`,
   "/second": `<!doctype html><title>Second page</title><body style="padding:2rem"><h1>Second</h1></body>`,
+  "/dialogs": `<!doctype html><title>Dialog test page</title><body style="font:16px sans-serif;padding:2rem">
+    <h1>Pages ask questions</h1><p>alert(), confirm() and prompt() answer here.</p></body>`,
 };
 
 const server = createServer((req, res) => {
@@ -38,6 +41,14 @@ const server = createServer((req, res) => {
   if (dnr) {
     res.writeHead(200, { "content-type": "text/plain" });
     res.end(dnr);
+    return;
+  }
+  if (req.url === "/tool.exe") {
+    res.writeHead(200, {
+      "content-type": "application/octet-stream",
+      "content-disposition": 'attachment; filename="tool.exe"',
+    });
+    res.end("MZ not really a program");
     return;
   }
   const body = PAGES[req.url ?? "/"];
@@ -389,13 +400,20 @@ try {
           throw new Error(`sent ${made.sent}`);
         const cancelled = await inPopup(create(null, "!cancel"));
         if (cancelled !== "error:NotAllowedError") throw new Error(`cancelled: ${cancelled}`);
+        // A Windows that refuses Chrome's options at once gets the older ones.
+        const retried = await inPopup(create(null, "?refuse"));
+        if (!retried.startsWith("{") || !JSON.parse(retried).sent.includes(";opt=v4,"))
+          throw new Error(`retried: ${retried}`);
+        if (!made.sent.includes(";opt=v8,t=300000,"))
+          throw new Error(`not Chrome's options: ${made.sent}`);
         const got = await inPopup(`navigator.credentials
           .get({ publicKey: { challenge: new Uint8Array(32), allowCredentials: [{ type: "public-key", id: new Uint8Array([1, 2, 3, 4]) }] } })
           .then((c) => [c.response instanceof AuthenticatorAssertionResponse, new TextDecoder().decode(c.response.signature), new Uint8Array(c.response.userHandle).join()].join("|"))`);
         if (
           !got.startsWith(`true|hwnd=`) ||
           !got.includes(`;rp=${origin};`) ||
-          !got.endsWith("allow=v1:01020304/public-key/0|85")
+          !got.includes(",allow=v1:01020304/public-key/0,lbo=0,") ||
+          !got.endsWith("|85")
         )
           throw new Error(`assertion: ${got}`);
       }
@@ -820,11 +838,20 @@ try {
     // The service worker's console.error is listed, like Chrome's "Errors".
     if (!result.errors.some((e) => e.includes("moon-test: an error")))
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);
-    // A failed Windows Hello request says why (here: the stand-in's cancelled dialog).
+    // A failed Windows Hello request says why (here: the stand-in's cancelled
+    // dialog), and so does one that only worked with the older options.
     if (
       webauthnMock &&
-      !result.errors.some((e) =>
-        e.includes("Windows Hello (navigator.credentials.create) failed: NotAllowedError"),
+      !(
+        result.errors.some((e) =>
+          e.includes("Windows Hello (navigator.credentials.create) failed: NotAllowedError"),
+        ) &&
+        result.errors.some(
+          (e) =>
+            /Windows Hello \(navigator\.credentials\.create\) worked on try [23]/.test(e) &&
+            e.includes("with the older options") &&
+            e.includes("0x80090027"),
+        )
       )
     )
       throw new Error(`no WebAuthn diagnosis in ${JSON.stringify(result.errors)}`);
@@ -871,17 +898,29 @@ try {
     // Only in developer mode.
     if ((await extensionsPage("extensions.loadUnpacked")) !== null) throw new Error("loaded");
     await extensionsPage("extensions.setDeveloperMode", true);
-    // The folder picker and the confirmation, answered.
+    // The folder picker answered; the confirmation is Moon Browser's own dialog.
     await app.evaluate(({ dialog }, dir) => {
       globalThis.__dialogs = [dialog.showOpenDialog, dialog.showMessageBox];
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
-      dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
+      dialog.showMessageBox = async () => {
+        throw new Error("the system's message box was used");
+      };
     }, folder);
-    const error = await extensionsPage("extensions.loadUnpacked");
+    const loading = extensionsPage("extensions.loadUnpacked");
+    const add = ui.getByRole("alertdialog");
+    await waitFor(() => add.isVisible(), "the Add extension dialog");
+    const addText = await add.textContent();
+    if (!addText.includes("Add “My Own Extension” to Moon Browser?"))
+      throw new Error(`dialog: ${addText}`);
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("09a-dialog-add-extension");
+    await add.getByRole("button", { name: "Add extension" }).click();
+    const error = await loading;
     await app.evaluate(({ dialog }) => {
       [dialog.showOpenDialog, dialog.showMessageBox] = globalThis.__dialogs;
     });
     if (error !== null) throw new Error(error);
+    if (await add.isVisible()) throw new Error("the dialog stayed");
     const mine = (await extensionsPage("extensions.list")).find((e) => e.unpacked);
     if (mine?.name !== "My Own Extension" || mine.path !== folder || !mine.enabled)
       throw new Error(JSON.stringify(mine));
@@ -930,6 +969,83 @@ try {
     if (!damaged.errors.some((e) => e.includes("files are damaged")))
       throw new Error(JSON.stringify(damaged.errors));
     await extensionsPage("extensions.remove", id);
+  });
+
+  /** Runs `code` in the tab showing the dialog test page. */
+  const inTestPage = (code) =>
+    app.evaluate(({ webContents }, js) => {
+      const wc = webContents.getAllWebContents().find((w) => w.getURL().endsWith("/dialogs"));
+      return wc.executeJavaScript(js, true);
+    }, code);
+
+  await check("pages ask in Moon Browser's own dialogs, not the system's", async () => {
+    const box = ui.getByRole("combobox", { name: "Address and search bar" });
+    await box.click();
+    await box.fill(`${base}/dialogs`);
+    await box.press("Enter");
+    await waitFor(
+      async () => (await tabs()).some((t) => t.title === "Dialog test page"),
+      "the dialog test page",
+    );
+    const dialog = ui.getByRole("alertdialog");
+    const host = new URL(base).host;
+    // confirm(): the page waits for the answer.
+    const confirmed = inTestPage("confirm('Keep the moon?\\nIt is ours.')");
+    await waitFor(() => dialog.isVisible(), "the confirm dialog");
+    const text = await dialog.textContent();
+    if (!text.includes(`${host} says`) || !text.includes("Keep the moon?"))
+      throw new Error(`confirm dialog: ${text}`);
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("09b-dialog-confirm");
+    await dialog.getByRole("button", { name: "OK" }).click();
+    if ((await confirmed) !== true) throw new Error(`confirm gave ${await confirmed}`);
+    // prompt(): typed text and Enter; from the second dialog on, a page can be stopped.
+    const prompted = inTestPage("prompt('Your name?', 'Luna')");
+    await waitFor(() => dialog.isVisible(), "the prompt dialog");
+    const field = dialog.getByRole("textbox");
+    if ((await field.inputValue()) !== "Luna") throw new Error("prompt default");
+    await field.fill("Selene");
+    await field.press("Enter");
+    if ((await prompted) !== "Selene") throw new Error(`prompt gave ${await prompted}`);
+    // alert(), dismissed with Escape, and no more dialogs from this page.
+    const alerted = inTestPage("alert('Goodnight'), 'done'");
+    await waitFor(() => dialog.isVisible(), "the alert dialog");
+    await dialog.getByRole("checkbox").check();
+    await ui.keyboard.press("Escape");
+    if ((await alerted) !== "done") throw new Error("alert didn't return");
+    if ((await inTestPage("confirm('Again?')")) !== false) throw new Error("not stopped");
+    // A program download is asked about, and held under a name nothing
+    // runs until it's kept — even once it has finished.
+    const folder = await app.evaluate(({ app: electronApp }) => electronApp.getPath("downloads"));
+    const before = new Set(existsSync(folder) ? readdirSync(folder) : []);
+    const added = () => readdirSync(folder).filter((n) => !before.has(n));
+    const download = async () => {
+      await inTestPage("location.href = '/tool.exe'; true");
+      await waitFor(() => dialog.isVisible(), "the download warning");
+      await waitFor(() => added().length > 0, "the download to arrive");
+      await new Promise((r) => setTimeout(r, 500));
+      if (!added().every((n) => /^Unconfirmed \d+\.crdownload/.test(n)))
+        throw new Error(`on disk before "Keep": ${added().join()}`);
+    };
+    try {
+      await download();
+      const warning = await dialog.textContent();
+      if (!warning.includes("“tool.exe” can run code on your computer"))
+        throw new Error(`warning: ${warning}`);
+      await shot("09c-dialog-download");
+      await dialog.getByRole("button", { name: "Discard" }).click();
+      await waitFor(async () => !(await dialog.isVisible()), "the warning to close");
+      await waitFor(() => added().length === 0, "the discarded download to go");
+      await download();
+      await dialog.getByRole("button", { name: "Keep anyway" }).click();
+      // Named as it was meant to be (next to any earlier "tool.exe").
+      await waitFor(
+        () => added().length === 1 && /^tool( \(\d+\))?\.exe$/.test(added()[0]),
+        "the kept program",
+      );
+    } finally {
+      for (const name of added()) await rm(join(folder, name), { force: true });
+    }
   });
 
   await check("the menu opens above the page", async () => {

@@ -3,9 +3,9 @@
  * chosen in Settings), listed on moon://downloads and in the toolbar.
  */
 import { app, dialog, shell, type DownloadItem, type Session, type WebContents } from "electron";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
+import { copyFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import type { DownloadAction } from "@shared/ipc";
 import { isDangerousFile, zoneIdentifier } from "@shared/security";
@@ -116,17 +116,23 @@ export class Downloads {
   ): void {
     const settings = this.browser.settings;
     const dir = settings.downloadDir || app.getPath("downloads");
-    if (settings.askDownloadLocation) {
-      item.setSaveDialogOptions({ defaultPath: join(dir, item.getFilename()) });
+    const filename = item.getFilename();
+    // Programs and scripts are held under a name nothing runs until the
+    // person says "Keep" (as Chrome does), even if they finish first.
+    const dangerous = isDangerousFile(filename);
+    if (dangerous) {
+      item.setSavePath(uniquePath(dir, `Unconfirmed ${randomInt(100_000, 1_000_000)}.crdownload`));
+    } else if (settings.askDownloadLocation) {
+      item.setSaveDialogOptions({ defaultPath: join(dir, filename) });
     } else {
-      item.setSavePath(uniquePath(dir, item.getFilename()));
+      item.setSavePath(uniquePath(dir, filename));
     }
     const id = randomUUID();
     const referrer = source ? this.browser.tabFor(source.id)?.url : undefined;
     const info: DownloadInfo = {
       id,
-      filename: item.getFilename(),
-      path: item.getSavePath(),
+      filename,
+      path: dangerous ? "" : item.getSavePath(),
       url: item.getURL(),
       state: "progressing",
       received: 0,
@@ -138,19 +144,15 @@ export class Downloads {
     this.recentIds = [id, ...this.recentIds].slice(0, 30);
 
     const refresh = () => {
-      info.path = item.getSavePath() || info.path;
-      info.filename = info.path ? basename(info.path) : info.filename;
+      if (!dangerous) {
+        info.path = item.getSavePath() || info.path;
+        info.filename = info.path ? basename(info.path) : info.filename;
+      }
       info.received = item.getReceivedBytes();
       info.total = item.getTotalBytes();
       info.paused = item.isPaused();
     };
-    item.on("updated", (_e, state) => {
-      refresh();
-      info.state = state === "interrupted" ? "interrupted" : "progressing";
-      this.changedSoon();
-    });
-    item.once("done", (_e, state) => {
-      refresh();
+    const finish = (state: DownloadInfo["state"]) => {
       info.state = state;
       info.paused = false;
       this.active.delete(id);
@@ -164,40 +166,82 @@ export class Downloads {
       else if (info.path) this.browser.profile.saveDownload({ ...info });
       else this.recentIds = this.recentIds.filter((r) => r !== id);
       this.changed();
+    };
+    const verdict = dangerous ? this.confirmDangerous(info, source) : Promise.resolve(true);
+    let done = false;
+    void verdict.then((keep) => {
+      if (!keep && !done) item.cancel();
+    });
+
+    item.on("updated", (_e, state) => {
+      refresh();
+      info.state = state === "interrupted" ? "interrupted" : "progressing";
+      this.changedSoon();
+    });
+    item.once("done", (_e, state) => {
+      done = true;
+      refresh();
+      if (!dangerous) return finish(state);
+      const held = item.getSavePath();
+      void verdict.then(async (keep) => {
+        const target =
+          keep && state === "completed" ? await this.keepPath(dir, filename, source) : null;
+        if (target && (await move(held, target))) {
+          info.path = target;
+          info.filename = basename(target);
+          return finish("completed");
+        }
+        await rm(held, { force: true }).catch(() => undefined);
+        info.path = join(dir, filename);
+        finish(state === "completed" ? "cancelled" : state);
+      });
     });
     this.changed();
-    if (isDangerousFile(info.filename)) this.confirmDangerous(item, info, source);
   }
 
-  /** Programs and scripts only land on disk after an explicit "Keep". */
-  private confirmDangerous(
-    item: DownloadItem,
+  /** Where a kept program goes: the downloads folder, or where the person picks. */
+  private async keepPath(
+    dir: string,
+    filename: string,
+    source: WebContents | undefined,
+  ): Promise<string | null> {
+    if (!this.browser.settings.askDownloadLocation) return uniquePath(dir, filename);
+    const win = this.browser.windowForContents(source)?.win;
+    const options = { defaultPath: join(dir, filename) };
+    const { canceled, filePath } = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options);
+    return canceled || !filePath ? null : filePath;
+  }
+
+  /** Asks whether a program or script may be kept. */
+  private async confirmDangerous(
     info: DownloadInfo,
     source: WebContents | undefined,
-  ): void {
-    item.pause();
+  ): Promise<boolean> {
     let host = "";
     try {
       host = new URL(info.url).host;
     } catch {
       host = "";
     }
-    const win = this.browser.windowForContents(source)?.win ?? this.browser.focusedWindow()?.win;
-    const options = {
-      type: "warning" as const,
-      buttons: ["Discard", "Keep"],
-      defaultId: 0,
-      cancelId: 0,
-      title: "This file can harm your computer",
-      message: `“${info.filename}” can run code on your computer`,
-      detail: `It is a program or script${host ? ` from ${host}` : ""}. Only keep it if you trust where it comes from.`,
-    };
-    void (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options)).then(
-      ({ response }) => {
-        if (response === 1) item.resume();
-        else item.cancel();
+    const response = await this.browser.ask(
+      {
+        tone: "warning",
+        glyph: "download",
+        eyebrow: "This file can harm your computer",
+        title: `“${info.filename}” can run code on your computer`,
+        message: `It is a program or script${host ? ` from ${host}` : ""}. Only keep it if you trust where it comes from.`,
+        buttons: [
+          { label: "Discard", style: "primary" },
+          { label: "Keep anyway", style: "danger" },
+        ],
+        defaultId: 0,
+        cancelId: 0,
       },
+      this.browser.windowForContents(source),
     );
+    return response === 1;
   }
 
   private changedSoon(): void {
@@ -211,5 +255,22 @@ export class Downloads {
   private changed(): void {
     this.browser.updateAllWindows();
     this.browser.notifyInternal("downloads");
+  }
+}
+
+/** Moves a file, also to another drive; false if it couldn't. */
+async function move(from: string, to: string): Promise<boolean> {
+  try {
+    await rename(from, to);
+    return true;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EXDEV") return false;
+    try {
+      await copyFile(from, to);
+      await rm(from, { force: true });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

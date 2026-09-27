@@ -93,13 +93,28 @@ const MAKE_OPTIONS_3 = {
 };
 const MAKE_OPTIONS_V3 = koffi.struct("MOON_WEBAUTHN_MAKE_CREDENTIAL_OPTIONS_3", MAKE_OPTIONS_3);
 // Version 4 (API version 3, Windows 11): adds "resident key preferred".
-const MAKE_OPTIONS_V4 = koffi.struct("MOON_WEBAUTHN_MAKE_CREDENTIAL_OPTIONS_4", {
+const MAKE_OPTIONS_4 = {
   ...MAKE_OPTIONS_3,
   dwEnterpriseAttestation: DWORD,
   dwLargeBlobSupport: DWORD,
   bPreferResidentKey: BOOL,
+};
+const MAKE_OPTIONS_V4 = koffi.struct("MOON_WEBAUTHN_MAKE_CREDENTIAL_OPTIONS_4", MAKE_OPTIONS_4);
+// Version 8, what Chrome hands every Windows (older ones read only the
+// fields they know).
+const MAKE_OPTIONS_V8 = koffi.struct("MOON_WEBAUTHN_MAKE_CREDENTIAL_OPTIONS_8", {
+  ...MAKE_OPTIONS_4,
+  bBrowserInPrivateMode: BOOL,
+  bEnablePrf: BOOL,
+  pLinkedDevice: PTR,
+  cbJsonExt: DWORD,
+  pbJsonExt: PTR,
+  pPRFGlobalEval: PTR,
+  cCredentialHints: DWORD,
+  ppwszCredentialHints: PTR,
+  bThirdPartyPayment: BOOL,
 });
-const GET_OPTIONS_V4 = koffi.struct("MOON_WEBAUTHN_GET_ASSERTION_OPTIONS_4", {
+const GET_OPTIONS_4 = {
   dwVersion: DWORD,
   dwTimeoutMilliseconds: DWORD,
   CredentialList: CREDENTIALS,
@@ -111,7 +126,24 @@ const GET_OPTIONS_V4 = koffi.struct("MOON_WEBAUTHN_GET_ASSERTION_OPTIONS_4", {
   pbU2fAppId: PTR,
   pCancellationId: PTR,
   pAllowCredentialList: PTR,
+};
+const GET_OPTIONS_V4 = koffi.struct("MOON_WEBAUTHN_GET_ASSERTION_OPTIONS_4", GET_OPTIONS_4);
+const GET_OPTIONS_V8 = koffi.struct("MOON_WEBAUTHN_GET_ASSERTION_OPTIONS_8", {
+  ...GET_OPTIONS_4,
+  dwCredLargeBlobOperation: DWORD,
+  cbCredLargeBlob: DWORD,
+  pbCredLargeBlob: PTR,
+  pHmacSecretSaltValues: PTR,
+  bBrowserInPrivateMode: BOOL,
+  pLinkedDevice: PTR,
+  bAutoFill: BOOL,
+  cbJsonExt: DWORD,
+  pbJsonExt: PTR,
+  cCredentialHints: DWORD,
+  ppwszCredentialHints: PTR,
 });
+/** What Chrome gives Windows as the time limit; the page's own is kept here. */
+const WINDOWS_TIMEOUT = 300_000;
 // The results, as far as version 3 (attestation) and 1 (assertion) go:
 // every Windows returns at least those fields.
 const ATTESTATION_V3 = koffi.struct("MOON_WEBAUTHN_CREDENTIAL_ATTESTATION_3", {
@@ -141,9 +173,17 @@ const ASSERTION_V1 = koffi.struct("MOON_WEBAUTHN_ASSERTION_1", {
   pbUserId: PTR,
 });
 
+/**
+ * How the options are laid out: "chrome" as Chrome sends them (version 8,
+ * Chrome's time limit), "legacy" as Moon Browser 0.1.10 did (the newest
+ * version the system names, the page's time limit).
+ */
+export type OptionsLayout = "chrome" | "legacy";
+
 export interface MakeCredentialCall {
   /** The window the system dialog belongs to (HWND). */
   hwnd: bigint;
+  layout?: OptionsLayout;
   rpId: string;
   rpName: string;
   user: { id: Uint8Array; name: string; displayName: string };
@@ -168,6 +208,7 @@ export interface MakeCredentialResult {
 
 export interface GetAssertionCall {
   hwnd: bigint;
+  layout?: OptionsLayout;
   rpId: string;
   clientData: Uint8Array;
   timeout: number;
@@ -206,6 +247,24 @@ class Arena {
     const ptr = this.alloc("uint8_t", data.length);
     koffi.encode(ptr, "uint8_t", Array.from(data), data.length);
     return ptr;
+  }
+
+  /** The descriptors as an array of WEBAUTHN_CREDENTIAL (the older form). */
+  credentials(list: CredentialDescriptor[]): { cCredentials: number; pCredentials: Pointer } {
+    if (!list.length) return { cCredentials: 0, pCredentials: null };
+    const array = this.alloc(CREDENTIAL, list.length);
+    koffi.encode(
+      array,
+      CREDENTIAL,
+      list.map((c) => ({
+        dwVersion: 1,
+        cbId: c.id.length,
+        pbId: this.bytes(c.id),
+        pwszCredentialType: "public-key",
+      })),
+      list.length,
+    );
+    return { cCredentials: list.length, pCredentials: array };
   }
 
   /** A WEBAUTHN_CREDENTIAL_LIST of the descriptors, or null for none. */
@@ -285,9 +344,12 @@ export class WindowsWebAuthn {
    * can't be found, the one in front — or the desktop — takes its place.
    */
   windowFor(hwnd: bigint): bigint {
-    if (hwnd) return hwnd;
-    const pick = (fn?: KoffiFunction) => BigInt((fn?.() as number | bigint | undefined) ?? 0);
-    return pick(this.foreground) || pick(this.desktop);
+    return hwnd || this.foregroundWindow() || BigInt((this.desktop?.() as number | bigint) ?? 0);
+  }
+
+  /** The window in front (what Chrome hands Windows), 0 if none or not on Windows. */
+  foregroundWindow(): bigint {
+    return BigInt((this.foreground?.() as number | bigint | undefined) ?? 0);
   }
 
   /** The system's WebAuthn API, or null where there is none (before Windows 10 1903). */
@@ -333,6 +395,7 @@ export class WindowsWebAuthn {
     read: (result: Pointer) => T,
     free: (result: Pointer) => void,
     onCancelable?: (c: Cancelable) => void,
+    timeout?: number,
   ): Promise<T> {
     let cancellationId: Pointer = arena.alloc(GUID);
     if ((this.fns.cancellationId(cancellationId) as number) !== 0) cancellationId = null;
@@ -340,13 +403,15 @@ export class WindowsWebAuthn {
     koffi.encode(out, PTR, null);
     return new Promise<T>((resolve, reject) => {
       let finished = false;
-      onCancelable?.({
-        cancel: () => {
-          if (!finished && cancellationId) this.fns.cancel(cancellationId);
-        },
-      });
+      const cancel = () => {
+        if (!finished && cancellationId) this.fns.cancel(cancellationId);
+      };
+      onCancelable?.({ cancel });
+      // The page's time limit, where Windows is given Chrome's.
+      const timer = timeout ? setTimeout(cancel, timeout) : undefined;
       call(cancellationId, out, (hr) => {
         finished = true;
+        clearTimeout(timer);
         const result: Pointer = koffi.decode(out, PTR);
         try {
           if (hr !== 0 || !result) reject(this.error(hr));
@@ -370,7 +435,7 @@ export class WindowsWebAuthn {
       const rp = arena.struct(RP, {
         dwVersion: 1,
         pwszId: c.rpId,
-        pwszName: c.rpName || c.rpId,
+        pwszName: c.rpName,
         pwszIcon: null,
       });
       const user = arena.struct(USER, {
@@ -399,13 +464,14 @@ export class WindowsWebAuthn {
         pwszHashAlgId: "SHA-256",
       });
       const exclude = arena.credentialList(c.exclude);
-      const v4 = this.apiVersion >= 3;
+      const chrome = (c.layout ?? "chrome") === "chrome";
+      const version = chrome ? 8 : this.apiVersion >= 3 ? 4 : 3;
       return this.run(
         arena,
         (cancellationId, out, done) => {
-          const options = arena.struct(v4 ? MAKE_OPTIONS_V4 : MAKE_OPTIONS_V3, {
-            dwVersion: v4 ? 4 : 3,
-            dwTimeoutMilliseconds: c.timeout,
+          const common = {
+            dwVersion: version,
+            dwTimeoutMilliseconds: chrome ? WINDOWS_TIMEOUT : c.timeout,
             CredentialList: { cCredentials: 0, pCredentials: null },
             Extensions: { cExtensions: 0, pExtensions: null },
             dwAuthenticatorAttachment: c.attachment,
@@ -415,14 +481,30 @@ export class WindowsWebAuthn {
             dwFlags: 0,
             pCancellationId: cancellationId,
             pExcludeCredentialList: exclude,
-            ...(v4
-              ? {
-                  dwEnterpriseAttestation: 0,
-                  dwLargeBlobSupport: 0,
-                  bPreferResidentKey: c.preferResidentKey ? 1 : 0,
-                }
-              : {}),
-          });
+          };
+          const v4 = {
+            dwEnterpriseAttestation: 0,
+            dwLargeBlobSupport: 0,
+            bPreferResidentKey: c.preferResidentKey ? 1 : 0,
+          };
+          const options =
+            version === 8
+              ? arena.struct(MAKE_OPTIONS_V8, {
+                  ...common,
+                  ...v4,
+                  bBrowserInPrivateMode: 0,
+                  bEnablePrf: 0,
+                  pLinkedDevice: null,
+                  cbJsonExt: 0,
+                  pbJsonExt: null,
+                  pPRFGlobalEval: null,
+                  cCredentialHints: 0,
+                  ppwszCredentialHints: null,
+                  bThirdPartyPayment: 0,
+                })
+              : version === 4
+                ? arena.struct(MAKE_OPTIONS_V4, { ...common, ...v4 })
+                : arena.struct(MAKE_OPTIONS_V3, common);
           this.fns.make.async(
             this.windowFor(c.hwnd),
             rp,
@@ -445,6 +527,7 @@ export class WindowsWebAuthn {
         },
         (result) => void this.fns.freeAttestation(result),
         onCancelable,
+        chrome && c.timeout < WINDOWS_TIMEOUT ? c.timeout : undefined,
       );
     } catch (err) {
       arena.free();
@@ -465,22 +548,46 @@ export class WindowsWebAuthn {
         pwszHashAlgId: "SHA-256",
       });
       const allow = arena.credentialList(c.allow);
+      const chrome = (c.layout ?? "chrome") === "chrome";
+      // Chrome's answer to "was the AppID used?" goes here (never, it's not given).
+      const usedAppId = arena.alloc(BOOL);
+      koffi.encode(usedAppId, BOOL, 0);
       return this.run(
         arena,
         (cancellationId, out, done) => {
-          const options = arena.struct(GET_OPTIONS_V4, {
-            dwVersion: 4,
-            dwTimeoutMilliseconds: c.timeout,
-            CredentialList: { cCredentials: 0, pCredentials: null },
+          const common = {
+            dwVersion: chrome ? 8 : 4,
+            dwTimeoutMilliseconds: chrome ? WINDOWS_TIMEOUT : c.timeout,
+            // Chrome also lists the credentials the older way, as Microsoft
+            // advised for security keys that only speak U2F.
+            CredentialList: chrome
+              ? arena.credentials(c.allow)
+              : { cCredentials: 0, pCredentials: null },
             Extensions: { cExtensions: 0, pExtensions: null },
             dwAuthenticatorAttachment: 0,
             dwUserVerificationRequirement: c.userVerification,
             dwFlags: 0,
             pwszU2fAppId: null,
-            pbU2fAppId: null,
+            pbU2fAppId: chrome ? usedAppId : null,
             pCancellationId: cancellationId,
             pAllowCredentialList: allow,
-          });
+          };
+          const options = chrome
+            ? arena.struct(GET_OPTIONS_V8, {
+                ...common,
+                dwCredLargeBlobOperation: 0,
+                cbCredLargeBlob: 0,
+                pbCredLargeBlob: null,
+                pHmacSecretSaltValues: null,
+                bBrowserInPrivateMode: 0,
+                pLinkedDevice: null,
+                bAutoFill: 0,
+                cbJsonExt: 0,
+                pbJsonExt: null,
+                cCredentialHints: 0,
+                ppwszCredentialHints: null,
+              })
+            : arena.struct(GET_OPTIONS_V4, common);
           this.fns.get.async(
             this.windowFor(c.hwnd),
             c.rpId,
@@ -503,6 +610,7 @@ export class WindowsWebAuthn {
         },
         (result) => void this.fns.freeAssertion(result),
         onCancelable,
+        chrome && c.timeout < WINDOWS_TIMEOUT ? c.timeout : undefined,
       );
     } catch (err) {
       arena.free();

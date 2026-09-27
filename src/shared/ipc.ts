@@ -27,6 +27,7 @@ export type UiCommand =
   | { type: "bookmarkMenu"; id: string; x: number; y: number }
   | { type: "toggleMute"; tabId: number }
   | { type: "respondPrompt"; id: number; allow: boolean; remember: boolean }
+  | { type: "answerDialog"; id: number; response: number; text?: string; checked?: boolean }
   | { type: "findInPage"; text: string; forward: boolean; findNext: boolean }
   | { type: "stopFind" }
   | { type: "toggleProtection" }
@@ -190,6 +191,17 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
 
 export const INTERNAL_CHANNEL = "moon:invoke";
 export const INTERNAL_EVENT_CHANNEL = "moon:event";
+
+/**
+ * A page's alert(), confirm() or prompt(), asked synchronously by the web
+ * preload; the answer is a PageDialogReply.
+ */
+export const PAGE_DIALOG_CHANNEL = "moon:page-dialog";
+
+export type PageDialogKind = "alert" | "confirm" | "prompt";
+
+/** "native": Electron's own box asks (outside a tab, e.g. an extension's pop-up). */
+export type PageDialogReply = { native: true } | { ok: boolean; text: string | null };
 
 export type InternalEvent =
   "settings" | "downloads" | "bookmarks" | "history" | "adblock" | "extensions" | "update";

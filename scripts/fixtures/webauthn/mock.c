@@ -90,7 +90,10 @@ HRESULT WebAuthNGetCancellationId(GUID *id) {
 HRESULT WebAuthNCancelCurrentOperation(const GUID *id) { return id && id->Data1 == 0x6d6f6f6e ? 0 : -1; }
 
 PCWSTR WebAuthNGetErrorName(HRESULT hr) {
-  return hr == (HRESULT)0x800704C7 ? u"NotAllowedError" : hr == (HRESULT)0x8009000F ? u"InvalidStateError" : u"UnknownError";
+  return hr == (HRESULT)0x800704C7   ? u"NotAllowedError"
+         : hr == (HRESULT)0x8009000F ? u"InvalidStateError"
+         : hr == (HRESULT)0x80090027 ? u"NotSupportedError"
+                                     : u"UnknownError";
 }
 
 HRESULT WebAuthNAuthenticatorMakeCredential(
@@ -120,7 +123,13 @@ HRESULT WebAuthNAuthenticatorMakeCredential(
   put_list(o->pExcludeCredentialList);
   if (o->dwVersion >= 4)
     put(",ea=%u,lb=%u,prk=%d", o->dwEnterpriseAttestation, o->dwLargeBlobSupport, o->bPreferResidentKey);
+  if (o->dwVersion >= 8)
+    put(",pm=%d,prf=%d,ld=%s,json=%u,eval=%s,hints=%u,tpp=%d", o->bBrowserInPrivateMode, o->bEnablePrf,
+        o->pLinkedDevice ? "set" : "none", o->cbJsonExt, o->pPRFGlobalEval ? "set" : "none",
+        o->cCredentialHints, o->bThirdPartyPayment);
   if (user->pwszName && user->pwszName[0] == u'!') return (HRESULT)0x800704C7;
+  // "?": a Windows that refuses the newer options at once, as invalid.
+  if (user->pwszName && user->pwszName[0] == u'?' && o->dwVersion >= 8) return (HRESULT)0x80090027;
 
   PWEBAUTHN_CREDENTIAL_ATTESTATION a = calloc(1, sizeof(*a));
   a->dwVersion = 3;
@@ -155,12 +164,23 @@ HRESULT WebAuthNAuthenticatorGetAssertion(HWND hwnd, LPCWSTR rp_id, PCWEBAUTHN_C
   put_wstr(rp_id);
   put(";cd=v%u:%.*s|", cd->dwVersion, (int)cd->cbClientDataJSON, (const char *)cd->pbClientDataJSON);
   put_wstr(cd->pwszHashAlgId);
-  put(";opt=v%u,t=%u,cl=%u,ext=%u,att=%u,uv=%u,flags=%u,appid=%s,cancel=%s,allow=", o->dwVersion,
-      o->dwTimeoutMilliseconds, o->CredentialList.cCredentials, o->Extensions.cExtensions,
+  put(";opt=v%u,t=%u,cl=", o->dwVersion, o->dwTimeoutMilliseconds);
+  for (DWORD i = 0; i < o->CredentialList.cCredentials; i++) {
+    PWEBAUTHN_CREDENTIAL c = &o->CredentialList.pCredentials[i];
+    put("%sv%u:", i ? "," : "", c->dwVersion);
+    put_hex(c->pbId, c->cbId);
+    put("/");
+    put_wstr(c->pwszCredentialType);
+  }
+  put(",ext=%u,att=%u,uv=%u,flags=%u,appid=%s,usedappid=%s,cancel=%s,allow=", o->Extensions.cExtensions,
       o->dwAuthenticatorAttachment, o->dwUserVerificationRequirement, o->dwFlags,
-      o->pwszU2fAppId ? "set" : "none",
+      o->pwszU2fAppId ? "set" : "none", o->pbU2fAppId ? (*o->pbU2fAppId ? "true" : "false") : "none",
       o->pCancellationId && o->pCancellationId->Data1 == 0x6d6f6f6e ? "yes" : "no");
   put_list(o->pAllowCredentialList);
+  if (o->dwVersion >= 8)
+    put(",lbo=%u,lb=%u,salts=%s,pm=%d,ld=%s,af=%d,json=%u,hints=%u", o->dwCredLargeBlobOperation,
+        o->cbCredLargeBlob, o->pHmacSecretSaltValues ? "set" : "none", o->bBrowserInPrivateMode,
+        o->pLinkedDevice ? "set" : "none", o->bAutoFill, o->cbJsonExt, o->cCredentialHints);
 
   PWEBAUTHN_ASSERTION a = calloc(1, sizeof(*a));
   a->dwVersion = 1;

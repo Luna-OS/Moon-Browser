@@ -115,6 +115,13 @@ export function validateCommand(raw: unknown): UiCommand | null {
       return isStr(c.id, 64) && isNum(c.x) && isNum(c.y)
         ? { type: "bookmarkMenu", id: c.id, x: c.x, y: c.y }
         : null;
+    case "answerDialog":
+      return isNum(c.id) &&
+        isNum(c.response) &&
+        (c.text === undefined || isStr(c.text, 1 << 20)) &&
+        (c.checked === undefined || typeof c.checked === "boolean")
+        ? { type: "answerDialog", id: c.id, response: c.response, text: c.text, checked: c.checked }
+        : null;
     case "respondPrompt":
       return isNum(c.id) && typeof c.allow === "boolean" && typeof c.remember === "boolean"
         ? { type: "respondPrompt", id: c.id, allow: c.allow, remember: c.remember }

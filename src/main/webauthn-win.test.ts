@@ -55,61 +55,92 @@ describe.skipIf(!mock)("Windows WebAuthn binding (stand-in DLL)", () => {
     attestation: 1,
   };
 
-  it("hands Windows every field of a new credential, in its layout", async () => {
-    setVersion(4);
+  const made = (result: { attestationObject: Uint8Array }) => text(result.attestationObject);
+
+  it("hands Windows every field of a new credential, as Chrome lays it out", async () => {
+    setVersion(7);
     const api = WindowsWebAuthn.load(mock!)!;
-    expect(api.apiVersion).toBe(4);
+    expect(api.apiVersion).toBe(7);
     expect(api.isPlatformAuthenticatorAvailable()).toBe(true);
     const result = await api.makeCredential(call);
-    expect(text(result.attestationObject)).toBe(
+    expect(made(result)).toBe(
       "hwnd=1234;rp=v1:chrome-extension://abcdefghijklmnopabcdefghijklmnop|Moon|(null)" +
         ";user=v1:070809|luna@example.com|(null)|Luna" +
         ";algs=v1:public-key/-7,v1:public-key/-257" +
         ';cd=v1:{"type":"webauthn.create"}|SHA-256' +
-        ";opt=v4,t=60000,cl=0,ext=0,att=1,rrk=0,uv=1,ac=1,flags=0,cancel=yes" +
-        ",ex=v1:aabb/public-key/16,v1:cc/public-key/3,ea=0,lb=0,prk=1",
+        // Chrome's version and time limit (the page's is kept by Moon Browser).
+        ";opt=v8,t=300000,cl=0,ext=0,att=1,rrk=0,uv=1,ac=1,flags=0,cancel=yes" +
+        ",ex=v1:aabb/public-key/16,v1:cc/public-key/3,ea=0,lb=0,prk=1" +
+        ",pm=0,prf=0,ld=none,json=0,eval=none,hints=0,tpp=0",
     );
     expect(hex(result.credentialId)).toBe("01020304");
     expect(hex(result.authenticatorData)).toBe("a1a2a3");
     expect(result.transport).toBe(0x10);
   });
 
-  it("uses the oldest options on Windows versions that only know them", async () => {
+  it("hands every Windows Chrome's options, like Chrome", async () => {
     setVersion(1);
     const api = WindowsWebAuthn.load(mock!)!;
-    const result = await api.makeCredential({ ...call, exclude: [] });
-    expect(text(result.attestationObject)).toContain(",cancel=yes,ex=none");
-    expect(text(result.attestationObject)).not.toContain("prk=");
-    expect(text(result.attestationObject)).toContain(";opt=v3,");
+    expect(made(await api.makeCredential(call))).toContain(";opt=v8,t=300000,");
+  });
+
+  it("can still lay the options out as before", async () => {
+    setVersion(4);
+    let api = WindowsWebAuthn.load(mock!)!;
+    const legacy = made(await api.makeCredential({ ...call, layout: "legacy" }));
+    expect(legacy).toContain(";opt=v4,t=60000,");
+    expect(legacy).toMatch(/,ea=0,lb=0,prk=1$/);
+    setVersion(1);
+    api = WindowsWebAuthn.load(mock!)!;
+    const oldest = made(await api.makeCredential({ ...call, exclude: [], layout: "legacy" }));
+    expect(oldest).toContain(";opt=v3,");
+    expect(oldest).toContain(",cancel=yes,ex=none");
+    expect(oldest).not.toContain("prk=");
   });
 
   it("turns Windows' errors into the page's DOMException names", async () => {
-    setVersion(4);
+    setVersion(7);
     const api = WindowsWebAuthn.load(mock!)!;
     await expect(
       api.makeCredential({ ...call, user: { ...call.user, name: "!cancel" } }),
-    ).rejects.toMatchObject({ domName: "NotAllowedError" });
+    ).rejects.toMatchObject({ domName: "NotAllowedError", hresult: 0x800704c7 });
+    // Refused at once as invalid: what the older options are tried for.
+    await expect(
+      api.makeCredential({ ...call, user: { ...call.user, name: "?refuse" } }),
+    ).rejects.toMatchObject({ domName: "NotSupportedError", hresult: 0x80090027 });
+    await expect(
+      api.makeCredential({ ...call, user: { ...call.user, name: "?refuse" }, layout: "legacy" }),
+    ).resolves.toBeTruthy();
   });
 
-  it("asks Windows for an assertion with the allowed credentials", async () => {
+  const assertion = {
+    hwnd: 0xbeefn,
+    rpId: "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+    clientData: new TextEncoder().encode('{"type":"webauthn.get"}'),
+    timeout: 30_000,
+    allow: [{ id: new Uint8Array([1, 2]), transports: 0x10 }],
+    userVerification: 1,
+  };
+
+  it("asks Windows for an assertion with the allowed credentials, as Chrome does", async () => {
     const api = WindowsWebAuthn.load(mock!)!;
-    const result = await api.getAssertion({
-      hwnd: 0xbeefn,
-      rpId: "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
-      clientData: new TextEncoder().encode('{"type":"webauthn.get"}'),
-      timeout: 30_000,
-      allow: [{ id: new Uint8Array([1, 2]), transports: 0x10 }],
-      userVerification: 1,
-    });
+    const result = await api.getAssertion(assertion);
     expect(text(result.signature)).toBe(
       "hwnd=beef;rp=chrome-extension://abcdefghijklmnopabcdefghijklmnop" +
         ';cd=v1:{"type":"webauthn.get"}|SHA-256' +
-        ";opt=v4,t=30000,cl=0,ext=0,att=0,uv=1,flags=0,appid=none,cancel=yes" +
-        ",allow=v1:0102/public-key/16",
+        // The credentials twice (the older list too) and "the AppID wasn't used".
+        ";opt=v8,t=300000,cl=v1:0102/public-key,ext=0,att=0,uv=1,flags=0" +
+        ",appid=none,usedappid=false,cancel=yes,allow=v1:0102/public-key/16" +
+        ",lbo=0,lb=0,salts=none,pm=0,ld=none,af=0,json=0,hints=0",
     );
     expect(hex(result.credentialId)).toBe("0908");
     expect(hex(result.authenticatorData)).toBe("b1b2");
     expect(hex(result.userHandle!)).toBe("55");
+    const legacy = await api.getAssertion({ ...assertion, layout: "legacy" });
+    expect(text(legacy.signature)).toContain(
+      ";opt=v4,t=30000,cl=,ext=0,att=0,uv=1,flags=0,appid=none,usedappid=none,cancel=yes" +
+        ",allow=v1:0102/public-key/16",
+    );
   });
 
   it("is missing, not broken, where there is no API", () => {
