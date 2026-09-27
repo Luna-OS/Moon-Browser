@@ -35,6 +35,9 @@ and nothing phoning home. It wears the same night-sky design as
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
   click on *Update* installs it over the old one and brings your tabs back
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
+- **Signing in to Google works** — Google turns away browsers it doesn't know ("This browser or
+  app may not be secure"), so Moon Browser talks to its sign-in page (`accounts.google.com`, and
+  only there) as Firefox
 - **Tab groups** like Chrome's — right-click a tab → *Add tab to new group*, give the group a
   name and a colour, click its label to collapse it, drag tabs in and out. Groups come back with
   your session, and extensions can use them through `chrome.tabGroups`.

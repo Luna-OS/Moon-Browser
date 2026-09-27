@@ -64,7 +64,10 @@ can never be read as a command-line switch.
 - **Secure DNS**: DNS over HTTPS in automatic mode by default; Quad9, Mullvad or Cloudflare can
   be chosen for strict mode.
 - The user agent is a plain, version-reduced Chrome user agent, and `Accept-Language` carries
-  only the preferred language, so Moon Browser doesn't stand out.
+  only the preferred language, so Moon Browser doesn't stand out. Requests to Google's sign-in
+  page (`accounts.google.com`, and no other host) carry Firefox's user agent instead and no
+  client hints (`Sec-CH-UA…`): Google refuses sign-ins from Chromium-based browsers it doesn't
+  know, but not from Firefox. Nothing else about those requests changes.
 - Moon Browser itself only contacts the filter-list mirror (every few days), GitHub to look for a
   new release (every few hours; *Settings → Updates* switches it off) and, when extensions are
   installed, Google's extension update server for them. There is no telemetry, crash reporting
