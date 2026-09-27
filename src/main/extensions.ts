@@ -26,10 +26,15 @@ import {
   type WebContents,
 } from "electron";
 import { ElectronChromeExtensions, setSessionPartitionResolver } from "electron-chrome-extensions";
-import { installChromeWebStore, uninstallExtension } from "electron-chrome-web-store";
+import {
+  downloadExtension,
+  installChromeWebStore,
+  uninstallExtension,
+} from "electron-chrome-web-store";
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
-import { join, normalize, sep } from "node:path";
+import { mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
+import { basename, join, normalize, sep } from "node:path";
+import { Script } from "node:vm";
 import {
   compareVersions,
   describePermissions,
@@ -50,12 +55,32 @@ import type { ExtensionEntry, ExtensionInfo } from "@shared/types";
 import type { Browser } from "./browser";
 import { ExtensionApis, extensionIdOf, groupInfo } from "./extension-apis";
 import { extensionApiPreload, extensionExtraPreload, profilePath } from "./paths";
+import type { ExtensionPrefs, UnpackedExtension } from "./profile";
 import type { MoonWindow } from "./window";
 
 interface PanelOptions {
   path?: string;
   enabled?: boolean;
 }
+
+/**
+ * The window electron-chrome-extensions opens for a toolbar button's pop-up.
+ * The library doesn't export its type; show(), updatePosition() and
+ * queryPreferredSize() are private there, so they are checked before use.
+ */
+interface PopupView {
+  browserWindow?: BrowserWindow;
+  destroy(): void;
+  isDestroyed(): boolean;
+  whenReady(): Promise<void>;
+  setSize(size: { width: number; height: number }): void;
+  usingPreferredSize?: boolean;
+  show?: () => void;
+  queryPreferredSize?: () => Promise<void>;
+}
+
+/** How long a pop-up may wait for Chromium to report its page's size. */
+const POPUP_SIZE_WAIT = 600;
 
 /** How many errors the extensions page keeps per extension. */
 const MAX_ERRORS = 30;
@@ -66,6 +91,12 @@ interface Installed {
   id: string;
   path: string;
   manifest: ManifestLike & Record<string, unknown>;
+  /** Loaded from a folder in developer mode, not installed from the Web Store. */
+  unpacked?: boolean;
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /** A path inside `root`, or null if `rel` tries to leave it. */
@@ -102,6 +133,11 @@ export class Extensions {
   private readonly panelPerTab = new Map<string, Map<number, PanelOptions>>();
   private readonly errors = new Map<string, string[]>();
   private readonly icons = new Map<string, string | null>();
+  /** The extension whose toolbar pop-up is open. */
+  private popupExtension: string | null = null;
+  /** Web Store extensions whose files turned out damaged (see checkFiles). */
+  private readonly damaged = new Set<string>();
+  private readonly checkedFiles = new Set<string>();
 
   constructor(private readonly browser: Browser) {}
 
@@ -209,12 +245,9 @@ export class Extensions {
     }
 
     // Links in an extension's pop-up open as tabs, not as bare windows.
-    this.api.on("browser-action-popup-created", (popup: { browserWindow?: BrowserWindow }) => {
-      popup.browserWindow?.webContents.setWindowOpenHandler(({ url }) => {
-        if (/^(https?|chrome-extension):/i.test(url)) this.windowFor(undefined).openTab({ url });
-        return { action: "deny" };
-      });
-    });
+    this.api.on("browser-action-popup-created", (popup: PopupView & { extensionId: string }) =>
+      this.watchPopup(popup),
+    );
 
     // The icons of the toolbar's extension buttons.
     ElectronChromeExtensions.handleCRXProtocol(browser.uiSession);
@@ -234,11 +267,12 @@ export class Extensions {
     // scripts — for the extensions page, like Chrome's "Errors" button.
     ses.serviceWorkers.on("console-message", (_event, details) => {
       const id = extensionIdOf(details.sourceUrl);
-      if (details.level >= 3 && id)
-        this.recordError(
-          id,
-          `${details.message} (${shortSource(details.sourceUrl)}:${details.lineNumber})`,
-        );
+      if (details.level < 3 || !id) return;
+      this.recordError(
+        id,
+        `${details.message} (${shortSource(details.sourceUrl)}:${details.lineNumber})`,
+      );
+      if (details.message.includes("SyntaxError")) void this.checkFiles(id);
     });
     app.on("web-contents-created", (_event, contents) => {
       if (contents.session !== ses) return;
@@ -277,6 +311,11 @@ export class Extensions {
 
     for (const ext of await this.installed()) {
       if (!this.disabled().has(ext.id)) await this.load(ext);
+    }
+    if (this.prefs().developerMode) {
+      for (const u of this.prefs().unpacked) {
+        if (!this.disabled().has(u.id)) await this.loadUnpackedEntry(u);
+      }
     }
   }
 
@@ -400,6 +439,53 @@ export class Extensions {
   }
 
   /**
+   * A toolbar button's pop-up, made to behave like Chrome's. It appears once
+   * Chromium reports how big its page is; where that report doesn't come,
+   * the page is measured instead, so the pop-up still opens. Once shown it
+   * takes the focus: typing goes into it, and clicking anywhere else closes
+   * it. Links it opens become tabs.
+   */
+  private watchPopup(popup: PopupView & { extensionId: string }): void {
+    const win = popup.browserWindow;
+    if (!win) return;
+    this.popupExtension = popup.extensionId;
+    this.changed();
+    win.once("closed", () => {
+      if (this.popupExtension === popup.extensionId) this.popupExtension = null;
+      this.changed();
+    });
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^(https?|chrome-extension):/i.test(url)) this.windowFor(undefined).openTab({ url });
+      return { action: "deny" };
+    });
+    win.once("show", () => {
+      if (!win.isDestroyed()) win.focus();
+    });
+    // The library closes the pop-up when it loses the focus to another of
+    // Moon Browser's windows, but asks too early: the other window isn't
+    // focused yet then. So: closed when another window gets the focus.
+    const closeOnFocus = (_event: unknown, focused: BrowserWindow) => {
+      if (focused !== win && !popup.isDestroyed()) popup.destroy();
+    };
+    app.on("browser-window-focus", closeOnFocus);
+    win.once("closed", () => app.off("browser-window-focus", closeOnFocus));
+    void popup.whenReady().then(async () => {
+      await new Promise((resolve) => setTimeout(resolve, POPUP_SIZE_WAIT));
+      if (popup.isDestroyed() || win.isDestroyed() || win.isVisible()) return;
+      const { show, queryPreferredSize } = popup;
+      if (typeof show !== "function" || typeof queryPreferredSize !== "function") return;
+      // Measured at the largest pop-up size, as the library does where
+      // Chromium can't report sizes.
+      popup.usingPreferredSize = false;
+      popup.setSize({ width: 800, height: 600 });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (popup.isDestroyed()) return;
+      await queryPreferredSize.call(popup).catch(() => undefined);
+      if (!popup.isDestroyed() && !win.isVisible()) show.call(popup);
+    });
+  }
+
+  /**
    * Makes sure a loaded extension's service worker runs, as Chrome does at
    * start-up. A new or updated extension first gets its worker registered,
    * which runs it but takes a moment (longer for big workers like a
@@ -438,8 +524,10 @@ export class Extensions {
       // Switched off or removed in the meantime, or running after its registration.
       if (!ses.extensions.getExtension(extension.id) || running()) return;
       const error = await start();
-      if (error !== null && ses.extensions.getExtension(extension.id))
+      if (error !== null && ses.extensions.getExtension(extension.id)) {
         this.recordError(extension.id, `The service worker didn't start: ${error}`);
+        void this.checkFiles(extension.id);
+      }
     } finally {
       workers.removeListener("registration-completed", onRegistered);
     }
@@ -462,7 +550,7 @@ export class Extensions {
   async list(): Promise<ExtensionInfo[]> {
     const ses = this.session;
     const out: ExtensionInfo[] = [];
-    for (const ext of await this.installed()) {
+    for (const ext of await this.all()) {
       const messages = await this.messages(ext);
       const text = (v: unknown) => (typeof v === "string" ? localize(v, messages) : "");
       const iconPath = pickIcon(ext.manifest, 48);
@@ -470,8 +558,8 @@ export class Extensions {
       const image = iconFile ? nativeImage.createFromPath(iconFile) : null;
       out.push({
         id: ext.id,
-        name: text(ext.manifest.name) || ext.id,
-        version: String(ext.manifest.version),
+        name: text(ext.manifest.name) || (ext.unpacked ? basename(ext.path) : ext.id),
+        version: typeof ext.manifest.version === "string" ? ext.manifest.version : "",
         description: text(ext.manifest.description),
         enabled: !!ses?.extensions.getExtension(ext.id),
         icon:
@@ -480,9 +568,30 @@ export class Extensions {
         permissions: describePermissions(ext.manifest),
         unsupported: unsupportedFeatures(ext.manifest),
         errors: this.errors.get(ext.id) ?? [],
+        unpacked: !!ext.unpacked,
+        path: ext.unpacked ? ext.path : null,
+        damaged: this.damaged.has(ext.id),
       });
     }
     return out.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** Web Store extensions, and in developer mode the unpacked ones. */
+  private async all(): Promise<Installed[]> {
+    const all = await this.installed();
+    if (!this.prefs().developerMode) return all;
+    for (const u of this.prefs().unpacked) {
+      const manifest = await readJson(join(u.path, "manifest.json"));
+      all.push({
+        id: u.id,
+        path: u.path,
+        manifest: (manifest && typeof manifest === "object"
+          ? manifest
+          : {}) as Installed["manifest"],
+        unpacked: true,
+      });
+    }
+    return all;
   }
 
   /** The extension's texts in the user's language, falling back to its default. */
@@ -502,12 +611,16 @@ export class Extensions {
   async setEnabled(id: string, enabled: boolean): Promise<void> {
     const ses = this.session;
     if (!ses || !EXTENSION_ID.test(id)) return;
+    const ext = (await this.all()).find((e) => e.id === id);
+    if (!ext) return;
     this.setDisabled(id, !enabled);
     if (!enabled) {
       if (ses.extensions.getExtension(id)) ses.extensions.removeExtension(id);
+    } else if (ext.unpacked) {
+      const entry = this.unpackedEntry(id);
+      if (entry) await this.loadUnpackedEntry(entry);
     } else {
-      const ext = (await this.installed()).find((e) => e.id === id);
-      if (ext) await this.load(ext);
+      await this.load(ext);
     }
     this.changed();
   }
@@ -515,23 +628,222 @@ export class Extensions {
   async remove(id: string): Promise<void> {
     const ses = this.session;
     if (!ses || !EXTENSION_ID.test(id)) return;
-    await uninstallExtension(id, { session: ses, extensionsPath: this.path });
+    if (this.unpackedEntry(id)) {
+      // The folder stays where it is; Moon Browser only forgets it.
+      if (ses.extensions.getExtension(id)) ses.extensions.removeExtension(id);
+      const prefs = this.prefs();
+      prefs.unpacked = prefs.unpacked.filter((u) => u.id !== id);
+      this.browser.profile.extensions.changed();
+    } else {
+      await uninstallExtension(id, { session: ses, extensionsPath: this.path });
+    }
     // Its storage goes with it, as in Chrome.
     await ses.clearStorageData({ origin: `chrome-extension://${id}` }).catch(() => undefined);
     this.setDisabled(id, false);
     this.errors.delete(id);
+    this.damaged.delete(id);
     this.changed();
   }
 
   /** Opens the extension's settings page in a tab of a normal window. */
   async openOptions(id: string): Promise<void> {
     if (!EXTENSION_ID.test(id)) return;
-    const ext = (await this.installed()).find((e) => e.id === id);
+    const ext = (await this.all()).find((e) => e.id === id);
     const page = ext && optionsPage(ext.manifest);
     if (!page || !this.session?.extensions.getExtension(id)) return;
     const win = this.windowFor(undefined);
     win.openTab({ url: `chrome-extension://${id}/${page.replace(/^\/+/, "")}` });
     win.win.focus();
+  }
+
+  // ---- Damaged files ----
+
+  /**
+   * Looks at an extension whose service worker reported a syntax error or
+   * didn't start. If its script doesn't even compile, the file on disk is
+   * damaged (cut off, say), and the extension can't work until it is
+   * installed again. The script is only compiled here, never run.
+   */
+  private async checkFiles(id: string): Promise<void> {
+    const ext = this.session?.extensions.getExtension(id);
+    const key = `${id}@${ext?.version}`;
+    if (!ext || this.unpackedEntry(id) || this.checkedFiles.has(key)) return;
+    this.checkedFiles.add(key);
+    const background = (
+      ext.manifest as { background?: { service_worker?: unknown; type?: unknown } }
+    ).background;
+    const worker = background?.service_worker;
+    // A module worker isn't a plain script; nothing to compile it as here.
+    if (typeof worker !== "string" || background?.type === "module") return;
+    const file = inside(ext.path, worker);
+    if (!file) return;
+    let code: string;
+    try {
+      code = await readFile(file, "utf8");
+    } catch {
+      this.markDamaged(id, `${worker} is missing`);
+      return;
+    }
+    try {
+      new Script(code, { filename: worker });
+    } catch (err) {
+      if (err instanceof Error && err.name === "SyntaxError")
+        this.markDamaged(id, `${worker}: ${err.message}`);
+    }
+  }
+
+  private markDamaged(id: string, why: string): void {
+    this.damaged.add(id);
+    this.recordError(
+      id,
+      `The extension's files are damaged (${why}). “Repair” installs it again from the Chrome Web Store; its settings and data stay.`,
+    );
+    this.changed();
+  }
+
+  /**
+   * Downloads a Web Store extension again and puts it in place of the
+   * installed copy. Its storage (logins, settings) stays. The old copy is
+   * only replaced once the new one has arrived.
+   */
+  async repair(id: string): Promise<void> {
+    const ses = this.session;
+    if (!ses || !EXTENSION_ID.test(id) || this.unpackedEntry(id)) return;
+    const staging = join(this.path, ".repair");
+    try {
+      await rm(staging, { recursive: true, force: true });
+      const fresh = await downloadExtension(id, staging);
+      if (ses.extensions.getExtension(id)) ses.extensions.removeExtension(id);
+      const dir = join(this.path, id);
+      await rm(dir, { recursive: true, force: true });
+      await mkdir(dir, { recursive: true });
+      await rename(fresh, join(dir, basename(fresh)));
+      this.damaged.delete(id);
+      this.errors.delete(id);
+      this.checkedFiles.clear();
+      const ext = (await this.installed()).find((e) => e.id === id);
+      if (ext && !this.disabled().has(id)) await this.load(ext);
+    } catch (err) {
+      this.recordError(id, `Repair didn't work: ${errorText(err)}`);
+    } finally {
+      await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    }
+    this.changed();
+  }
+
+  // ---- Developer mode ----
+
+  private prefs(): ExtensionPrefs {
+    return this.browser.profile.extensions.get();
+  }
+
+  developerMode(): boolean {
+    return this.prefs().developerMode;
+  }
+
+  /** Unpacked extensions only run while developer mode is on. */
+  async setDeveloperMode(on: boolean): Promise<void> {
+    const ses = this.session;
+    const prefs = this.prefs();
+    if (!ses || prefs.developerMode === on) return;
+    prefs.developerMode = on;
+    this.browser.profile.extensions.changed();
+    for (const u of prefs.unpacked) {
+      if (!on) {
+        if (ses.extensions.getExtension(u.id)) ses.extensions.removeExtension(u.id);
+      } else if (!this.disabled().has(u.id)) {
+        await this.loadUnpackedEntry(u);
+      }
+    }
+    this.changed();
+  }
+
+  /**
+   * Asks for a folder and loads the extension in it, after showing what it
+   * will be able to do, like a Web Store install. Returns why it didn't
+   * work, or null.
+   */
+  async loadUnpacked(parent: BrowserWindow | undefined): Promise<string | null> {
+    const ses = this.session;
+    if (!ses || !this.prefs().developerMode) return null;
+    const options: Electron.OpenDialogOptions = {
+      title: "Load unpacked extension",
+      buttonLabel: "Select folder",
+      properties: ["openDirectory"],
+    };
+    const result = parent
+      ? await dialog.showOpenDialog(parent, options)
+      : await dialog.showOpenDialog(options);
+    const path = result.canceled ? undefined : result.filePaths[0];
+    if (!path) return null;
+    const raw = await readJson(join(path, "manifest.json"));
+    if (!raw || typeof raw !== "object") return "This folder has no manifest.json.";
+    const manifest = raw as Installed["manifest"];
+    const messages = await this.messages({ id: "", path, manifest });
+    const name =
+      (typeof manifest.name === "string" ? localize(manifest.name, messages) : "") ||
+      basename(path);
+    // A key would give it the ID of an extension from the Web Store.
+    if (
+      typeof manifest.key === "string" &&
+      (await this.installed()).some((e) => e.id === idFromKey(manifest.key as string))
+    )
+      return `“${name}” is already installed from the Chrome Web Store.`;
+    if (parent) {
+      const iconPath = pickIcon(manifest, 128);
+      const iconFile = iconPath ? inside(path, iconPath) : null;
+      const icon = iconFile ? nativeImage.createFromPath(iconFile) : nativeImage.createEmpty();
+      if (!(await this.confirmInstall(parent, name, manifest, icon))) return null;
+    }
+    let ext: Extension;
+    try {
+      ext = await ses.extensions.loadExtension(path);
+    } catch (err) {
+      return `Couldn't load “${name}”: ${errorText(err)}`;
+    }
+    const prefs = this.prefs();
+    prefs.unpacked = [
+      ...prefs.unpacked.filter((u) => u.id !== ext.id && u.path !== path),
+      { path, id: ext.id },
+    ];
+    this.setDisabled(ext.id, false);
+    this.changed();
+    return null;
+  }
+
+  /** Loads an unpacked extension's folder again, with its latest changes. */
+  async reload(id: string): Promise<void> {
+    const ses = this.session;
+    const entry = this.unpackedEntry(id);
+    if (!ses || !entry || !this.prefs().developerMode) return;
+    this.errors.delete(id);
+    if (ses.extensions.getExtension(id)) ses.extensions.removeExtension(id);
+    if (!this.disabled().has(id)) await this.loadUnpackedEntry(entry);
+    this.changed();
+  }
+
+  private unpackedEntry(id: string): UnpackedExtension | undefined {
+    return this.prefs().unpacked.find((u) => u.id === id);
+  }
+
+  private async loadUnpackedEntry(entry: UnpackedExtension): Promise<void> {
+    const ses = this.session;
+    if (!ses || ses.extensions.getExtension(entry.id)) return;
+    try {
+      const ext = await ses.extensions.loadExtension(entry.path);
+      if (ext.id !== entry.id) {
+        // Its manifest's key changed, and with it the ID.
+        entry.id = ext.id;
+        this.browser.profile.extensions.changed();
+      }
+    } catch (err) {
+      this.recordError(entry.id, `Couldn't load ${entry.path}: ${errorText(err)}`);
+    }
+  }
+
+  /** The extension whose toolbar pop-up is open, if any. */
+  openPopup(): string | null {
+    return this.popupExtension;
   }
 
   /** Whether a loaded extension declared `permission` in its manifest. */

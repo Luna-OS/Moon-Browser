@@ -4,7 +4,8 @@
 //
 //   node scripts/e2e.mjs [--screenshots dir]
 import { _electron as electron } from "playwright-core";
-import { cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import { access, cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -234,6 +235,15 @@ try {
     );
   });
 
+  /** The pop-up window's bounds while it shows, else null. */
+  const popupBounds = () =>
+    app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows().find(
+        (w) => !w.isDestroyed() && w.webContents.getURL().endsWith("/popup.html"),
+      );
+      return win?.isVisible() ? win.getBounds() : null;
+    });
+
   /** Evaluates `code` in the extension's pop-up. */
   const inPopup = (code) =>
     app.evaluate(
@@ -264,6 +274,11 @@ try {
         ),
       "the pop-up to name the active tab",
     );
+    // …in a window that shows (sized to its page, or measured where
+    // Chromium doesn't report the size, as under this test's DevTools link).
+    const bounds = await waitFor(() => popupBounds(), "the pop-up window to show");
+    if (bounds.width < 100 || bounds.height < 30)
+      throw new Error(`pop-up size ${JSON.stringify(bounds)}`);
     // Extension pages get chrome.* functions, never the raw IPC bridge
     // behind them (it would let them act with another extension's ID).
     const bridge = await inPopup("typeof globalThis.electron + '/' + typeof chrome.tabs.query");
@@ -292,7 +307,9 @@ try {
       (group) => window.moonUI.command({ type: "groupAction", groupId: group, action: "ungroup" }),
       groupId,
     );
+    // A second click on the button closes the pop-up.
     await ui.mouse.click(button.x, button.y);
+    await waitFor(() => popupBounds().then((b) => b === null), "the pop-up to close");
   });
 
   await check("the extensions menu lists the extension and pins it", async () => {
@@ -602,6 +619,94 @@ try {
   });
   await new Promise((r) => setTimeout(r, 500));
   await shot("09-extensions");
+
+  /** Calls a method of moon://extensions, which the settings tab shows now. */
+  const extensionsPage = (method, ...args) =>
+    app.evaluate(
+      ({ webContents }, [name, params]) =>
+        webContents
+          .getAllWebContents()
+          .find((w) => w.getURL().startsWith("moon://extensions"))
+          .executeJavaScript(
+            `window.moon.invoke(${JSON.stringify([name, ...params]).slice(1, -1)})`,
+          ),
+      [method, args],
+    );
+  const loadedIds = () =>
+    app.evaluate(({ session }) =>
+      session.defaultSession.extensions.getAllExtensions().map((e) => e.id),
+    );
+
+  await check("developer mode loads, reloads and removes an unpacked extension", async () => {
+    const folder = join(profile, "my-extension");
+    await mkdir(folder, { recursive: true });
+    await writeFile(
+      join(folder, "manifest.json"),
+      JSON.stringify({ manifest_version: 3, name: "My Own Extension", version: "0.1" }),
+    );
+    // Only in developer mode.
+    if ((await extensionsPage("extensions.loadUnpacked")) !== null) throw new Error("loaded");
+    await extensionsPage("extensions.setDeveloperMode", true);
+    // The folder picker and the confirmation, answered.
+    await app.evaluate(({ dialog }, dir) => {
+      globalThis.__dialogs = [dialog.showOpenDialog, dialog.showMessageBox];
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
+      dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
+    }, folder);
+    const error = await extensionsPage("extensions.loadUnpacked");
+    await app.evaluate(({ dialog }) => {
+      [dialog.showOpenDialog, dialog.showMessageBox] = globalThis.__dialogs;
+    });
+    if (error !== null) throw new Error(error);
+    const mine = (await extensionsPage("extensions.list")).find((e) => e.unpacked);
+    if (mine?.name !== "My Own Extension" || mine.path !== folder || !mine.enabled)
+      throw new Error(JSON.stringify(mine));
+    if (!(await loadedIds()).includes(mine.id)) throw new Error("not loaded");
+    await extensionsPage("extensions.reload", mine.id);
+    if (!(await loadedIds()).includes(mine.id)) throw new Error("not loaded after reload");
+    // Developer mode off: it stops; on again: it's back.
+    await extensionsPage("extensions.setDeveloperMode", false);
+    if ((await loadedIds()).includes(mine.id)) throw new Error("runs without developer mode");
+    await extensionsPage("extensions.setDeveloperMode", true);
+    if (!(await loadedIds()).includes(mine.id)) throw new Error("not back");
+    await extensionsPage("extensions.remove", mine.id);
+    if ((await loadedIds()).includes(mine.id)) throw new Error("still loaded");
+    await access(join(folder, "manifest.json")); // the folder stays
+    await extensionsPage("extensions.setDeveloperMode", false);
+  });
+
+  await check("a damaged extension is found and offered a repair", async () => {
+    // A Web Store package whose service worker got cut off on disk.
+    const key = generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({
+      type: "spki",
+      format: "der",
+    });
+    const id = [...createHash("sha256").update(key).digest("hex").slice(0, 32)]
+      .map((c) => String.fromCharCode(97 + parseInt(c, 16)))
+      .join("");
+    const dir = join(profile, "Extensions", id, "1.0.0_0");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "manifest.json"),
+      JSON.stringify({
+        manifest_version: 3,
+        name: "Damaged Extension",
+        version: "1.0.0",
+        key: key.toString("base64"),
+        background: { service_worker: "background.js" },
+      }),
+    );
+    await writeFile(join(dir, "background.js"), "chrome.runtime.onInstalled.addListener(() => {\n");
+    await extensionsPage("extensions.setEnabled", id, true);
+    const damaged = await waitFor(
+      async () => (await extensionsPage("extensions.list")).find((e) => e.id === id && e.damaged),
+      "the extension to be found damaged",
+      40_000,
+    );
+    if (!damaged.errors.some((e) => e.includes("files are damaged")))
+      throw new Error(JSON.stringify(damaged.errors));
+    await extensionsPage("extensions.remove", id);
+  });
 
   await check("the menu opens above the page", async () => {
     await ui.getByRole("button", { name: "Menu" }).click();

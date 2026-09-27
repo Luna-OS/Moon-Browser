@@ -216,6 +216,8 @@ export interface WindowState {
   extensionTab: number | null;
   /** The extensions running in this window (none in private windows). */
   extensions: ExtensionEntry[];
+  /** The extension whose toolbar pop-up is open, if any. */
+  extensionPopup: string | null;
   /** An extension's page shown next to the tabs, like Chrome's side panel. */
   sidePanel: SidePanelState | null;
   /** The window's tab groups; their tabs sit next to each other in `tabs`. */
@@ -304,6 +306,12 @@ export interface ExtensionInfo {
   unsupported: string[];
   /** Recent errors from the extension's pages and service worker, newest last. */
   errors: string[];
+  /** Loaded from a folder in developer mode. */
+  unpacked: boolean;
+  /** An unpacked extension's folder. */
+  path: string | null;
+  /** Its files turned out damaged; installing it again repairs it. */
+  damaged: boolean;
 }
 
 export interface ImportableProfile {

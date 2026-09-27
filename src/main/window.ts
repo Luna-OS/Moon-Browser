@@ -69,7 +69,9 @@ export class MoonWindow {
   find: FindState | null = null;
   private findText = "";
   private insets: Insets = { top: TAB_STRIP_HEIGHT + 44, right: 0, bottom: 0, left: 0 };
+  /** Views in the window; the ones not needed right now are hidden. */
   private readonly attached = new Set<WebContentsView>();
+  private readonly shown = new Set<WebContentsView>();
   private overlayOpen = false;
   private htmlFullscreen: Tab | null = null;
   /** Tab groups; IDs are unique across windows (extensions see them). */
@@ -442,8 +444,10 @@ export class MoonWindow {
         });
       }
     }
-    for (const view of [...this.attached]) {
-      if (!wanted.has(view)) this.detach(view);
+    // Hidden rather than taken out of the window: a page taken out and put
+    // back (switching tabs, closing a menu) stays blank on some systems.
+    for (const view of this.attached) {
+      if (!wanted.has(view) && this.shown.delete(view)) view.setVisible(false);
     }
     for (const [view, rect] of wanted) {
       if (!this.attached.has(view)) {
@@ -451,6 +455,10 @@ export class MoonWindow {
         this.attached.add(view);
       }
       view.setBounds(rect);
+      if (!this.shown.has(view)) {
+        view.setVisible(true);
+        this.shown.add(view);
+      }
     }
   }
 
@@ -644,7 +652,9 @@ export class MoonWindow {
     }
   }
 
+  /** Takes a view out of the window for good (its page closed or went to sleep). */
   detach(view: WebContentsView): void {
+    this.shown.delete(view);
     if (!this.attached.delete(view)) return;
     if (!this.win.isDestroyed()) this.win.contentView.removeChildView(view);
   }
@@ -667,7 +677,7 @@ export class MoonWindow {
 
   async openOverlay(): Promise<OverlaySnapshot[]> {
     const shots: OverlaySnapshot[] = [];
-    for (const view of this.attached) {
+    for (const view of this.shown) {
       try {
         const image = await view.webContents.capturePage();
         if (!image.isEmpty()) {
@@ -760,6 +770,7 @@ export class MoonWindow {
       extensionTab:
         !this.isPrivate && this.browser.extensions.count() > 0 ? (active?.wc?.id ?? null) : null,
       extensions: this.isPrivate ? [] : this.browser.extensions.entries(active?.url ?? ""),
+      extensionPopup: this.isPrivate ? null : this.browser.extensions.openPopup(),
       sidePanel: this.sidePanelState(),
       groups: this.groups,
     };

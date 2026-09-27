@@ -18,7 +18,13 @@ import {
   ThumbtackIcon,
 } from "@theme/icons";
 import type { BrowserActionState } from "../env";
-import { actionFor, activateExtension, badgeColor, type ActionInfo } from "./extension-actions";
+import {
+  actionFor,
+  activateExtension,
+  badgeColor,
+  rememberPopup,
+  type ActionInfo,
+} from "./extension-actions";
 import { ui } from "./store";
 
 function ExtensionIcon({
@@ -77,7 +83,12 @@ export function ExtensionButtons({
               className="mb-icon-btn relative"
               aria-label={label}
               title={label}
-              aria-pressed={state.sidePanel?.extensionId === entry.id || undefined}
+              aria-pressed={
+                state.sidePanel?.extensionId === entry.id ||
+                state.extensionPopup === entry.id ||
+                undefined
+              }
+              onMouseDown={() => rememberPopup(state)}
               onClick={(e) =>
                 activateExtension(state, entry, e.currentTarget.getBoundingClientRect())
               }

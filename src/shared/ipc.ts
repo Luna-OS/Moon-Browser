@@ -121,6 +121,11 @@ export type InternalMethod =
   | "extensions.remove"
   | "extensions.options"
   | "extensions.clearErrors"
+  | "extensions.developerMode"
+  | "extensions.setDeveloperMode"
+  | "extensions.loadUnpacked"
+  | "extensions.reload"
+  | "extensions.repair"
   | "update.status"
   | "update.check"
   | "update.install"
@@ -172,6 +177,11 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "extensions.remove",
     "extensions.options",
     "extensions.clearErrors",
+    "extensions.developerMode",
+    "extensions.setDeveloperMode",
+    "extensions.loadUnpacked",
+    "extensions.reload",
+    "extensions.repair",
   ],
   about: [...COMMON, "about.info", "update.status", "update.check", "update.install"],
 };
