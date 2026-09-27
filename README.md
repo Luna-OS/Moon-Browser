@@ -39,15 +39,19 @@ and nothing phoning home. It wears the same night-sky design as
   app may not be secure"), so Moon Browser talks to its sign-in page (`accounts.google.com`, and
   only there) as Firefox
 - **Tab groups** like Chrome's — right-click a tab → *Add tab to new group*, give the group a
-  name and a colour, click its label to collapse it, drag tabs in and out. Groups come back with
-  your session, and extensions can use them through `chrome.tabGroups`.
+  name and a colour, click its label to collapse it, drag tabs in and out, drag the label to move
+  the whole group. Extensions can use them through `chrome.tabGroups`.
+- **Continue where you left off** — your tabs and tab groups come back after a restart (switch
+  it off under *Settings → Tabs & startup*)
 - **Split view** — two tabs side by side, with a divider to resize
 - **Sleeping tabs** — tabs you haven't looked at for a while give their memory back and wake up
   when you return
 - **Address bar** with suggestions from your history, bookmarks and open tabs, and inline
   completion — suggestions never leave your computer
 - **Private windows** with their own in-memory session, wiped when the last one closes
-- Tabs you can pin, mute, duplicate, drag around and reopen after closing; session restore
+- Tabs you can pin, mute, duplicate, drag around and reopen after closing
+- A quiet taskbar icon: sites can't put their unread counts on it (`navigator.setAppBadge` does
+  nothing, as in Chrome for sites that aren't installed apps)
 - History, bookmarks (with an optional bookmarks bar), downloads, find in page, zoom per site,
   print, full screen, developer tools
 - **Night and day themes** (or follow the system); websites follow along when they support dark
@@ -151,6 +155,9 @@ Running the installer of a newer version by hand works too: it updates in place.
 2. Click **Add to Moon Browser** and confirm what the extension may do.
 3. The NordPass button appears in the toolbar: sign in there. Autofill, saved logins and the
    2FA codes of NordPass Authenticator all live in the extension.
+4. On Windows, NordPass can use **Windows Hello** (fingerprint, face or PIN) to unlock and for
+   NordPass Authenticator: Moon Browser passes the extension's request to Windows' own
+   WebAuthn dialog, as Chrome does.
 
 Extensions get the Chrome APIs password managers rely on — storage, alarms, idle, tabs, windows,
 scripting, cookies, context menus, notifications, offscreen documents, identity (sign-in

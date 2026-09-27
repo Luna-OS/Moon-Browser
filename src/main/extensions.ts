@@ -55,6 +55,7 @@ import type { ExtensionEntry, ExtensionInfo } from "@shared/types";
 import type { Browser } from "./browser";
 import { Dnr } from "./dnr";
 import { ExtensionProxy } from "./extension-proxy";
+import { ExtensionWebAuthn } from "./extension-webauthn";
 import { ExtensionApis, extensionIdOf, groupInfo } from "./extension-apis";
 import { extensionApiPreload, extensionExtraPreload, profilePath } from "./paths";
 import type { ExtensionPrefs, UnpackedExtension } from "./profile";
@@ -127,6 +128,8 @@ export class Extensions {
   readonly dnr = new Dnr();
   /** chrome.proxy: the browsing session's proxy, as an extension set it. */
   readonly proxy: ExtensionProxy;
+  /** navigator.credentials in extension pages (Windows Hello, security keys). */
+  readonly webauthn: ExtensionWebAuthn;
   private api: ElectronChromeExtensions | null = null;
   private apis: ExtensionApis | null = null;
   private session: Session | null = null;
@@ -151,6 +154,7 @@ export class Extensions {
 
   constructor(private readonly browser: Browser) {
     this.proxy = new ExtensionProxy(browser);
+    this.webauthn = new ExtensionWebAuthn(browser);
   }
 
   get ready(): boolean {
@@ -910,6 +914,12 @@ export class Extensions {
   }
 
   /** Whether a loaded extension declared `permission` in its manifest. */
+  /** A loaded extension's manifest. */
+  manifest(id: string): Record<string, unknown> | undefined {
+    return this.session?.extensions.getExtension(id)?.manifest as
+      Record<string, unknown> | undefined;
+  }
+
   declares(id: string, permission: string): boolean {
     const ext = this.session?.extensions.getExtension(id);
     const permissions = (ext?.manifest as { permissions?: unknown } | undefined)?.permissions;
@@ -1057,7 +1067,7 @@ export class Extensions {
   // ---- Tab groups (chrome.tabGroups events) ----
 
   groupChanged(
-    kind: "onCreated" | "onUpdated" | "onRemoved",
+    kind: "onCreated" | "onUpdated" | "onRemoved" | "onMoved",
     win: MoonWindow,
     group: TabGroupInfo,
   ): void {

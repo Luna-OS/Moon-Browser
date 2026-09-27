@@ -112,6 +112,15 @@ uninstalled, not while an update replaces it; the profile is never deleted by th
   Store; *Menu → Extensions* switches them off or removes them with their files.
 - The toolbar's extension buttons live in the browser UI; the only thing they can reach is the
   extension system of the normal browsing session.
+- **WebAuthn in extension pages** (Windows only; NordPass sets up Windows Hello with it):
+  Electron refuses `navigator.credentials` in `chrome-extension://` pages, so Moon Browser
+  answers it through Windows' own WebAuthn API (`webauthn.dll`, the system dialog Chrome uses
+  too), with Chrome's rules. The main process takes the extension from the calling frame's
+  origin and writes the client data itself (origin `chrome-extension://<id>`); the relying
+  party ID is the extension's own origin, or a web domain only if the extension has host
+  permission for it. Only extension pages can call it, never web pages or service workers. The
+  call goes through [koffi](https://koffi.dev/), whose native module ships with the Windows
+  build (`resources/koffi`) and is loaded only when an extension asks.
 
 ### Permissions
 
@@ -146,9 +155,9 @@ never imported.
 - Extensions run on Electron's extension support plus electron-chrome-extensions and Moon
   Browser's own additions (side panel, identity, tab groups, search, debugger, proxy,
   `declarativeNetRequest` rules, `runtime.onInstalled` / `onStartup`), which cover the common
-  APIs but not all of Chrome's: keyboard commands and moving tab groups with
-  `chrome.tabGroups.move` are missing, and `chrome.webRequest` listeners get no events (Moon
-  Shield handles the requests itself).
+  APIs but not all of Chrome's: keyboard commands and moving tab groups to another window are
+  missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
+  itself).
 - `declarativeNetRequest` rules (static rulesets, dynamic and session rules) apply to requests
   of web pages in normal windows, before Moon Shield: block, allow, allowAllRequests,
   upgradeScheme, redirect and modifyHeaders. Redirects and header changes need host access to

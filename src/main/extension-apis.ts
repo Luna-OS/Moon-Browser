@@ -83,6 +83,8 @@ export class ExtensionApis {
     ipcMain.handle(CALL, (event, name: unknown, ...args: unknown[]) => {
       const id = this.frameExtension(event);
       if (!id || typeof name !== "string") throw new Error("Not an extension");
+      // navigator.credentials: pages only (service workers have none).
+      if (name.startsWith("webauthn.")) return this.webauthn(id, event.sender, name, args);
       return this.call(id, name, args);
     });
     ipcMain.on(SUBSCRIBE, (event, name: unknown) => {
@@ -193,6 +195,23 @@ export class ExtensionApis {
     }
   }
 
+  private webauthn(id: string, sender: WebContents, name: string, [a, b]: unknown[]): unknown {
+    const webauthn = this.browser.extensions.webauthn;
+    switch (name) {
+      case "webauthn.isAvailable":
+        return webauthn.isAvailable();
+      case "webauthn.create":
+        return webauthn.request(id, sender, "create", a, b);
+      case "webauthn.get":
+        return webauthn.request(id, sender, "get", a, b);
+      case "webauthn.cancel":
+        webauthn.cancel(id, a);
+        return undefined;
+      default:
+        throw new Error(`${name} isn't available in Moon Browser`);
+    }
+  }
+
   private async call(id: string, name: string, args: unknown[]): Promise<unknown> {
     const namespace = name.split(".")[0];
     const permission = PERMISSION[namespace];
@@ -269,6 +288,15 @@ export class ExtensionApis {
           collapsed: typeof p.collapsed === "boolean" ? p.collapsed : undefined,
         });
         return group ? groupInfo(found.win, group) : undefined;
+      }
+      case "tabGroups.move": {
+        const found = this.findGroup(a);
+        if (!found) throw new Error(`No group with id: ${String(a)}.`);
+        const p = isObj(b) ? b : {};
+        if (typeof p.index !== "number") throw new Error("tabGroups.move needs an index");
+        if (p.windowId !== undefined && p.windowId !== found.win.win.id)
+          throw new Error("Moving tab groups to another window isn't available in Moon Browser.");
+        return groupInfo(found.win, found.win.moveGroup(found.group.id, p.index, false));
       }
       case "tabs.group":
         return this.groupTabs(a);

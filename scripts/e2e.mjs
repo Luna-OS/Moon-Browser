@@ -135,6 +135,22 @@ async function waitFor(fn, what, timeout = 15_000) {
   throw new Error(`Timed out waiting for ${what} (last: ${JSON.stringify(last)})`);
 }
 
+// On Linux, a stand-in for Windows' webauthn.dll (scripts/fixtures/webauthn)
+// takes the part of Windows Hello, so extensions' navigator.credentials is
+// tested end to end.
+let webauthnMock = null;
+if (process.platform === "linux") {
+  const { execFileSync } = await import("node:child_process");
+  const fixture = join(root, "scripts", "fixtures", "webauthn");
+  try {
+    const lib = join(profile, "libwebauthn-mock.so");
+    execFileSync("cc", ["-shared", "-fPIC", "-I", fixture, "-o", lib, join(fixture, "mock.c")]);
+    webauthnMock = lib;
+  } catch (err) {
+    console.log(`  (no WebAuthn stand-in: ${err.message})`);
+  }
+}
+
 const args = [root];
 if (process.platform === "linux") args.push("--no-sandbox");
 const app = await electron.launch({
@@ -142,6 +158,7 @@ const app = await electron.launch({
   args,
   env: {
     ...process.env,
+    ...(webauthnMock ? { MOON_WEBAUTHN_LIBRARY: webauthnMock } : {}),
     MOON_BROWSER_PROFILE: profile,
     ...(process.platform === "win32" ? { LOCALAPPDATA: config } : { XDG_CONFIG_HOME: config }),
   },
@@ -327,6 +344,62 @@ try {
       "chrome.privacy.services.passwordSavingEnabled.get({}).then((r) => r.levelOfControl)",
     );
     if (privacy !== "not_controllable") throw new Error(`privacy: ${privacy}`);
+    // WebAuthn in extension pages (NordPass sets up Windows Hello with it):
+    // answered by the system's API — or its stand-in here on Linux.
+    if (webauthnMock || process.platform === "win32") {
+      const create = (rp, name) => `(async () => {
+        const text = (b) => new TextDecoder().decode(b);
+        const b64 = (u) => btoa(String.fromCharCode(...u)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
+        try {
+          const challenge = crypto.getRandomValues(new Uint8Array(32));
+          const cred = await navigator.credentials.create({ publicKey: {
+            rp: { ${rp ? `id: "${rp}", ` : ""}name: "Moon test" },
+            user: { id: new Uint8Array([1, 2, 3]), name: "${name}", displayName: "Luna" },
+            challenge, pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          } });
+          return JSON.stringify({
+            real: cred instanceof PublicKeyCredential && cred.response instanceof AuthenticatorAttestationResponse,
+            id: cred.id, clientData: text(cred.response.clientDataJSON),
+            sent: text(cred.response.attestationObject), challenge: b64(challenge),
+          });
+        } catch (e) { return "error:" + e.name; }
+      })()`;
+      // A web domain the extension has no host permission for: refused
+      // before anything reaches the system.
+      const foreign = await inPopup(create("evil.example", "luna"));
+      if (foreign !== "error:SecurityError") throw new Error(`foreign RP ID: ${foreign}`);
+      const available = await inPopup(
+        "PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()",
+      );
+      if (typeof available !== "boolean") throw new Error(`isUVPAA gave ${available}`);
+      if (webauthnMock) {
+        const made = JSON.parse(await inPopup(create(null, "luna")));
+        const origin = `chrome-extension://${EXTENSION_ID}`;
+        const clientData = JSON.stringify({
+          type: "webauthn.create",
+          challenge: made.challenge,
+          origin,
+          crossOrigin: false,
+        });
+        if (!made.real || made.id !== "AQIDBA" || made.clientData !== clientData)
+          throw new Error(`created ${JSON.stringify(made)}`);
+        // What Windows got: the extension's origin as RP ID, the same client data.
+        if (!made.sent.includes(`;rp=v1:${origin}|Moon test|`) || !made.sent.includes(clientData))
+          throw new Error(`sent ${made.sent}`);
+        const cancelled = await inPopup(create(null, "!cancel"));
+        if (cancelled !== "error:NotAllowedError") throw new Error(`cancelled: ${cancelled}`);
+        const got = await inPopup(`navigator.credentials
+          .get({ publicKey: { challenge: new Uint8Array(32), allowCredentials: [{ type: "public-key", id: new Uint8Array([1, 2, 3, 4]) }] } })
+          .then((c) => [c.response instanceof AuthenticatorAssertionResponse, new TextDecoder().decode(c.response.signature), new Uint8Array(c.response.userHandle).join()].join("|"))`);
+        if (
+          !got.startsWith(`true|hwnd=`) ||
+          !got.includes(`;rp=${origin};`) ||
+          !got.endsWith("allow=v1:01020304/public-key/0|85")
+        )
+          throw new Error(`assertion: ${got}`);
+      }
+    }
     // chrome.identity, which Moon Browser adds itself.
     const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
     if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)
@@ -336,6 +409,7 @@ try {
       .query({ active: true, currentWindow: true })
       .then(([tab]) => chrome.tabs.group({ tabIds: [tab.id] }))
       .then((id) => chrome.tabGroups.update(id, { title: "From the extension" }))
+      .then((group) => chrome.tabGroups.move(group.id, { index: -1 }))
       .then((group) => group.color)`);
     if (typeof color !== "string") throw new Error(`tabGroups gave ${color}`);
     // Dynamic declarativeNetRequest rules, added and removed at run time.
@@ -525,6 +599,80 @@ try {
       groupId,
     );
     await waitFor(() => chip.count().then((n) => n === 0), "the group to go");
+  });
+
+  /** The titles of the tabs in the tab strip, left to right. */
+  const stripOrder = () =>
+    ui.locator('[role="tab"]').evaluateAll((els) => els.map((e) => e.getAttribute("title")));
+  /** Drags with the mouse, in small steps, like a hand does. */
+  const dragBy = async (locator, toX, toY) => {
+    const box = await locator.boundingBox();
+    await ui.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await ui.mouse.down();
+    await ui.mouse.move(toX, toY, { steps: 15 });
+    await ui.mouse.up();
+  };
+
+  /** The IDs of the tabs in the tab strip, left to right. */
+  const stripIds = () =>
+    ui.locator('[role="tab"]').evaluateAll((els) => els.map((e) => e.getAttribute("data-tab-id")));
+
+  await check("a tab can be dragged to another place", async () => {
+    await ui.evaluate(() => window.moonUI.command({ type: "newTab" }));
+    await waitFor(async () => (await stripIds()).length >= 3, "three tabs");
+    const before = await stripIds();
+    const all = ui.locator('[role="tab"]');
+    const first = await all.first().boundingBox();
+    await dragBy(all.last(), first.x + 4, first.y + first.height / 2);
+    const expected = [before.at(-1), ...before.slice(0, -1)].join("|");
+    await waitFor(
+      async () => (await stripIds()).join("|") === expected,
+      "the last tab in front",
+    ).catch(async (err) => {
+      throw new Error(`${err.message}: ${before.join("|")} → ${(await stripIds()).join("|")}`);
+    });
+  });
+
+  await check("a whole tab group can be dragged", async () => {
+    const order = await stripIds();
+    const [a, b] = [Number(order[0]), Number(order[1])];
+    await ui.evaluate((id) => window.moonUI.command({ type: "groupTab", tabId: id }), a);
+    const chip = ui.locator("[data-group-chip]");
+    await waitFor(() => chip.count().then((n) => n === 1), "the group's label");
+    const groupId = Number(await chip.getAttribute("data-group-chip"));
+    await ui.evaluate(
+      ([id, group]) => window.moonUI.command({ type: "groupTab", tabId: id, groupId: group }),
+      [b, groupId],
+    );
+    await ui.evaluate(
+      (group) => window.moonUI.command({ type: "groupUpdate", groupId: group, title: "Moon trip" }),
+      groupId,
+    );
+    await waitFor(() => chip.textContent().then((t) => t.includes("Moon trip")), "the name");
+    // By its label, behind the last tab: both tabs go along, in order.
+    const last = await ui.locator('[role="tab"]').last().boundingBox();
+    await dragBy(chip, last.x + last.width - 4, last.y + last.height / 2);
+    const expected = [...order.slice(2), order[0], order[1]].join("|");
+    await waitFor(async () => (await stripIds()).join("|") === expected, "the group at the end");
+    if ((await chip.getAttribute("aria-expanded")) !== "true")
+      throw new Error("dragging the label also collapsed the group");
+    await ui.evaluate(
+      (group) => window.moonUI.command({ type: "groupAction", groupId: group, action: "ungroup" }),
+      groupId,
+    );
+    await waitFor(() => chip.count().then((n) => n === 0), "the group to go");
+  });
+
+  await check("pages can't put a count on the taskbar icon", async () => {
+    const quiet = await app.evaluate(async ({ webContents }) => {
+      const tab = webContents
+        .getAllWebContents()
+        .find((w) => w.getURL().startsWith("http://127.0.0.1"));
+      return tab.executeJavaScript(
+        "navigator.setAppBadge(120).then(() => !Function.prototype.toString.call(navigator.setAppBadge).includes('setAppBadge'))",
+      );
+    });
+    if (quiet !== true) throw new Error("navigator.setAppBadge still reaches the app");
   });
 
   await check("Ctrl+T opens a new tab and Ctrl+W closes it", async () => {
@@ -789,6 +937,79 @@ try {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
     if (alive < 1) throw new Error("no window left");
+  });
+
+  await check("tabs and tab groups come back after a restart", async () => {
+    // Two pages of the test server in a named group, and nothing else.
+    const others = await stripIds();
+    for (const path of ["/", "/second"])
+      await ui.evaluate(
+        (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "background" }),
+        `${base}${path}`,
+      );
+    await waitFor(async () => (await stripIds()).length === others.length + 2, "two more tabs");
+    const kept = (await stripIds()).filter((id) => !others.includes(id)).map(Number);
+    await ui.evaluate((id) => window.moonUI.command({ type: "groupTab", tabId: id }), kept[0]);
+    const chip = ui.locator("[data-group-chip]");
+    await waitFor(() => chip.count().then((n) => n === 1), "the group's label");
+    const groupId = Number(await chip.getAttribute("data-group-chip"));
+    await ui.evaluate(
+      ([id, group]) => window.moonUI.command({ type: "groupTab", tabId: id, groupId: group }),
+      [kept[1], groupId],
+    );
+    await ui.evaluate(
+      (group) => window.moonUI.command({ type: "groupUpdate", groupId: group, title: "Kept" }),
+      groupId,
+    );
+    for (const id of others)
+      await ui.evaluate((tabId) => window.moonUI.command({ type: "close", tabId }), Number(id));
+    await waitFor(
+      async () =>
+        [...(await stripOrder())].sort().join("|") === "Moon test page|Second page" &&
+        (await chip.textContent()).includes("Kept"),
+      "just the group's two pages",
+    ).catch(async (err) => {
+      throw new Error(
+        `${err.message}: ${(await stripOrder()).join("|")}, groups: ${await ui.locator("[data-group-chip]").allTextContents()}`,
+      );
+    });
+    const want = (await stripOrder()).join("|");
+    await new Promise((r) => setTimeout(r, 2000));
+    await app.close();
+
+    const again = await electron.launch({
+      executablePath: require("electron"),
+      args,
+      env: {
+        ...process.env,
+        MOON_BROWSER_PROFILE: profile,
+        ...(process.platform === "win32" ? { LOCALAPPDATA: config } : { XDG_CONFIG_HOME: config }),
+      },
+    });
+    try {
+      const ui2 = await waitFor(
+        () => again.windows().find((p) => p.url().startsWith("moon://ui")),
+        "the UI after the restart",
+      );
+      // Restored tabs sleep until they're first shown.
+      const shown = () =>
+        ui2
+          .locator('[role="tab"]')
+          .evaluateAll((els) =>
+            els.map((e) => e.getAttribute("title").replace(/ \(asleep\)$/, "")),
+          );
+      await waitFor(async () => (await shown()).join("|") === want, "the two pages again").catch(
+        async (err) => {
+          throw new Error(`${err.message}; shown: ${(await shown()).join(", ")}`);
+        },
+      );
+      const chip2 = ui2.locator("[data-group-chip]");
+      await waitFor(() => chip2.textContent().then((t) => t.includes("Kept")), "the group again");
+      if ((await chip2.getAttribute("aria-label"))?.includes("2 tabs") !== true)
+        throw new Error(`the group has ${await chip2.getAttribute("aria-label")}`);
+    } finally {
+      await again.close().catch(() => undefined);
+    }
   });
 } finally {
   await app.close().catch(() => undefined);

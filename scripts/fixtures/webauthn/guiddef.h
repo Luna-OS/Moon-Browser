@@ -1,0 +1,1 @@
+/* GUID comes from mock.c. */

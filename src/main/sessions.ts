@@ -12,7 +12,7 @@ import { isThirdParty } from "@shared/sites";
 import { asFirefoxRequest, firefoxUserAgent, wantsFirefoxUserAgent } from "@shared/useragent";
 import type { Browser } from "./browser";
 import type { Tab } from "./tab";
-import { adblockPreload } from "./paths";
+import { adblockPreload, webPreload } from "./paths";
 import { handleInternalProtocol } from "./protocol";
 
 function hostOf(url: string): string {
@@ -51,6 +51,8 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
   browser.permissions.install(ses, isPrivate);
   browser.downloads.install(ses, isPrivate);
   ses.registerPreloadScript({ type: "frame", filePath: adblockPreload });
+  ses.registerPreloadScript({ type: "frame", filePath: webPreload });
+  ses.registerPreloadScript({ type: "service-worker", filePath: webPreload });
   applySpellcheck(ses, browser.settings.spellcheck);
 
   // Google's sign-in only lets Firefox and the big browsers in (see useragent.ts).

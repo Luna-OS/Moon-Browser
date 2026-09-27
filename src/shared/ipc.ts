@@ -50,6 +50,8 @@ export type UiCommand =
   /** Put a tab into a group (a new one without groupId). */
   | { type: "groupTab"; tabId: number; groupId?: number }
   | { type: "ungroupTab"; tabId: number }
+  /** Move a whole group: `index` is where its first tab goes, among the other tabs. */
+  | { type: "moveGroup"; groupId: number; index: number }
   | {
       type: "groupUpdate";
       groupId: number;

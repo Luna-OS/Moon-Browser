@@ -15,7 +15,8 @@ export function defaultSettings(platform: string): Settings {
     searchEngine: "perplexity",
     customSearchUrl: "",
     bangs: true,
-    startup: "newtab",
+    // Tabs and tab groups come back after a restart, unless switched off.
+    startup: "restore",
     homePage: "",
     showHomeButton: false,
     showBookmarksBar: false,

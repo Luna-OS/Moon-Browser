@@ -7,6 +7,7 @@ export const rendererDir = join(appRoot, "out", "renderer");
 export const uiPreload = join(appRoot, "out", "preload", "ui.cjs");
 export const internalPreload = join(appRoot, "out", "preload", "internal.cjs");
 export const adblockPreload = join(appRoot, "out", "preload", "adblock-cosmetics.cjs");
+export const webPreload = join(appRoot, "out", "preload", "web.cjs");
 export const adblockWorker = join(appRoot, "out", "main", "adblock-worker.cjs");
 /** electron-chrome-extensions' chrome.* preload, patched at build time (scripts/build-electron.mjs). */
 export const extensionApiPreload = join(appRoot, "out", "main", "chrome-extension-api.preload.js");

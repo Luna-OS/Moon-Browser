@@ -113,6 +113,8 @@ jobs:
 
           Start-Process -Wait -FilePath $setup -ArgumentList "/S"
           if (-not (Test-Path "$dir\moon-browser.exe")) { throw "not installed" }
+          # koffi's native module, for Windows Hello in extensions (src/main/webauthn-win.ts).
+          if (-not (Test-Path "$dir\resources\koffi\win32_x64\koffi.node")) { throw "koffi.node missing" }
           if (-not (Registered)) { throw "not registered as a browser" }
           $command = (Get-ItemProperty "HKCU:\Software\Classes\MoonBrowserURL\shell\open\command")."(default)"
           if ($command -notlike '*" -- "%1"') { throw "unsafe link command: $command" }

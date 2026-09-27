@@ -237,6 +237,8 @@ interface Stats {
   defaultBrowserHintDismissed: boolean;
   /** Moon Browser quit to install an update: restore the session on the next start. */
   restoreAfterUpdate: boolean;
+  /** Profiles from before 0.1.8 were switched to restoring their tabs once. */
+  restoreByDefault: boolean;
 }
 
 export class Profile {
@@ -289,6 +291,7 @@ export class Profile {
       importHintDismissed: isObj(raw) && raw.importHintDismissed === true,
       defaultBrowserHintDismissed: isObj(raw) && raw.defaultBrowserHintDismissed === true,
       restoreAfterUpdate: isObj(raw) && raw.restoreAfterUpdate === true,
+      restoreByDefault: isObj(raw) && raw.restoreByDefault === true,
     }));
   }
 

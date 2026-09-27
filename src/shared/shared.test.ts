@@ -123,6 +123,8 @@ describe("bangs", () => {
 describe("search engines", () => {
   it("searches with Perplexity by default", () => {
     expect(defaultSettings("win32").searchEngine).toBe("perplexity");
+    // Tabs and groups come back after a restart.
+    expect(defaultSettings("win32").startup).toBe("restore");
     expect(DEFAULT_ENGINE.name).toBe("Perplexity");
     expect(go("!p why is the moon white")?.url).toBe(
       "https://www.perplexity.ai/search?q=why+is+the+moon+white",
