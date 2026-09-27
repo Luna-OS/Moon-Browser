@@ -34,6 +34,24 @@ function install(bridge: {
   const chrome = (globalThis as { chrome?: Record<string, unknown> }).chrome;
   const runtime = chrome?.runtime as { id?: string; getManifest?: () => unknown } | undefined;
   if (!chrome || !runtime?.id) return;
+
+  // Chromium also offers the APIs as `browser` (as Firefox does), but as a
+  // separate object holding only Electron's own APIs: an extension that
+  // prefers `browser` (NordPass) would miss everything added to `chrome`
+  // — contextMenus, windows, privacy, … — and fail to start. In Chrome both
+  // name the same object; here too.
+  if ((globalThis as { browser?: unknown }).browser !== chrome) {
+    try {
+      Object.defineProperty(globalThis, "browser", {
+        value: chrome,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    } catch {
+      (globalThis as { browser?: unknown }).browser = chrome;
+    }
+  }
   const id = runtime.id;
   const manifest = (runtime.getManifest?.() ?? {}) as { permissions?: unknown };
   const permissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];

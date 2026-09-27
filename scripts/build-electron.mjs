@@ -91,6 +91,48 @@ await copyFile(
     // Left extensible so src/preload/extension-apis.ts can add the APIs the
     // library lacks (sidePanel, identity, …), whichever preload runs first.
     ["Object.freeze(chrome);", ""],
+    // chrome.privacy settings answer (callback and promise) instead of never
+    // answering: extensions await them at start-up (NordPass). Moon Browser
+    // has no password saving or autofill of its own; nothing is changeable.
+    [
+      `class ChromeSetting {
+        constructor() {
+          this.onChange = {
+            addListener: () => {
+            }
+          };
+        }
+        set() {
+        }
+        get() {
+        }
+        clear() {
+        }
+      }`,
+      `class ChromeSetting {
+        constructor(value = false) {
+          this.value = value;
+          this.onChange = { addListener() {}, removeListener() {}, hasListener: () => false };
+        }
+        get(_details, callback) {
+          const result = { value: this.value, levelOfControl: "not_controllable" };
+          if (typeof callback === "function") callback(result);
+          return Promise.resolve(result);
+        }
+        set(_details, callback) {
+          if (typeof callback === "function") callback();
+          return Promise.resolve();
+        }
+        clear(_details, callback) {
+          if (typeof callback === "function") callback();
+          return Promise.resolve();
+        }
+      }`,
+    ],
+    [
+      "webRTCIPHandlingPolicy: new ChromeSetting()",
+      'webRTCIPHandlingPolicy: new ChromeSetting("default_public_interface_only")',
+    ],
   ];
   for (const [from, to] of patches) {
     if (preload.split(from).length !== 2)
