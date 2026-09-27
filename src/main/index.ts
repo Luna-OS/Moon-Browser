@@ -27,6 +27,15 @@ registerSchemes();
 if (!app.commandLine.hasSwitch("no-sandbox")) app.enableSandbox();
 Menu.setApplicationMenu(null);
 
+// FedCM ("Sign in with Google" and others through the browser's own account
+// chooser): Chromium offers the API, but Electron has no account chooser
+// behind it, so every request fails and the sign-in button stops working.
+// Without the API, as in Firefox and Safari, sites use their pop-up instead.
+{
+  const disabled = app.commandLine.getSwitchValue("disable-features");
+  app.commandLine.appendSwitch("disable-features", [disabled, "FedCm"].filter(Boolean).join(","));
+}
+
 // A bug in one feature must never stop the whole browser with a modal
 // error box (Electron's default): log it and keep going.
 process.on("uncaughtException", (err) => console.error("[moon] uncaught exception:", err));

@@ -15,6 +15,8 @@ const api: MoonUiApi = {
     ipcRenderer.invoke(UI_CHANNELS.bookmarkChildren, folder),
   bookmarkFolders: (): Promise<BookmarkFolderChoice[]> =>
     ipcRenderer.invoke(UI_CHANNELS.bookmarkFolders),
+  addBookmarkFolder: (title: string, parent: string | null): Promise<BookmarkFolderChoice | null> =>
+    ipcRenderer.invoke(UI_CHANNELS.addBookmarkFolder, title, parent),
   openOverlay: (): Promise<OverlaySnapshot[]> => ipcRenderer.invoke(UI_CHANNELS.overlayOpen),
   overlayReady: (): void => ipcRenderer.send(UI_CHANNELS.overlayReady),
   closeOverlay: (): Promise<void> => ipcRenderer.invoke(UI_CHANNELS.overlayClose),

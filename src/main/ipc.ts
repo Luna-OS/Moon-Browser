@@ -131,6 +131,10 @@ export function validateCommand(raw: unknown): UiCommand | null {
         : null;
     case "removeBookmark":
       return isStr(c.id, 64) ? { type: "removeBookmark", id: c.id } : null;
+    case "newBookmarkFolder":
+      return c.parent === null || isStr(c.parent, 64)
+        ? { type: "newBookmarkFolder", parent: c.parent }
+        : null;
     case "openBookmarkFolder":
       return isStr(c.id, 64) &&
         (c.disposition === "background" ||
@@ -233,6 +237,11 @@ export function registerIpc(browser: Browser): void {
   ipcMain.handle(UI_CHANNELS.bookmarkFolders, (event) => {
     uiWindow(event);
     return folderChoices(browser.profile.bookmarks.get());
+  });
+  ipcMain.handle(UI_CHANNELS.addBookmarkFolder, (event, title: unknown, parent: unknown) => {
+    const win = uiWindow(event);
+    if (!isStr(title, 512) || !(parent === null || isStr(parent, 64))) return null;
+    return win.addBookmarkFolder(title, parent);
   });
 
   ipcMain.handle(UI_CHANNELS.suggest, (event, text: unknown) => {

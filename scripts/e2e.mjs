@@ -30,7 +30,10 @@ const PAGES = {
     <h1>Pages ask questions</h1><p>alert(), confirm() and prompt() answer here.</p></body>`,
 };
 
+/** The request headers the test page last came with. */
+let pageHeaders = {};
 const server = createServer((req, res) => {
+  if (req.url === "/") pageHeaders = req.headers;
   // For the extension's declarativeNetRequest rules.
   const dnr = {
     "/dnr-blocked": "not blocked",
@@ -119,6 +122,35 @@ await writeFile(
         name: "Other bookmarks",
         children: [{ type: "url", name: "Docs", url: "https://docs.example/" }],
       },
+    },
+  }),
+);
+// Bookmarks in the Google Account (Chrome 128 and newer keep them in a file of
+// their own): the Anime folder again, with a folder inside.
+await writeFile(
+  join(comet, "AccountBookmarks"),
+  JSON.stringify({
+    roots: {
+      bookmark_bar: {
+        type: "folder",
+        name: "Bookmarks bar",
+        children: [
+          {
+            type: "folder",
+            name: "Anime",
+            children: [
+              { type: "url", name: "Crunchyroll", url: "https://www.crunchyroll.com/" },
+              {
+                type: "folder",
+                name: "Movie night",
+                children: [{ type: "url", name: "Your Name", url: "https://movies.example/" }],
+              },
+            ],
+          },
+        ],
+      },
+      other: { type: "folder", name: "Other bookmarks", children: [] },
+      synced: { type: "folder", name: "Mobile bookmarks", children: [] },
     },
   }),
 );
@@ -579,6 +611,41 @@ try {
     if (hasApi !== "undefinedundefinedundefinedundefined") throw new Error(`page sees: ${hasApi}`);
   });
 
+  await check("pages see Chrome's window.chrome and one consistent Chromium", async () => {
+    const page = JSON.parse(
+      await app.evaluate(({ webContents }) => {
+        const wc = webContents.getAllWebContents().find((w) => w.getTitle() === "Moon test page");
+        return wc.executeJavaScript(`JSON.stringify({
+          chrome: Object.keys(window.chrome),
+          app: typeof chrome.app.getDetails + " " + chrome.app.isInstalled,
+          loadTimes: typeof chrome.loadTimes().requestTime,
+          csi: chrome.csi().tran,
+          ua: navigator.userAgent,
+          brands: navigator.userAgentData.brands
+            .map((b) => '"' + b.brand + '";v="' + b.version + '"')
+            .join(", "),
+          platform: navigator.userAgentData.platform,
+          fedcm: "IdentityCredential" in window,
+        })`);
+      }),
+    );
+    // Google's sign-in turns a Chrome with an empty window.chrome away.
+    if (page.chrome.join() !== "loadTimes,csi,app") throw new Error(`chrome: ${page.chrome}`);
+    // csi's transition: 15 for a new page, 6 after going back or forward.
+    if (page.app !== "function false" || page.loadTimes !== "number" || ![6, 15].includes(page.csi))
+      throw new Error(`chrome's members: ${JSON.stringify(page)}`);
+    if (page.fedcm) throw new Error("FedCM is offered, with nothing behind it");
+    // What the page was requested with is what its scripts read.
+    const sent = pageHeaders;
+    if (/Electron|moon/i.test(page.ua)) throw new Error(`user agent: ${page.ua}`);
+    if (sent["user-agent"] !== page.ua)
+      throw new Error(`header ${sent["user-agent"]} vs script ${page.ua}`);
+    if (sent["sec-ch-ua"] !== page.brands)
+      throw new Error(`Sec-CH-UA ${sent["sec-ch-ua"]} vs userAgentData ${page.brands}`);
+    if (sent["sec-ch-ua-platform"] !== `"${page.platform}"` || sent["sec-ch-ua-mobile"] !== "?0")
+      throw new Error(`platform hints: ${JSON.stringify(sent)}`);
+  });
+
   await check("web pages cannot navigate to moon:// pages", async () => {
     await app.evaluate(({ webContents }) => {
       const wc = webContents.getAllWebContents().find((w) => w.getTitle() === "Moon test page");
@@ -825,7 +892,8 @@ try {
         return window.moon.invoke("import.run", comet.path, { bookmarks: true, history: true });
       })()`);
     });
-    if (result.error || result.bookmarks !== 4 || result.history !== 1)
+    // 4 on this computer, 1 more from the account (Crunchyroll is in both).
+    if (result.error || result.bookmarks !== 5 || result.history !== 1)
       throw new Error(JSON.stringify(result));
     const bookmarked = await app.evaluate(({ webContents }) => {
       const wc = webContents
@@ -849,6 +917,11 @@ try {
     await bar.getByRole("button", { name: "Anime" }).click();
     const anime = ui.getByRole("menu", { name: "Anime" });
     await waitFor(() => anime.getByText("Crunchyroll").isVisible(), "the Anime folder");
+    // The account's Anime folder is the same folder, its subfolder inside.
+    await waitFor(
+      () => anime.getByRole("menuitem", { name: "Movie night", exact: true }).isVisible(),
+      "the account bookmarks' subfolder",
+    );
     await anime.getByRole("menuitem", { name: "New", exact: true }).click();
     const inner = ui.getByRole("menu", { name: "New" });
     await waitFor(() => inner.getByText("From a folder").isVisible(), "the folder in it");
@@ -919,6 +992,68 @@ try {
     await waitFor(async () => !(await bar.isVisible()), "the bar to hide from the page");
     await fromPage(true);
     await waitFor(() => bar.isVisible(), "the bar to show from the page");
+  });
+
+  await check("folders get folders inside: from the folder menu and the star", async () => {
+    const bookmarks = () =>
+      app.evaluate(({ webContents }) =>
+        webContents
+          .getAllWebContents()
+          .find((w) => w.getURL().startsWith("moon://bookmarks"))
+          .executeJavaScript(`window.moon.invoke("bookmarks.list")`),
+      );
+    const bar = ui.getByRole("navigation", { name: "Bookmarks bar" });
+    // From the Anime folder's menu, named in Moon Browser's dialog.
+    await bar.getByRole("button", { name: "Anime" }).click();
+    const anime = ui.getByRole("menu", { name: "Anime" });
+    await waitFor(() => anime.isVisible(), "the Anime folder");
+    await anime.getByRole("menuitem", { name: "New folder in “Anime”" }).click();
+    const dialog = ui.getByRole("alertdialog");
+    await waitFor(() => dialog.isVisible(), "the New folder dialog");
+    if (!(await dialog.textContent()).includes("In “Anime”"))
+      throw new Error(`dialog: ${await dialog.textContent()}`);
+    await dialog.getByRole("textbox").fill("Still to watch");
+    await dialog.getByRole("textbox").press("Enter");
+    const inAnime = await waitFor(async () => {
+      const list = await bookmarks();
+      const folder = list.find((b) => b.isFolder && b.title === "Anime" && b.parent === null);
+      return list.find(
+        (b) => b.isFolder && b.title === "Still to watch" && b.parent === folder?.id,
+      );
+    }, "the folder in Anime");
+    // The star's editor makes one in the chosen folder, and the bookmark goes in.
+    await press("T", ["control"]);
+    const box = ui.getByRole("combobox", { name: "Address and search bar" });
+    await box.fill(`${base}/folder-page`);
+    await box.press("Enter");
+    const star = ui.getByRole("button", { name: "Edit bookmark" });
+    await waitFor(() => star.isVisible(), "the star of the bookmarked page");
+    await star.click();
+    const editor = ui.getByRole("dialog", { name: "Bookmark" });
+    await waitFor(() => editor.isVisible(), "the bookmark editor");
+    const folderSelect = editor.getByRole("combobox", { name: "Folder" });
+    await folderSelect.selectOption({ label: "Anime / Still to watch" });
+    await editor.getByRole("button", { name: "New folder", exact: true }).click();
+    const name = editor.getByRole("textbox", { name: "New folder in “Anime / Still to watch”" });
+    await name.fill("Season two");
+    await name.press("Enter");
+    await waitFor(
+      async () =>
+        (await folderSelect.locator("option:checked").textContent()) ===
+        "Anime / Still to watch / Season two",
+      "the new folder to be chosen",
+    );
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("08d-new-folder-in-editor");
+    await editor.getByRole("button", { name: "Done" }).click();
+    await waitFor(async () => {
+      const list = await bookmarks();
+      const season = list.find(
+        (b) => b.isFolder && b.title === "Season two" && b.parent === inAnime.id,
+      );
+      const page = list.find((b) => !b.isFolder && b.title === "From a folder");
+      return season && page?.parent === season.id;
+    }, "the bookmark in the new folder");
   });
 
   await check("the extensions page lists, switches off and on", async () => {

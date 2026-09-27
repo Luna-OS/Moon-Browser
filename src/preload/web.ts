@@ -2,6 +2,8 @@
  * Runs in every page and service worker of the browsing sessions, before
  * their own scripts:
  *
+ * - `window.chrome` gets Chrome's own members (chrome-object.ts): Electron
+ *   leaves it empty, and Google's sign-in turns such a browser away.
  * - The Badging API (navigator.setAppBadge) answers as in Chrome for sites
  *   that aren't installed apps — it resolves and does nothing. Electron
  *   would put every site's unread count ("99+") on Moon Browser's taskbar
@@ -10,7 +12,10 @@
  *   the tab (page-dialogs.ts), not in the system's message box.
  */
 import { contextBridge, ipcRenderer } from "electron";
+import { completeChromeObject } from "@shared/chrome-object";
 import { PAGE_DIALOG_CHANNEL, type PageDialogKind, type PageDialogReply } from "@shared/ipc";
+
+if (typeof window !== "undefined") contextBridge.executeInMainWorld({ func: completeChromeObject });
 
 function quietBadges(): void {
   const g = globalThis as {

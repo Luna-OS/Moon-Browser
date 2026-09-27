@@ -1,11 +1,12 @@
 /**
  * The bookmarks bar with its folders, a folder's menu (folders inside open
- * in place, with a way back), and the star's editor: name, folder, remove.
+ * in place, with a way back; new folders go in), and the star's editor:
+ * name, folder (or a new one), remove.
  */
 import { useEffect, useState } from "react";
 import type { Bookmark, BookmarkFolderChoice } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
-import { BackIcon, ChevronDownIcon, FolderIcon, TabIcon } from "@theme/icons";
+import { BackIcon, ChevronDownIcon, FolderIcon, PlusIcon, TabIcon } from "@theme/icons";
 import { ui } from "./store";
 
 const open = (url: string, e: React.MouseEvent) =>
@@ -163,27 +164,38 @@ export function BookmarkFolderMenu({
           </button>
         ),
       )}
+      <div className="mb-menu-sep" role="separator" />
       {links > 0 && (
-        <>
-          <div className="mb-menu-sep" role="separator" />
-          <button
-            type="button"
-            role="menuitem"
-            className="mb-menu-item"
-            onClick={() => {
-              void ui.command({
-                type: "openBookmarkFolder",
-                id: here.id,
-                disposition: "background",
-              });
-              onClose();
-            }}
-          >
-            <TabIcon size={15} />
-            <span className="flex-1">Open all ({links}) in new tabs</span>
-          </button>
-        </>
+        <button
+          type="button"
+          role="menuitem"
+          className="mb-menu-item"
+          onClick={() => {
+            void ui.command({
+              type: "openBookmarkFolder",
+              id: here.id,
+              disposition: "background",
+            });
+            onClose();
+          }}
+        >
+          <TabIcon size={15} />
+          <span className="flex-1">Open all ({links}) in new tabs</span>
+        </button>
       )}
+      <button
+        type="button"
+        role="menuitem"
+        className="mb-menu-item"
+        onClick={() => {
+          // Named in a Moon dialog, which takes the menu's place.
+          void ui.command({ type: "newBookmarkFolder", parent: here.id });
+          onClose();
+        }}
+      >
+        <PlusIcon size={15} />
+        <span className="flex-1 truncate">New folder in “{here.title || "Folder"}”</span>
+      </button>
     </div>
   );
 }
@@ -205,9 +217,20 @@ export function BookmarkEditor({
   const [title, setTitle] = useState(bookmark.title);
   const [parent, setParent] = useState(bookmark.parent);
   const [folders, setFolders] = useState<BookmarkFolderChoice[]>([]);
+  /** The name of a folder being made in the chosen one; null while not. */
+  const [newFolder, setNewFolder] = useState<string | null>(null);
   useEffect(() => {
     void ui.bookmarkFolders().then(setFolders);
   }, []);
+
+  const makeFolder = async () => {
+    if (newFolder === null) return;
+    const made = await ui.addBookmarkFolder(newFolder, parent);
+    setFolders(await ui.bookmarkFolders());
+    if (made) setParent(made.id);
+    setNewFolder(null);
+  };
+  const where = folders.find((f) => f.id === parent)?.path ?? "Bookmarks bar";
 
   const done = () => {
     void ui.command({ type: "updateBookmark", id: bookmark.id, title, parent });
@@ -231,20 +254,66 @@ export function BookmarkEditor({
           onChange={(e) => setTitle(e.target.value)}
         />
       </label>
-      <label className="flex flex-col gap-1 text-xs text-(--mb-text-muted)">
-        Folder
-        <select
-          className="mb-input"
-          value={parent ?? ""}
-          onChange={(e) => setParent(e.target.value || null)}
-        >
-          {folders.map((f) => (
-            <option key={f.id ?? ""} value={f.id ?? ""}>
-              {f.path}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="flex flex-col gap-1 text-xs text-(--mb-text-muted)">
+        <label htmlFor="mb-bookmark-folder">Folder</label>
+        <div className="flex gap-1.5">
+          <select
+            id="mb-bookmark-folder"
+            className="mb-input min-w-0 flex-1"
+            value={parent ?? ""}
+            onChange={(e) => setParent(e.target.value || null)}
+          >
+            {folders.map((f) => (
+              <option key={f.id ?? ""} value={f.id ?? ""}>
+                {f.path}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="mb-icon-btn"
+            aria-label="New folder"
+            title={`New folder in “${where}”`}
+            aria-expanded={newFolder !== null}
+            onClick={() => setNewFolder((v) => (v === null ? "" : null))}
+          >
+            <PlusIcon size={15} />
+          </button>
+        </div>
+      </div>
+      {newFolder !== null && (
+        <div className="flex flex-col gap-1 text-xs text-(--mb-text-muted)">
+          <label htmlFor="mb-new-folder">New folder in “{where}”</label>
+          <div className="flex gap-1.5">
+            <input
+              id="mb-new-folder"
+              className="mb-input min-w-0 flex-1"
+              value={newFolder}
+              maxLength={512}
+              placeholder="New folder"
+              autoFocus
+              onChange={(e) => setNewFolder(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter makes the folder here; it doesn't close the editor.
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void makeFolder();
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setNewFolder(null);
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="mb-btn mb-btn-ghost mb-btn-sm"
+              onClick={() => void makeFolder()}
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      )}
       <label className="flex cursor-pointer items-center gap-2 text-xs text-(--mb-text-muted)">
         <span className="flex-1">Show bookmarks bar</span>
         <input

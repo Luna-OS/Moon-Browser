@@ -30,6 +30,8 @@ export type UiCommand =
   /** Renames a bookmark or moves it to another folder (null: the bookmarks bar). */
   | { type: "updateBookmark"; id: string; title?: string; parent?: string | null }
   | { type: "removeBookmark"; id: string }
+  /** Asks for a name and makes a folder at the end of `parent` (null: the bookmarks bar). */
+  | { type: "newBookmarkFolder"; parent: string | null }
   /** Opens every bookmark directly in a folder. */
   | { type: "openBookmarkFolder"; id: string; disposition: "background" | "window" | "private" }
   | { type: "toggleMute"; tabId: number }
@@ -94,6 +96,7 @@ export const UI_CHANNELS = {
   suggest: "ui:suggest",
   bookmarkChildren: "ui:bookmark-children",
   bookmarkFolders: "ui:bookmark-folders",
+  addBookmarkFolder: "ui:add-bookmark-folder",
   overlayOpen: "ui:overlay-open",
   overlayReady: "ui:overlay-ready",
   overlayClose: "ui:overlay-close",

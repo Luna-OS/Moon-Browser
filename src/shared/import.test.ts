@@ -8,6 +8,7 @@ import {
   profilesFromLocalState,
   type HistoryRow,
 } from "./import";
+import { childrenOf, mergeImported } from "./bookmarks";
 
 /** A Chromium time for a JS timestamp. */
 const chromeTime = (ms: number) => (ms + 11_644_473_600_000) * 1000;
@@ -76,6 +77,64 @@ describe("importing from Chromium browsers (Comet, Chrome, …)", () => {
     ]);
     expect(bookmarkTree(null)).toEqual([]);
     expect(bookmarkTree({ roots: "nope" })).toEqual([]);
+  });
+
+  it("brings Chrome's account bookmarks together with the ones on this computer", () => {
+    const folder = (name: string, children: unknown[]) => ({ type: "folder", name, children });
+    const url = (name: string, u: string) => ({ type: "url", name, url: u });
+    // Bookmarks: what's only on this computer.
+    const local = {
+      roots: {
+        bookmark_bar: folder("Bookmarks bar", [
+          folder("Anime", [url("Crunchyroll", "https://www.crunchyroll.com/")]),
+        ]),
+        other: folder("Other bookmarks", [url("Docs", "https://docs.example/")]),
+        synced: folder("Mobile bookmarks", []),
+      },
+    };
+    // AccountBookmarks: what's saved in the Google Account, subfolders and all.
+    const account = {
+      roots: {
+        bookmark_bar: folder("Bookmarks bar", [
+          folder("Anime", [
+            url("Crunchyroll", "https://www.crunchyroll.com/"),
+            folder("Movie night", [url("Your Name", "https://movies.example/your-name")]),
+            folder("Yu-Gi-Oh!", [folder("VANGUARD!!!!!!!!!", [])]),
+          ]),
+          url("YouTube", "https://www.youtube.com/"),
+        ]),
+        other: folder("Other bookmarks", [url("Recipes", "https://recipes.example/")]),
+        synced: folder("Mobile bookmarks", [url("Phone", "https://phone.example/")]),
+      },
+    };
+    const tree = bookmarkTree(local, account);
+    expect(tree.map((n) => n.title)).toEqual([
+      "Anime",
+      "Anime",
+      "YouTube",
+      "Other bookmarks",
+      "Mobile bookmarks",
+    ]);
+    // In Moon Browser's list, the two Anime folders become one, subfolders inside.
+    let n = 0;
+    const { list, added } = mergeImported([], tree, (f) => ({
+      id: `b${++n}`,
+      favicon: null,
+      created: 0,
+      ...f,
+    }));
+    expect(added).toBe(6);
+    const anime = list.filter((b) => b.isFolder && b.title === "Anime");
+    expect(anime).toHaveLength(1);
+    const inAnime = childrenOf(list, anime[0].id).map((b) => b.title);
+    expect(inAnime).toEqual(["Crunchyroll", "Movie night", "Yu-Gi-Oh!"]);
+    const yugioh = list.find((b) => b.title === "Yu-Gi-Oh!")!;
+    expect(childrenOf(list, yugioh.id).map((b) => b.title)).toEqual(["VANGUARD!!!!!!!!!"]);
+    const other = list.find((b) => b.title === "Other bookmarks")!;
+    expect(childrenOf(list, other.id).map((b) => b.title)).toEqual(["Docs", "Recipes"]);
+    // Only one file, as before; none at all, nothing.
+    expect(bookmarkTree(account)).toHaveLength(4);
+    expect(bookmarkTree()).toEqual([]);
   });
 
   it("reads the history database with the importer's query", () => {
