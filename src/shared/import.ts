@@ -18,38 +18,49 @@ export const HISTORY_QUERY = `SELECT url, title, visit_count, typed_count,
   CASE WHEN last_visit_time > 0 THEN last_visit_time / 1000 - 11644473600000 ELSE 0 END AS last_visit
   FROM urls WHERE hidden = 0 ORDER BY last_visit_time DESC LIMIT 20000`;
 
-export interface ImportedBookmark {
-  url: string;
-  title: string;
-  /** Folder path, e.g. "Bookmarks bar/Work". */
-  folder: string;
-}
+/** A bookmark or a folder from another browser. */
+export type ImportedNode =
+  | { kind: "url"; url: string; title: string }
+  | { kind: "folder"; title: string; children: ImportedNode[] };
 
 const IMPORTABLE = /^(https?|file):/i;
 
-/** All bookmarks of a Chromium `Bookmarks` file, bookmarks bar first. */
-export function flattenBookmarks(json: unknown): ImportedBookmark[] {
-  const out: ImportedBookmark[] = [];
+/** Names Chromium gives its roots where the file doesn't say. */
+const ROOTS: [key: string, name: string][] = [
+  ["other", "Other bookmarks"],
+  ["synced", "Mobile bookmarks"],
+];
+
+/**
+ * The bookmarks of a Chromium `Bookmarks` file, folders and all: the
+ * bookmarks bar's contents as they are, then "Other bookmarks" and "Mobile
+ * bookmarks" as folders of their own (when they hold anything).
+ */
+export function bookmarkTree(json: unknown): ImportedNode[] {
   const roots = (json as { roots?: Record<string, unknown> } | null)?.roots;
-  if (!roots || typeof roots !== "object") return out;
+  if (!roots || typeof roots !== "object") return [];
 
-  const walk = (node: unknown, folder: string, depth: number) => {
-    if (!node || typeof node !== "object" || depth > 64) return;
+  const read = (node: unknown, depth: number): ImportedNode | null => {
+    if (!node || typeof node !== "object" || depth > 32) return null;
     const n = node as { type?: string; url?: string; name?: string; children?: unknown[] };
-    if (n.type === "url" && typeof n.url === "string" && IMPORTABLE.test(n.url)) {
-      out.push({
-        url: n.url,
-        title: typeof n.name === "string" ? n.name.slice(0, 512) : "",
-        folder,
-      });
-    } else if (Array.isArray(n.children)) {
-      const name = typeof n.name === "string" ? n.name : "";
-      const path = folder && name ? `${folder}/${name}` : name || folder;
-      for (const child of n.children) walk(child, path, depth + 1);
-    }
+    const title = typeof n.name === "string" ? n.name.slice(0, 512) : "";
+    if (n.type === "url")
+      return typeof n.url === "string" && IMPORTABLE.test(n.url)
+        ? { kind: "url", url: n.url, title }
+        : null;
+    if (!Array.isArray(n.children)) return null;
+    return { kind: "folder", title, children: contents(n.children, depth + 1) };
   };
+  const contents = (children: unknown[], depth: number): ImportedNode[] =>
+    children.map((c) => read(c, depth)).filter((c): c is ImportedNode => c !== null);
 
-  for (const key of ["bookmark_bar", "other", "synced"]) walk(roots[key], "", 0);
+  const bar = read(roots.bookmark_bar, 0);
+  const out = bar?.kind === "folder" ? bar.children : [];
+  for (const [key, name] of ROOTS) {
+    const root = read(roots[key], 0);
+    if (root?.kind === "folder" && root.children.length)
+      out.push({ ...root, title: root.title || name });
+  }
   return out;
 }
 

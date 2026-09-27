@@ -63,7 +63,9 @@ jobs:
           VERSION: ${{ steps.look.outputs.version }}
           HELIUM: ${{ steps.look.outputs.helium_chromium }}
         run: |
-          CHROMIUM="$(ELECTRON_RUN_AS_NODE=1 npx electron -p process.versions.chrome)"
+          # Electron fetches its binary on first use and says so first: only the last line.
+          CHROMIUM="$(ELECTRON_RUN_AS_NODE=1 npx electron -p process.versions.chrome | tail -n 1)"
+          case "$CHROMIUM" in *[!0-9.]* | "") CHROMIUM="unknown" ;; esac
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Security update: Electron $ELECTRON (Chromium $CHROMIUM)" \
@@ -160,7 +162,8 @@ jobs:
 
   report:
     needs: [check, test, release]
-    if: failure() && needs.check.outputs.update == 'true'
+    # A try's failure shows in its run, not as an issue.
+    if: failure() && needs.check.outputs.update == 'true' && !inputs.try_from
     runs-on: ubuntu-latest
     permissions:
       issues: write

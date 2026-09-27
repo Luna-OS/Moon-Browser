@@ -25,6 +25,11 @@ export type UiCommand =
   | { type: "stop" }
   | { type: "tabMenu"; tabId: number; x: number; y: number }
   | { type: "bookmarkMenu"; id: string; x: number; y: number }
+  /** Renames a bookmark or moves it to another folder (null: the bookmarks bar). */
+  | { type: "updateBookmark"; id: string; title?: string; parent?: string | null }
+  | { type: "removeBookmark"; id: string }
+  /** Opens every bookmark directly in a folder. */
+  | { type: "openBookmarkFolder"; id: string; disposition: "background" | "window" | "private" }
   | { type: "toggleMute"; tabId: number }
   | { type: "respondPrompt"; id: number; allow: boolean; remember: boolean }
   | { type: "answerDialog"; id: number; response: number; text?: string; checked?: boolean }
@@ -73,7 +78,9 @@ export type UiEvent =
   | { type: "find" }
   | { type: "closePopovers" }
   /** Open the name-and-colour editor of a (new) tab group. */
-  | { type: "editGroup"; groupId: number };
+  | { type: "editGroup"; groupId: number }
+  /** Open the editor of the page's bookmark (after the star or Ctrl+D). */
+  | { type: "showBookmark" };
 
 export interface OverlaySnapshot {
   rect: Rect;
@@ -83,6 +90,8 @@ export interface OverlaySnapshot {
 export const UI_CHANNELS = {
   command: "ui:command",
   suggest: "ui:suggest",
+  bookmarkChildren: "ui:bookmark-children",
+  bookmarkFolders: "ui:bookmark-folders",
   overlayOpen: "ui:overlay-open",
   overlayReady: "ui:overlay-ready",
   overlayClose: "ui:overlay-close",
@@ -105,6 +114,7 @@ export type InternalMethod =
   | "bookmarks.list"
   | "bookmarks.update"
   | "bookmarks.remove"
+  | "bookmarks.addFolder"
   | "downloads.list"
   | "downloads.action"
   | "downloads.clear"
@@ -171,7 +181,13 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "import.run",
   ],
   history: [...COMMON, "history.query", "history.remove", "data.clear"],
-  bookmarks: [...COMMON, "bookmarks.list", "bookmarks.update", "bookmarks.remove"],
+  bookmarks: [
+    ...COMMON,
+    "bookmarks.list",
+    "bookmarks.update",
+    "bookmarks.remove",
+    "bookmarks.addFolder",
+  ],
   downloads: [...COMMON, "downloads.list", "downloads.action", "downloads.clear"],
   extensions: [
     ...COMMON,

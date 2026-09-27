@@ -13,7 +13,7 @@ import { copyFile, readFile, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import {
-  flattenBookmarks,
+  bookmarkTree,
   HISTORY_QUERY,
   historyFromRows,
   profilesFromLocalState,
@@ -164,7 +164,7 @@ export class Importer {
     if (what.bookmarks) {
       try {
         const json: unknown = JSON.parse(await readFile(join(path, "Bookmarks"), "utf8"));
-        result.bookmarks = this.profile.importBookmarks(flattenBookmarks(json));
+        result.bookmarks = this.profile.importBookmarks(bookmarkTree(json));
       } catch (err) {
         result.errors.push(`Bookmarks: ${err instanceof Error ? err.message : String(err)}`);
       }

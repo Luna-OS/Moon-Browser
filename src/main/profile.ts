@@ -4,6 +4,15 @@
  */
 import { cleanGroupTitle, isGroupColor, type GroupColor } from "@shared/tab-groups";
 import { randomUUID } from "node:crypto";
+import {
+  childrenOf,
+  linksOf,
+  mergeImported,
+  moveNode,
+  removeNode,
+  repairTree,
+} from "@shared/bookmarks";
+import type { ImportedNode } from "@shared/import";
 import { sanitizeSettings } from "@shared/settings";
 import type {
   Bookmark,
@@ -114,19 +123,24 @@ function parseHistory(raw: unknown): Map<string, HistoryEntry> {
 
 function parseBookmarks(raw: unknown): Bookmark[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(isObj).flatMap((b) => {
-    const url = str(b.url);
-    if (!/^(https?|file|moon):/i.test(url)) return [];
+  const list = raw.filter(isObj).flatMap((b): Bookmark[] => {
+    // Bookmarks from before folders (0.1.12 and older) are on the bar.
+    const isFolder = b.isFolder === true;
+    const url = isFolder ? "" : str(b.url);
+    if (!isFolder && !/^(https?|file|moon):/i.test(url)) return [];
     return [
       {
         id: str(b.id, 64) || randomUUID(),
         url,
         title: str(b.title, 512),
-        favicon: faviconOf(b.favicon),
+        favicon: isFolder ? null : faviconOf(b.favicon),
         created: num(b.created) || Date.now(),
+        parent: str(b.parent, 64) || null,
+        isFolder,
       },
     ];
   });
+  return repairTree(list);
 }
 
 function parseDownloads(raw: unknown): DownloadInfo[] {
@@ -455,61 +469,107 @@ export class Profile {
 
   // ---- Bookmarks ----
 
-  bookmarkFor(url: string): Bookmark | undefined {
-    return this.bookmarks.get().find((b) => b.url === url);
+  /** Bookmarks with an address, in every folder. */
+  bookmarkLinks(): Bookmark[] {
+    return linksOf(this.bookmarks.get());
   }
 
-  addBookmark(url: string, title: string, favicon: string | null): Bookmark {
+  bookmarkFor(url: string): Bookmark | undefined {
+    return this.bookmarks.get().find((b) => !b.isFolder && b.url === url);
+  }
+
+  bookmarkChildren(parent: string | null): Bookmark[] {
+    return childrenOf(this.bookmarks.get(), parent);
+  }
+
+  private newBookmark(fields: Pick<Bookmark, "url" | "title" | "parent" | "isFolder">): Bookmark {
+    return {
+      id: randomUUID(),
+      favicon: null,
+      created: Date.now(),
+      ...fields,
+      title: fields.title.slice(0, 512),
+    };
+  }
+
+  /** A folder, or null for the bookmarks bar, if it exists. */
+  private folderOrBar(parent: string | null): string | null {
+    return parent !== null && this.bookmarks.get().some((b) => b.id === parent && b.isFolder)
+      ? parent
+      : null;
+  }
+
+  addBookmark(
+    url: string,
+    title: string,
+    favicon: string | null,
+    parent: string | null = null,
+  ): Bookmark {
     const existing = this.bookmarkFor(url);
     if (existing) return existing;
-    const b: Bookmark = {
-      id: randomUUID(),
-      url,
-      title: title || url,
+    const b = {
+      ...this.newBookmark({
+        url,
+        title: title || url,
+        parent: this.folderOrBar(parent),
+        isFolder: false,
+      }),
       favicon,
-      created: Date.now(),
     };
     this.bookmarks.set([...this.bookmarks.get(), b]);
     return b;
   }
 
-  /** Adds bookmarks from another browser, skipping ones already here. */
-  importBookmarks(list: { url: string; title: string }[]): number {
-    const current = this.bookmarks.get();
-    const known = new Set(current.map((b) => b.url));
-    const added: Bookmark[] = [];
-    for (const b of list) {
-      if (known.has(b.url)) continue;
-      known.add(b.url);
-      added.push({
-        id: randomUUID(),
-        url: b.url,
-        title: b.title || b.url,
-        favicon: null,
-        created: Date.now(),
-      });
-    }
-    if (added.length) this.bookmarks.set([...current, ...added]);
-    return added.length;
+  addBookmarkFolder(title: string, parent: string | null = null): Bookmark {
+    const folder = this.newBookmark({
+      url: "",
+      title: title.trim() || "New folder",
+      parent: this.folderOrBar(parent),
+      isFolder: true,
+    });
+    this.bookmarks.set([...this.bookmarks.get(), folder]);
+    return folder;
   }
 
-  updateBookmark(id: string, patch: { title?: string; url?: string; index?: number }): void {
-    const list = [...this.bookmarks.get()];
+  /** Adds bookmarks from another browser, folders and all (see mergeImported). */
+  importBookmarks(nodes: ImportedNode[]): number {
+    const { list, added } = mergeImported(this.bookmarks.get(), nodes, (fields) =>
+      this.newBookmark(fields),
+    );
+    if (list.length !== this.bookmarks.get().length) this.bookmarks.set(list);
+    return added;
+  }
+
+  /**
+   * Renames, readdresses or moves a bookmark or folder; `parent` and `index`
+   * move it (into that folder, to that place among what's there).
+   */
+  updateBookmark(
+    id: string,
+    patch: { title?: string; url?: string; parent?: string | null; index?: number },
+  ): void {
+    let list = [...this.bookmarks.get()];
     const i = list.findIndex((b) => b.id === id);
     if (i < 0) return;
     const b = { ...list[i] };
     if (typeof patch.title === "string") b.title = patch.title.slice(0, 512);
-    if (typeof patch.url === "string" && /^(https?|file|moon):/i.test(patch.url)) b.url = patch.url;
+    if (!b.isFolder && typeof patch.url === "string" && /^(https?|file|moon):/i.test(patch.url))
+      b.url = patch.url;
     list[i] = b;
-    if (typeof patch.index === "number" && Number.isInteger(patch.index)) {
-      list.splice(i, 1);
-      list.splice(Math.max(0, Math.min(list.length, patch.index)), 0, b);
+    if (patch.parent !== undefined || patch.index !== undefined) {
+      const parent = patch.parent === undefined ? b.parent : patch.parent;
+      const index =
+        typeof patch.index === "number" && Number.isFinite(patch.index)
+          ? patch.index
+          : Number.MAX_SAFE_INTEGER;
+      list = moveNode(list, id, parent, index) ?? list;
     }
     this.bookmarks.set(list);
   }
 
+  /** Removes a bookmark, or a folder with everything in it. */
   removeBookmark(id: string): void {
-    this.bookmarks.set(this.bookmarks.get().filter((b) => b.id !== id));
+    this.bookmarks.set(removeNode(this.bookmarks.get(), id));
   }
 
   // ---- Downloads ----

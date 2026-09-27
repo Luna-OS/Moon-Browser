@@ -8,6 +8,7 @@ import type { DialogGlyph, DialogInfo } from "@shared/types";
 import {
   DownloadIcon,
   ExternalIcon,
+  FolderIcon,
   GlobeIcon,
   PuzzleIcon,
   ShieldIcon,
@@ -23,6 +24,7 @@ const GLYPHS: Record<DialogGlyph, (size: number) => ReactNode> = {
   leave: (size) => <ExternalIcon size={size} />,
   remove: (size) => <TrashIcon size={size} />,
   page: (size) => <GlobeIcon size={size} />,
+  folder: (size) => <FolderIcon size={size} />,
 };
 
 const BUTTON_CLASS = {

@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
   chromeTimeToMs,
-  flattenBookmarks,
+  bookmarkTree,
   HISTORY_QUERY,
   historyFromRows,
   profilesFromLocalState,
@@ -20,14 +20,15 @@ describe("importing from Chromium browsers (Comet, Chrome, …)", () => {
     expect(chromeTimeToMs(Number.NaN)).toBe(0);
   });
 
-  it("flattens a Bookmarks file, bookmarks bar first", () => {
+  it("reads a Bookmarks file with its folders, the bar's contents first", () => {
     const file = {
       roots: {
         other: {
           type: "folder",
-          name: "Other",
+          name: "Weitere Lesezeichen",
           children: [{ type: "url", name: "Docs", url: "https://docs.example/" }],
         },
+        synced: { type: "folder", name: "Mobile", children: [] },
         bookmark_bar: {
           type: "folder",
           name: "Bookmarks bar",
@@ -35,27 +36,46 @@ describe("importing from Chromium browsers (Comet, Chrome, …)", () => {
             { type: "url", name: "Perplexity", url: "https://www.perplexity.ai/" },
             {
               type: "folder",
-              name: "Work",
+              name: "Anime",
               children: [
-                { type: "url", name: "Repo", url: "https://github.com/Luna-OS/Moon-Browser" },
+                { type: "url", name: "Crunchyroll", url: "https://www.crunchyroll.com/" },
                 { type: "url", name: "Evil", url: "javascript:alert(1)" },
+                {
+                  type: "folder",
+                  name: "New",
+                  children: [{ type: "url", name: "Seasonal", url: "https://anime.example/" }],
+                },
               ],
             },
+            { type: "folder", name: "Empty", children: [] },
           ],
         },
       },
     };
-    expect(flattenBookmarks(file)).toEqual([
-      { url: "https://www.perplexity.ai/", title: "Perplexity", folder: "Bookmarks bar" },
+    expect(bookmarkTree(file)).toEqual([
+      { kind: "url", url: "https://www.perplexity.ai/", title: "Perplexity" },
       {
-        url: "https://github.com/Luna-OS/Moon-Browser",
-        title: "Repo",
-        folder: "Bookmarks bar/Work",
+        kind: "folder",
+        title: "Anime",
+        children: [
+          { kind: "url", url: "https://www.crunchyroll.com/", title: "Crunchyroll" },
+          {
+            kind: "folder",
+            title: "New",
+            children: [{ kind: "url", url: "https://anime.example/", title: "Seasonal" }],
+          },
+        ],
       },
-      { url: "https://docs.example/", title: "Docs", folder: "Other" },
+      { kind: "folder", title: "Empty", children: [] },
+      // "Other bookmarks" as a folder of its own; empty roots are left out.
+      {
+        kind: "folder",
+        title: "Weitere Lesezeichen",
+        children: [{ kind: "url", url: "https://docs.example/", title: "Docs" }],
+      },
     ]);
-    expect(flattenBookmarks(null)).toEqual([]);
-    expect(flattenBookmarks({ roots: "nope" })).toEqual([]);
+    expect(bookmarkTree(null)).toEqual([]);
+    expect(bookmarkTree({ roots: "nope" })).toEqual([]);
   });
 
   it("reads the history database with the importer's query", () => {

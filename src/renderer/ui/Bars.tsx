@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { Bookmark, PermissionKind, PermissionPrompt, WindowState } from "@shared/types";
-import { Favicon } from "@theme/Favicon";
+import type { PermissionKind, PermissionPrompt, WindowState } from "@shared/types";
 import {
   BellIcon,
   CameraIcon,
@@ -150,44 +149,5 @@ export function FindBar({ state, onClose }: { state: WindowState; onClose: () =>
         <CloseIcon />
       </button>
     </div>
-  );
-}
-
-export function BookmarksBar({ bookmarks }: { bookmarks: Bookmark[] }) {
-  return (
-    <nav className="mb-bookmarks-bar" aria-label="Bookmarks bar">
-      {bookmarks.length === 0 && (
-        <span className="px-2 text-xs text-(--mb-text-faint)">
-          Bookmark pages with the star or Ctrl+D to see them here.
-        </span>
-      )}
-      {bookmarks.map((b) => (
-        <button
-          type="button"
-          key={b.id}
-          className="mb-bookmark"
-          title={`${b.title}\n${b.url}`}
-          onClick={(e) =>
-            void ui.command({
-              type: "openUrl",
-              url: b.url,
-              disposition:
-                e.ctrlKey || e.metaKey ? "background" : e.shiftKey ? "window" : "current",
-            })
-          }
-          onAuxClick={(e) => {
-            if (e.button === 1)
-              void ui.command({ type: "openUrl", url: b.url, disposition: "background" });
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            void ui.command({ type: "bookmarkMenu", id: b.id, x: e.clientX, y: e.clientY });
-          }}
-        >
-          <Favicon url={b.url} src={b.favicon} size={14} />
-          <span>{b.title || b.url}</span>
-        </button>
-      ))}
-    </nav>
   );
 }

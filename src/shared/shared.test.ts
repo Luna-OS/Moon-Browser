@@ -355,7 +355,25 @@ describe("suggestions", () => {
     const s = suggest("git", {
       history,
       bookmarks: [
-        { id: "1", url: "https://github.com/", title: "GitHub", favicon: null, created: 0 },
+        {
+          id: "1",
+          url: "https://github.com/",
+          title: "GitHub",
+          favicon: null,
+          created: 0,
+          parent: null,
+          isFolder: false,
+        },
+        // Folders have no address and are never suggested.
+        {
+          id: "2",
+          url: "",
+          title: "GitHub things",
+          favicon: null,
+          created: 0,
+          parent: null,
+          isFolder: true,
+        },
       ],
       tabs: [],
       now,

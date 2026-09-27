@@ -6,6 +6,7 @@
  */
 import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { BANGS } from "@shared/bangs";
+import { folderChoices } from "@shared/bookmarks";
 import { SEARCH_ENGINES } from "@shared/engines";
 import { EXTENSION_ID } from "@shared/extensions";
 import { isGroupColor } from "@shared/tab-groups";
@@ -115,6 +116,26 @@ export function validateCommand(raw: unknown): UiCommand | null {
       return isStr(c.id, 64) && isNum(c.x) && isNum(c.y)
         ? { type: "bookmarkMenu", id: c.id, x: c.x, y: c.y }
         : null;
+    case "updateBookmark":
+      return isStr(c.id, 64) &&
+        (c.title === undefined || isStr(c.title, 512)) &&
+        (c.parent === undefined || c.parent === null || isStr(c.parent, 64))
+        ? {
+            type: "updateBookmark",
+            id: c.id,
+            title: c.title,
+            parent: c.parent,
+          }
+        : null;
+    case "removeBookmark":
+      return isStr(c.id, 64) ? { type: "removeBookmark", id: c.id } : null;
+    case "openBookmarkFolder":
+      return isStr(c.id, 64) &&
+        (c.disposition === "background" ||
+          c.disposition === "window" ||
+          c.disposition === "private")
+        ? { type: "openBookmarkFolder", id: c.id, disposition: c.disposition }
+        : null;
     case "answerDialog":
       return isNum(c.id) &&
         isNum(c.response) &&
@@ -203,6 +224,15 @@ export function registerIpc(browser: Browser): void {
     if (cmd) win.command(cmd);
   });
 
+  ipcMain.handle(UI_CHANNELS.bookmarkChildren, (event, folder: unknown) => {
+    uiWindow(event);
+    return isStr(folder, 64) ? browser.profile.bookmarkChildren(folder) : [];
+  });
+  ipcMain.handle(UI_CHANNELS.bookmarkFolders, (event) => {
+    uiWindow(event);
+    return folderChoices(browser.profile.bookmarks.get());
+  });
+
   ipcMain.handle(UI_CHANNELS.suggest, (event, text: unknown) => {
     const win = uiWindow(event);
     if (!isStr(text, 2048)) return { suggestions: [], inline: null };
@@ -213,7 +243,7 @@ export function registerIpc(browser: Browser): void {
     const history = browser.profile.history.get().values();
     const local = suggest(text, {
       history,
-      bookmarks: browser.profile.bookmarks.get(),
+      bookmarks: browser.profile.bookmarkLinks(),
       tabs: browser
         .allTabs()
         .filter((t) => t.window.isPrivate === win.isPrivate && t.id !== win.activeId)
@@ -321,6 +351,9 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
         bookmarks: w.bookmarks === true,
         history: w.history === true,
       });
+      // As in Chrome: imported bookmarks show on the bookmarks bar at once.
+      if (result.bookmarks > 0 && !browser.settings.showBookmarksBar)
+        browser.updateSettings({ showBookmarksBar: true });
       browser.notifyInternal("bookmarks");
       browser.notifyInternal("history");
       browser.updateAllWindows();
@@ -370,10 +403,20 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       profile.updateBookmark(id, {
         title: isStr(patch.title, 512) ? patch.title : undefined,
         url: isStr(patch.url) ? patch.url : undefined,
+        parent: patch.parent === null ? null : isStr(patch.parent, 64) ? patch.parent : undefined,
         index: isNum(patch.index) ? patch.index : undefined,
       });
       browser.notifyInternal("bookmarks");
       browser.updateAllWindows();
+    },
+    "bookmarks.addFolder": (_tab, title, parent) => {
+      const folder = profile.addBookmarkFolder(
+        isStr(title, 512) ? title : "",
+        isStr(parent, 64) ? parent : null,
+      );
+      browser.notifyInternal("bookmarks");
+      browser.updateAllWindows();
+      return folder;
     },
     "bookmarks.remove": (_tab, id) => {
       if (isStr(id, 64)) profile.removeBookmark(id);
