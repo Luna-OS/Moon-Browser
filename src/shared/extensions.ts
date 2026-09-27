@@ -186,8 +186,8 @@ const WEB_SCHEMES = new Set(["http:", "https:", "ws:", "wss:", "file:"]);
 /**
  * Messages that went unanswered — sent while none of the extension's pages
  * was open, or to a tab without its content script. Extensions send them
- * all the time (NordPass tells its closed pop-up about every vault change);
- * they are harmless, and Chrome only shows them in developer mode.
+ * all the time (NordPass tells its closed pop-up about every vault change,
+ * and every tab when the browser starts); they are harmless.
  */
 const MESSAGING_NOISE = [
   "Could not establish connection. Receiving end does not exist.",
@@ -198,6 +198,18 @@ const MESSAGING_NOISE = [
 /** Whether an extension's console error is only messaging noise (see MESSAGING_NOISE). */
 export function isMessagingNoise(message: string): boolean {
   return MESSAGING_NOISE.some((noise) => message.includes(noise));
+}
+
+/**
+ * Whether an extension's error goes on the extensions page. Messaging noise
+ * only does for one's own (unpacked) extensions in developer mode, where it
+ * can help: nobody can do anything about a Web Store extension's.
+ */
+export function listsError(
+  message: string,
+  extension: { developerMode: boolean; unpacked: boolean },
+): boolean {
+  return !isMessagingNoise(message) || (extension.developerMode && extension.unpacked);
 }
 
 /** Whether a Chrome match pattern (`*://*.example.com/*`, `<all_urls>`, …) covers a URL. */

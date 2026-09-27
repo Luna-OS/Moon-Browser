@@ -172,7 +172,8 @@ windows), pop-ups and content scripts. Talking to the NordPass *desktop app* (na
 uses the connection the app registers for Google Chrome. If an extension misbehaves,
 `moon://extensions` shows its errors under *Errors*. Messages an extension sends while none of
 its pages is open to receive them (*Could not establish connection. Receiving end does not
-exist.*) are harmless and, as in Chrome, only listed in developer mode.
+exist.*) are harmless and not listed — only for your own extensions, loaded from a folder in
+developer mode, where they can help.
 
 ### Coming from Comet
 
