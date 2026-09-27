@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "|http://127.0.0.1:*/dnr-blocked",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        {
+          "header": "X-Moon-Dnr",
+          "operation": "set",
+          "value": "on"
+        }
+      ]
+    },
+    "condition": {
+      "urlFilter": "/dnr-echo",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "redirect",
+      "redirect": {
+        "transform": {
+          "path": "/dnr-new"
+        }
+      }
+    },
+    "condition": {
+      "urlFilter": "/dnr-old",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  }
+]

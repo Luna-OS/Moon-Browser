@@ -90,7 +90,8 @@ describe("extension manifests", () => {
     // Native messaging works (through desktop apps' registrations for Chrome).
     expect(unsupportedFeatures({ permissions: ["nativeMessaging"] })).toEqual([]);
     expect(unsupportedFeatures({ permissions: ["tabGroups"] })).toEqual([]);
-    expect(unsupportedFeatures({ permissions: ["declarativeNetRequest"] })).toHaveLength(1);
+    expect(unsupportedFeatures({ permissions: ["declarativeNetRequest"] })).toEqual([]);
+    expect(unsupportedFeatures({ permissions: ["proxy"] })).toEqual([]);
     expect(unsupportedFeatures({ permissions: ["storage"] })).toEqual([]);
   });
 

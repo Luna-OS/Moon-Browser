@@ -53,6 +53,8 @@ import { internalUrl, NEWTAB_URL } from "@shared/internal";
 import type { TabGroupInfo } from "@shared/tab-groups";
 import type { ExtensionEntry, ExtensionInfo } from "@shared/types";
 import type { Browser } from "./browser";
+import { Dnr } from "./dnr";
+import { ExtensionProxy } from "./extension-proxy";
 import { ExtensionApis, extensionIdOf, groupInfo } from "./extension-apis";
 import { extensionApiPreload, extensionExtraPreload, profilePath } from "./paths";
 import type { ExtensionPrefs, UnpackedExtension } from "./profile";
@@ -121,6 +123,10 @@ async function readJson(path: string): Promise<unknown> {
 
 export class Extensions {
   readonly path = profilePath("Extensions");
+  /** chrome.declarativeNetRequest rules, applied by the browsing session. */
+  readonly dnr = new Dnr();
+  /** chrome.proxy: the browsing session's proxy, as an extension set it. */
+  readonly proxy: ExtensionProxy;
   private api: ElectronChromeExtensions | null = null;
   private apis: ExtensionApis | null = null;
   private session: Session | null = null;
@@ -135,11 +141,17 @@ export class Extensions {
   private readonly icons = new Map<string, string | null>();
   /** The extension whose toolbar pop-up is open. */
   private popupExtension: string | null = null;
+  /** Extensions loaded while Moon Browser starts get runtime.onStartup. */
+  private starting = true;
+  /** Unpacked extensions being reloaded: loading them again is an update. */
+  private readonly reloading = new Set<string>();
   /** Web Store extensions whose files turned out damaged (see checkFiles). */
   private readonly damaged = new Set<string>();
   private readonly checkedFiles = new Set<string>();
 
-  constructor(private readonly browser: Browser) {}
+  constructor(private readonly browser: Browser) {
+    this.proxy = new ExtensionProxy(browser);
+  }
 
   get ready(): boolean {
     return this.api !== null;
@@ -152,6 +164,7 @@ export class Extensions {
 
   async init(ses: Session): Promise<void> {
     this.session = ses;
+    this.proxy.attach(ses);
     const browser = this.browser;
     // The toolbar's buttons live in the UI's session and name the browsing
     // session by this partition; nothing else resolves to it.
@@ -254,11 +267,16 @@ export class Extensions {
 
     ses.extensions.on("extension-loaded", (_event, extension) => {
       this.icons.delete(extension.id);
+      void this.dnr.load(extension);
+      this.proxy.loaded(extension.id);
+      this.lifecycleEvents(extension);
       // Web Store installs load without their service worker running.
       void this.startWorker(extension);
       this.changed();
     });
     ses.extensions.on("extension-unloaded", (_event, extension) => {
+      this.dnr.unload(extension.id);
+      this.proxy.unloaded(extension.id);
       for (const win of browser.windows) win.closeSidePanel(extension.id);
       this.changed();
     });
@@ -317,6 +335,31 @@ export class Extensions {
         if (!this.disabled().has(u.id)) await this.loadUnpackedEntry(u);
       }
     }
+    this.starting = false;
+  }
+
+  /**
+   * chrome.runtime.onInstalled and onStartup, which Electron never fires —
+   * though extensions set themselves up there (defaults, menus, first
+   * state). "install" the first time Moon Browser loads an extension,
+   * "update" when its version changed or an unpacked one was reloaded,
+   * onStartup for the others when Moon Browser starts. Delivered as soon as
+   * the extension's service worker listens.
+   */
+  private lifecycleEvents(ext: Extension): void {
+    const apis = this.apis;
+    if (!apis) return;
+    const prefs = this.prefs();
+    const previous = prefs.versions[ext.id];
+    const reloaded = this.reloading.delete(ext.id);
+    if (previous !== ext.version) {
+      prefs.versions[ext.id] = ext.version;
+      this.browser.profile.extensions.changed();
+    }
+    if (!previous) apis.emitSoon(ext.id, "runtime.onInstalled", { reason: "install" });
+    else if (previous !== ext.version || reloaded)
+      apis.emitSoon(ext.id, "runtime.onInstalled", { reason: "update", previousVersion: previous });
+    else if (this.starting) apis.emitSoon(ext.id, "runtime.onStartup");
   }
 
   // ---- Tabs and windows ----
@@ -637,8 +680,15 @@ export class Extensions {
     } else {
       await uninstallExtension(id, { session: ses, extensionsPath: this.path });
     }
-    // Its storage goes with it, as in Chrome.
+    // Its storage and rules go with it, as in Chrome.
     await ses.clearStorageData({ origin: `chrome-extension://${id}` }).catch(() => undefined);
+    this.dnr.forget(id);
+    this.proxy.forget(id);
+    const prefs = this.prefs();
+    if (prefs.versions[id]) {
+      delete prefs.versions[id];
+      this.browser.profile.extensions.changed();
+    }
     this.setDisabled(id, false);
     this.errors.delete(id);
     this.damaged.delete(id);
@@ -818,7 +868,10 @@ export class Extensions {
     if (!ses || !entry || !this.prefs().developerMode) return;
     this.errors.delete(id);
     if (ses.extensions.getExtension(id)) ses.extensions.removeExtension(id);
-    if (!this.disabled().has(id)) await this.loadUnpackedEntry(entry);
+    if (!this.disabled().has(id)) {
+      this.reloading.add(id);
+      await this.loadUnpackedEntry(entry);
+    }
     this.changed();
   }
 
@@ -839,6 +892,16 @@ export class Extensions {
     } catch (err) {
       this.recordError(entry.id, `Couldn't load ${entry.path}: ${errorText(err)}`);
     }
+  }
+
+  /** The IDs of the loaded (switched on) extensions. */
+  loadedIds(): string[] {
+    return this.session?.extensions.getAllExtensions().map((e) => e.id) ?? [];
+  }
+
+  /** Delivers an event to an extension's pages and service worker. */
+  emitTo(id: string, name: string, ...args: unknown[]): void {
+    this.apis?.emit(id, name, ...args);
   }
 
   /** The extension whose toolbar pop-up is open, if any. */

@@ -18,7 +18,15 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": ["storage", "tabs", "contextMenus", "sidePanel", "identity", "tabGroups"],
+  "permissions": [
+    "storage",
+    "tabs",
+    "contextMenus",
+    "sidePanel",
+    "identity",
+    "tabGroups",
+    "declarativeNetRequest"
+  ],
   "host_permissions": ["http://127.0.0.1/*"],
   "content_scripts": [
     {
@@ -29,5 +37,14 @@
   ],
   "side_panel": {
     "default_path": "panel.html"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "moon",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
   }
 }

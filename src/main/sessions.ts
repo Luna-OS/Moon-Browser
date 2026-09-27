@@ -1,13 +1,16 @@
 /**
  * The request pipeline of a browsing session. Electron allows one listener
- * per webRequest event, so HTTPS-first, the blocker, Global Privacy Control
- * and third-party cookie blocking share these three.
+ * per webRequest event, so extensions' declarativeNetRequest rules,
+ * HTTPS-first, the blocker, Global Privacy Control and third-party cookie
+ * blocking share these three.
  */
-import { app, type OnBeforeRequestListenerDetails, type Session } from "electron";
+import { app, type Session, type WebFrameMain } from "electron";
+import { resourceType, type DnrRequest } from "@shared/dnr";
 import { httpsUpgrade } from "@shared/https";
 import { stripTrackingParams } from "@shared/security";
 import { isThirdParty } from "@shared/sites";
 import type { Browser } from "./browser";
+import type { Tab } from "./tab";
 import { adblockPreload } from "./paths";
 import { handleInternalProtocol } from "./protocol";
 
@@ -20,7 +23,7 @@ function hostOf(url: string): string {
 }
 
 /** The URL of the frame a request comes from, if it is still around. */
-function frameUrl(details: OnBeforeRequestListenerDetails): string | null {
+function frameUrl(details: { frame?: WebFrameMain | null }): string | null {
   try {
     return details.frame?.url || null;
   } catch {
@@ -49,9 +52,50 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
   ses.registerPreloadScript({ type: "frame", filePath: adblockPreload });
   applySpellcheck(ses, browser.settings.spellcheck);
 
+  // Extensions run in normal windows only, and so do their rules.
+  const dnr = isPrivate ? null : browser.extensions.dnr;
+  /** A web page's request as declarativeNetRequest rules see it; null if no rules apply. */
+  const dnrRequest = (
+    details: {
+      url: string;
+      method: string;
+      resourceType: string;
+      webContentsId?: number;
+      frame?: WebFrameMain | null;
+    },
+    tab: Tab | undefined,
+  ): DnrRequest | null => {
+    if (!dnr?.busy || !tab || !/^(https?|wss?):/i.test(details.url)) return null;
+    const type = resourceType(details.resourceType);
+    const initiator =
+      type === "main_frame"
+        ? /^https?:/i.test(tab.url)
+          ? tab.url
+          : null
+        : (frameUrl(details) ?? tab.url);
+    // Requests of extensions' own pages are theirs, not the web's.
+    if (initiator?.startsWith("chrome-extension:")) return null;
+    return {
+      url: details.url,
+      method: details.method,
+      type,
+      initiator,
+      tabId: details.webContentsId ?? -1,
+      thirdParty: initiator ? isThirdParty(details.url, initiator) : false,
+    };
+  };
+
   ses.webRequest.onBeforeRequest((details, callback) => {
     const tab =
       details.webContentsId !== undefined ? browser.tabFor(details.webContentsId) : undefined;
+
+    // Extensions' blocking and redirect rules come first.
+    const dnrReq = dnrRequest(details, tab);
+    const dnrDecision = dnrReq && dnr ? dnr.beforeRequest(dnrReq) : null;
+    if (dnrDecision) {
+      callback(dnrDecision);
+      return;
+    }
 
     if (details.resourceType === "mainFrame") {
       if (!tab) {
@@ -124,15 +168,17 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
     const headers = details.requestHeaders;
     const settings = browser.settings;
+    const tab =
+      details.webContentsId !== undefined ? browser.tabFor(details.webContentsId) : undefined;
     if (settings.globalPrivacyControl) headers["Sec-GPC"] = "1";
     if (settings.blockThirdPartyCookies && details.resourceType !== "mainFrame") {
-      const tab =
-        details.webContentsId !== undefined ? browser.tabFor(details.webContentsId) : undefined;
       if (tab && browser.protectionActive(tab.url) && isThirdParty(details.url, tab.url)) {
         delete headers.Cookie;
         delete headers.cookie;
       }
     }
+    const dnrReq = dnrRequest(details, tab);
+    if (dnrReq && dnr) dnr.requestHeaders(dnrReq, headers);
     callback({ requestHeaders: headers });
   });
 
@@ -140,14 +186,16 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
     const tab =
       details.webContentsId !== undefined ? browser.tabFor(details.webContentsId) : undefined;
     const isDocument = details.resourceType === "mainFrame";
+    const headers = details.responseHeaders ?? {};
+    // Extensions' header rules apply whether Moon Shield is on or not.
+    const dnrReq = dnrRequest(details, tab);
+    let changed = dnrReq && dnr ? dnr.responseHeaders(dnrReq, headers) : false;
     // For a new document, the page it belongs to is the document itself.
     const topUrl = isDocument ? details.url : tab?.url;
     if (!tab || !topUrl || !browser.protectionActive(topUrl)) {
-      callback({});
+      callback(changed ? { responseHeaders: headers } : {});
       return;
     }
-    const headers = details.responseHeaders ?? {};
-    let changed = false;
 
     if (
       !isDocument &&
