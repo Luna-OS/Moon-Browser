@@ -146,9 +146,9 @@ never imported.
 - Extensions run on Electron's extension support plus electron-chrome-extensions and Moon
   Browser's own additions (side panel, identity, tab groups, search, debugger, proxy,
   `declarativeNetRequest` rules, `runtime.onInstalled` / `onStartup`), which cover the common
-  APIs but not all of Chrome's: keyboard commands and moving tab groups with
-  `chrome.tabGroups.move` are missing, and `chrome.webRequest` listeners get no events (Moon
-  Shield handles the requests itself).
+  APIs but not all of Chrome's: keyboard commands and moving tab groups to another window are
+  missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
+  itself).
 - `declarativeNetRequest` rules (static rulesets, dynamic and session rules) apply to requests
   of web pages in normal windows, before Moon Shield: block, allow, allowAllRequests,
   upgradeScheme, redirect and modifyHeaders. Redirects and header changes need host access to

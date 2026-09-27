@@ -18,6 +18,8 @@ import {
   cleanGroupTitle,
   GROUP_COLORS,
   groupAfterMove,
+  groupDropIndex,
+  groupMoveIndex,
   isGroupColor,
   nextGroupColor,
 } from "./tab-groups";
@@ -209,6 +211,28 @@ describe("tab groups", () => {
     // Next to a group it doesn't belong to: stays outside.
     expect(groupAfterMove([1, 1, null], 2)).toBeNull();
     expect(groupAfterMove([null], 0)).toBeNull();
+  });
+
+  it("moves whole groups only to where they stay in one piece", () => {
+    // The other tabs: one pinned, then a loose tab, group 7 (3 tabs), a loose tab.
+    const rest = [null, null, 7, 7, 7, null];
+    expect(groupMoveIndex(rest, 1, 1)).toBe(1);
+    expect(groupMoveIndex(rest, 1, 2)).toBe(2);
+    expect(groupMoveIndex(rest, 1, 5)).toBe(5);
+    expect(groupMoveIndex(rest, 1, -1)).toBe(6);
+    // Among the pinned tabs, inside group 7, out of range: not allowed.
+    expect(groupMoveIndex(rest, 1, 0)).toBeNull();
+    expect(groupMoveIndex(rest, 1, 3)).toBeNull();
+    expect(groupMoveIndex(rest, 1, 4)).toBeNull();
+    expect(groupMoveIndex(rest, 1, 7)).toBeNull();
+    expect(groupMoveIndex(rest, 1, 1.5)).toBeNull();
+
+    // Dragging snaps instead: past the pinned tabs, to group 7's nearer end.
+    expect(groupDropIndex(rest, 1, 0)).toBe(1);
+    expect(groupDropIndex(rest, 1, 3)).toBe(2);
+    expect(groupDropIndex(rest, 1, 4)).toBe(5);
+    expect(groupDropIndex(rest, 1, 99)).toBe(6);
+    expect(groupDropIndex([4, 4], 0, 1)).toBe(0);
   });
 
   it("picks an unused colour for a new group, grey last", () => {

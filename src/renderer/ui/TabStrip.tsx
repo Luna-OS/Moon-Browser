@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type MouseEvent, type ReactNode } from "react";
+import { useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import type { TabGroupInfo } from "@shared/tab-groups";
 import type { TabInfo, WindowState } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
@@ -7,7 +7,29 @@ import { GROUP_HEX } from "./group-colors";
 import { ui } from "./store";
 import { GroupChip } from "./TabGroups";
 
-const DRAG_TYPE = "application/x-moon-tab";
+/** What is being dragged: a tab, or a whole group by its label. */
+type DragItem = { kind: "tab"; id: number } | { kind: "group"; id: number };
+/** Where it would go: next to a tab, or onto / in front of a group's label. */
+type DropTarget =
+  { kind: "tab"; id: number; side: "before" | "after" } | { kind: "chip"; id: number };
+
+interface Drag {
+  item: DragItem;
+  startX: number;
+  dx: number;
+  moved: boolean;
+  target: DropTarget | null;
+}
+
+/** Pixels the pointer has to travel before a press becomes a drag. */
+const DRAG_THRESHOLD = 6;
+
+/** How a tab or group label shows its part in a drag. */
+export interface DragLook {
+  /** Follows the pointer by this many pixels. */
+  offset?: number;
+  drop?: "before" | "after" | "join";
+}
 
 export function TabStrip({
   state,
@@ -16,26 +38,121 @@ export function TabStrip({
   state: WindowState;
   onEditGroup: (groupId: number, anchor: DOMRect) => void;
 }) {
-  const [drop, setDrop] = useState<{ id: number; side: "before" | "after" } | null>(null);
   const splitIds = state.split ? [state.split.leftId, state.split.rightId] : [];
+  // Tabs and groups are dragged with the pointer (captured, so the drag
+  // goes on over the window's drag area), not with HTML drag and drop:
+  // that one doesn't work reliably in the title bar.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<Drag | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const draggedAway = useRef(false);
 
-  const onDragOver = (event: DragEvent, tab: TabInfo) => {
-    if (!event.dataTransfer.types.includes(DRAG_TYPE)) return;
-    event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
-    const side = event.clientX < rect.left + rect.width / 2 ? "before" : "after";
-    if (drop?.id !== tab.id || drop.side !== side) setDrop({ id: tab.id, side });
+  const isDragged = (el: HTMLElement, item: DragItem) =>
+    item.kind === "tab"
+      ? el.dataset.tabId === String(item.id)
+      : el.dataset.groupChip === String(item.id) || el.dataset.groupId === String(item.id);
+
+  const targetAt = (x: number, item: DragItem): DropTarget | null => {
+    const els = [
+      ...(tabsRef.current?.querySelectorAll<HTMLElement>("[data-tab-id],[data-group-chip]") ?? []),
+    ].filter((el) => !isDragged(el, item));
+    if (!els.length) return null;
+    const rects = els.map((el) => el.getBoundingClientRect());
+    let i = rects.findIndex((r) => x >= r.left && x <= r.right);
+    if (i < 0) {
+      // Between two of them, or beyond the ends: the nearest one.
+      const dist = rects.map((r) => Math.min(Math.abs(x - r.left), Math.abs(x - r.right)));
+      i = dist.indexOf(Math.min(...dist));
+    }
+    const el = els[i];
+    const r = rects[i];
+    if (el.dataset.groupChip !== undefined)
+      return { kind: "chip", id: Number(el.dataset.groupChip) };
+    return {
+      kind: "tab",
+      id: Number(el.dataset.tabId),
+      side: x < r.left + r.width / 2 ? "before" : "after",
+    };
   };
 
-  const onDrop = (event: DragEvent, tab: TabInfo) => {
-    const id = Number(event.dataTransfer.getData(DRAG_TYPE));
-    setDrop(null);
-    if (!Number.isFinite(id) || id === tab.id) return;
-    event.preventDefault();
-    const from = state.tabs.findIndex((t) => t.id === id);
-    let to = state.tabs.findIndex((t) => t.id === tab.id) + (drop?.side === "after" ? 1 : 0);
-    if (from < to) to--;
-    void ui.command({ type: "move", tabId: id, index: to });
+  const drop = (item: DragItem, target: DropTarget) => {
+    const tabs = state.tabs;
+    if (item.kind === "tab") {
+      if (target.kind === "chip") {
+        void ui.command({ type: "groupTab", tabId: item.id, groupId: target.id });
+        return;
+      }
+      if (target.id === item.id) return;
+      const from = tabs.findIndex((t) => t.id === item.id);
+      let to = tabs.findIndex((t) => t.id === target.id) + (target.side === "after" ? 1 : 0);
+      if (from < to) to--;
+      if (from !== to) void ui.command({ type: "move", tabId: item.id, index: to });
+      return;
+    }
+    // A group: to the place among the other tabs (the main process keeps
+    // it away from pinned tabs and out of other groups).
+    const at =
+      target.kind === "chip"
+        ? tabs.findIndex((t) => t.groupId === target.id)
+        : tabs.findIndex((t) => t.id === target.id) + (target.side === "after" ? 1 : 0);
+    if (at < 0) return;
+    const index = tabs.slice(0, at).filter((t) => t.groupId !== item.id).length;
+    void ui.command({ type: "moveGroup", groupId: item.id, index });
+  };
+
+  /** The tab or group label a press started on, unless on a tab's own buttons. */
+  const itemAt = (target: EventTarget): DragItem | null => {
+    const el = (target as HTMLElement).closest<HTMLElement>("[data-tab-id],[data-group-chip]");
+    if (!el) return null;
+    if (el.dataset.groupChip !== undefined)
+      return { kind: "group", id: Number(el.dataset.groupChip) };
+    // Close and mute keep their clicks.
+    if ((target as HTMLElement).closest("button")) return null;
+    return { kind: "tab", id: Number(el.dataset.tabId) };
+  };
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    draggedAway.current = false;
+    const item = e.button === 0 ? itemAt(e.target) : null;
+    dragRef.current = item ? { item, startX: e.clientX, dx: 0, moved: false, target: null } : null;
+  };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    if (!d.moved) {
+      if (Math.abs(dx) < DRAG_THRESHOLD) return;
+      // From here on the strip gets the pointer wherever it goes.
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    const next = { ...d, dx, moved: true, target: targetAt(e.clientX, d.item) };
+    dragRef.current = next;
+    setDrag(next);
+  };
+  const onPointerEnd = (e: PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    if (!d?.moved) return;
+    setDrag(null);
+    // The click that ends a drag isn't one.
+    draggedAway.current = true;
+    if (d.target && e.type === "pointerup") drop(d.item, d.target);
+  };
+
+  /** How an element looks in the current drag. */
+  const look = (el: { tabId?: number; groupId?: number | null; chipId?: number }): DragLook => {
+    if (!drag) return {};
+    const { item, target, dx } = drag;
+    const dragged =
+      item.kind === "tab"
+        ? el.tabId === item.id
+        : el.chipId === item.id || (el.tabId !== undefined && el.groupId === item.id);
+    if (dragged) return { offset: dx };
+    if (!target) return {};
+    if (target.kind === "tab" && el.tabId === target.id) return { drop: target.side };
+    if (target.kind === "chip" && el.chipId === target.id)
+      return { drop: item.kind === "tab" ? "join" : "before" };
+    return {};
   };
 
   return (
@@ -48,7 +165,22 @@ export function TabStrip({
           <MaskIcon size={14} /> Private
         </span>
       )}
-      <div className="mb-tabs" role="tablist" aria-label="Tabs">
+      <div
+        className="mb-tabs"
+        role="tablist"
+        aria-label="Tabs"
+        ref={tabsRef}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerEnd}
+        onPointerCancel={onPointerEnd}
+        onClickCapture={(e) => {
+          if (!draggedAway.current) return;
+          draggedAway.current = false;
+          e.stopPropagation();
+          e.preventDefault();
+        }}
+      >
         {(() => {
           // Each group's label goes in front of its tabs; a collapsed group
           // shows only the label.
@@ -63,6 +195,7 @@ export function TabStrip({
                   key={`group-${group.id}`}
                   group={group}
                   count={state.tabs.filter((t) => t.groupId === group.id).length}
+                  look={look({ chipId: group.id })}
                   onEdit={(anchor) => onEditGroup(group.id, anchor)}
                 />,
               );
@@ -76,10 +209,7 @@ export function TabStrip({
                 group={group}
                 active={tab.id === state.activeId}
                 inSplit={splitIds.includes(tab.id)}
-                drop={drop?.id === tab.id ? drop.side : undefined}
-                onDragOver={(e) => onDragOver(e, tab)}
-                onDragLeave={() => setDrop(null)}
-                onDrop={(e) => onDrop(e, tab)}
+                look={look({ tabId: tab.id, groupId: tab.groupId })}
               />,
             );
           }
@@ -104,19 +234,13 @@ function Tab({
   group,
   active,
   inSplit,
-  drop,
-  onDragOver,
-  onDragLeave,
-  onDrop,
+  look,
 }: {
   tab: TabInfo;
   group?: TabGroupInfo;
   active: boolean;
   inSplit: boolean;
-  drop?: "before" | "after";
-  onDragOver: (e: DragEvent<HTMLDivElement>) => void;
-  onDragLeave: () => void;
-  onDrop: (e: DragEvent<HTMLDivElement>) => void;
+  look: DragLook;
 }) {
   const close = (event: MouseEvent) => {
     event.stopPropagation();
@@ -124,6 +248,9 @@ function Tab({
   };
 
   const title = tab.sleeping ? `${tab.title} (asleep)` : tab.title;
+  const style: React.CSSProperties & Record<string, string> = {};
+  if (group) style["--mb-group"] = GROUP_HEX[group.color];
+  if (look.offset !== undefined) style.transform = `translateX(${look.offset}px)`;
 
   return (
     <div
@@ -136,17 +263,11 @@ function Tab({
       data-pinned={tab.pinned}
       data-sleeping={tab.sleeping}
       data-split={inSplit}
-      data-drop={drop}
+      data-drop={look.drop}
+      data-dragging={look.offset !== undefined || undefined}
       data-group={group ? "" : undefined}
-      style={group ? ({ "--mb-group": GROUP_HEX[group.color] } as React.CSSProperties) : undefined}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData(DRAG_TYPE, String(tab.id));
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      data-group-id={group?.id}
+      style={style}
       onMouseDown={(e) => {
         if (e.button === 0) void ui.command({ type: "activate", tabId: tab.id });
       }}

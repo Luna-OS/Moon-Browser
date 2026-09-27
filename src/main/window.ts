@@ -38,6 +38,8 @@ import {
   cleanGroupTitle,
   groupAfterMove,
   nextGroupColor,
+  groupDropIndex,
+  groupMoveIndex,
   type GroupColor,
   type TabGroupInfo,
 } from "@shared/tab-groups";
@@ -525,6 +527,35 @@ export class MoonWindow {
     this.dropEmptyGroups();
     this.update();
     this.browser.saveSessionSoon();
+  }
+
+  /**
+   * Moves a whole group so that its first tab ends up at `index` among the
+   * other tabs (-1: the end). Dragged in the tab strip (`snap`), a place
+   * among the pinned tabs or inside another group moves on to the nearest
+   * allowed one; for chrome.tabGroups.move it is an error, as in Chrome.
+   */
+  moveGroup(id: number, index: number, snap: boolean): TabGroupInfo {
+    const group = this.group(id);
+    const members = this.tabs.filter((t) => t.groupId === id);
+    if (!group || !members.length) throw new Error(`No group with id: ${id}.`);
+    const rest = this.tabs.filter((t) => t.groupId !== id);
+    const groups = rest.map((t) => t.groupId);
+    const pinned = rest.filter((t) => t.pinned).length;
+    const at = snap ? groupDropIndex(groups, pinned, index) : groupMoveIndex(groups, pinned, index);
+    if (at === null)
+      throw new Error(
+        "Cannot move the group to an index among pinned tabs or inside another group.",
+      );
+    rest.splice(at, 0, ...members);
+    const moved = rest.some((t, i) => t !== this.tabs[i]);
+    this.tabs = rest;
+    if (moved) {
+      this.browser.extensions.groupChanged("onMoved", this, group);
+      this.update();
+      this.browser.saveSessionSoon();
+    }
+    return group;
   }
 
   updateGroup(
@@ -1083,6 +1114,9 @@ export class MoonWindow {
         if (tab) this.ungroupTabs([tab]);
         break;
       }
+      case "moveGroup":
+        if (this.group(cmd.groupId)) this.moveGroup(cmd.groupId, cmd.index, true);
+        break;
       case "groupUpdate":
         this.updateGroup(cmd.groupId, cmd);
         break;

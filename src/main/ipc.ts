@@ -153,6 +153,10 @@ export function validateCommand(raw: unknown): UiCommand | null {
         : null;
     case "ungroupTab":
       return isNum(c.tabId) ? { type: "ungroupTab", tabId: c.tabId } : null;
+    case "moveGroup":
+      return isNum(c.groupId) && isNum(c.index)
+        ? { type: "moveGroup", groupId: c.groupId, index: c.index }
+        : null;
     case "groupUpdate":
       return isNum(c.groupId)
         ? {

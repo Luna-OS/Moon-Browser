@@ -429,6 +429,14 @@ export class Browser {
   restoreOrOpen(urls: string[]): void {
     const saved = this.profile.session.get().windows;
     const stats = this.profile.stats.get();
+    // Until 0.1.8 a restart opened a new tab and left the tabs behind;
+    // now tabs and groups come back. Profiles from then are switched over
+    // once (Settings → Tabs & startup can switch it back).
+    if (!stats.restoreByDefault) {
+      stats.restoreByDefault = true;
+      this.profile.stats.changed();
+      if (this.settings.startup !== "restore") this.updateSettings({ startup: "restore" });
+    }
     const afterUpdate = stats.restoreAfterUpdate;
     if (afterUpdate) {
       stats.restoreAfterUpdate = false;

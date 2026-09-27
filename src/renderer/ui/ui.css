@@ -345,9 +345,24 @@ body {
 .mb-group-chip:hover {
   filter: brightness(1.08);
 }
-.mb-group-chip[data-drop] {
+.mb-group-chip[data-drop="join"] {
   outline: 2px solid var(--mb-accent);
   outline-offset: 2px;
+}
+/* A whole group dropped in front of this one. */
+.mb-group-chip[data-drop="before"] {
+  box-shadow: -4px 0 0 -1px var(--mb-accent);
+}
+/* What is being dragged follows the pointer, above its neighbours. */
+.mb-tab[data-dragging],
+.mb-group-chip[data-dragging] {
+  position: relative;
+  z-index: 3;
+  transition: none;
+}
+.mb-tab[data-dragging] {
+  background: var(--mb-tab-hover);
+  box-shadow: 0 6px 18px -8px rgb(0 0 0 / 0.6);
 }
 .mb-group-count {
   padding: 0 0.3rem;

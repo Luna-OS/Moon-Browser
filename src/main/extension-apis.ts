@@ -270,6 +270,15 @@ export class ExtensionApis {
         });
         return group ? groupInfo(found.win, group) : undefined;
       }
+      case "tabGroups.move": {
+        const found = this.findGroup(a);
+        if (!found) throw new Error(`No group with id: ${String(a)}.`);
+        const p = isObj(b) ? b : {};
+        if (typeof p.index !== "number") throw new Error("tabGroups.move needs an index");
+        if (p.windowId !== undefined && p.windowId !== found.win.win.id)
+          throw new Error("Moving tab groups to another window isn't available in Moon Browser.");
+        return groupInfo(found.win, found.win.moveGroup(found.group.id, p.index, false));
+      }
       case "tabs.group":
         return this.groupTabs(a);
       case "tabs.ungroup":

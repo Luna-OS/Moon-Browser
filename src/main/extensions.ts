@@ -1057,7 +1057,7 @@ export class Extensions {
   // ---- Tab groups (chrome.tabGroups events) ----
 
   groupChanged(
-    kind: "onCreated" | "onUpdated" | "onRemoved",
+    kind: "onCreated" | "onUpdated" | "onRemoved" | "onMoved",
     win: MoonWindow,
     group: TabGroupInfo,
   ): void {

@@ -162,7 +162,7 @@ function install(bridge: {
       query: fn("tabGroups.query"),
       get: fn("tabGroups.get"),
       update: fn("tabGroups.update"),
-      move: rejecting("Moving tab groups isn't available in Moon Browser."),
+      move: fn("tabGroups.move"),
       onCreated: event("tabGroups.onCreated"),
       onUpdated: event("tabGroups.onUpdated"),
       onRemoved: event("tabGroups.onRemoved"),

@@ -48,6 +48,7 @@ await build({
     "preload/ui": resolve(root, "src/preload/ui.ts"),
     "preload/internal": resolve(root, "src/preload/internal.ts"),
     "preload/extension-apis": resolve(root, "src/preload/extension-apis.ts"),
+    "preload/web": resolve(root, "src/preload/web.ts"),
   },
   outdir: resolve(root, "out"),
   outExtension: { ".js": ".cjs" },

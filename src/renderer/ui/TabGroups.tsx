@@ -2,25 +2,28 @@
  * Tab groups in the tab strip: the coloured label in front of a group's
  * tabs, and the editor for its name and colour.
  */
-import { useState, type DragEvent } from "react";
+import { useState } from "react";
 import { GROUP_COLORS, type TabGroupInfo } from "@shared/tab-groups";
 import { CloseIcon, PlusIcon, TabIcon } from "@theme/icons";
 import { GROUP_COLOR_NAMES, GROUP_HEX } from "./group-colors";
 import { ui } from "./store";
+import type { DragLook } from "./TabStrip";
 
-const DRAG_TYPE = "application/x-moon-tab";
-
-/** The group's label: click to collapse or expand, right-click to edit, drop a tab to add it. */
+/**
+ * The group's label: click to collapse or expand, right-click to edit, drag
+ * to move the whole group; a tab dropped on it joins the group.
+ */
 export function GroupChip({
   group,
   count,
+  look,
   onEdit,
 }: {
   group: TabGroupInfo;
   count: number;
+  look: DragLook;
   onEdit: (anchor: DOMRect) => void;
 }) {
-  const [dropping, setDropping] = useState(false);
   const name = group.title || `${GROUP_COLOR_NAMES[group.color]} group`;
   return (
     <button
@@ -28,11 +31,17 @@ export function GroupChip({
       className="mb-group-chip"
       data-group-chip={group.id}
       data-empty={!group.title || undefined}
-      data-drop={dropping || undefined}
-      style={{ "--mb-group": GROUP_HEX[group.color] } as React.CSSProperties}
+      data-drop={look.drop}
+      data-dragging={look.offset !== undefined || undefined}
+      style={
+        {
+          "--mb-group": GROUP_HEX[group.color],
+          ...(look.offset !== undefined ? { transform: `translateX(${look.offset}px)` } : {}),
+        } as React.CSSProperties
+      }
       aria-expanded={!group.collapsed}
       aria-label={`${name}, ${count} ${count === 1 ? "tab" : "tabs"}`}
-      title={`${name} — click to ${group.collapsed ? "expand" : "collapse"}, right-click to edit`}
+      title={`${name} — click to ${group.collapsed ? "expand" : "collapse"}, drag to move, right-click to edit`}
       onClick={() =>
         void ui.command({ type: "groupUpdate", groupId: group.id, collapsed: !group.collapsed })
       }
@@ -41,19 +50,6 @@ export function GroupChip({
         onEdit(e.currentTarget.getBoundingClientRect());
       }}
       onDoubleClick={(e) => onEdit(e.currentTarget.getBoundingClientRect())}
-      onDragOver={(e: DragEvent) => {
-        if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
-        e.preventDefault();
-        setDropping(true);
-      }}
-      onDragLeave={() => setDropping(false)}
-      onDrop={(e: DragEvent) => {
-        setDropping(false);
-        const tabId = Number(e.dataTransfer.getData(DRAG_TYPE));
-        if (!Number.isFinite(tabId)) return;
-        e.preventDefault();
-        void ui.command({ type: "groupTab", tabId, groupId: group.id });
-      }}
     >
       {group.title ? <span className="truncate">{group.title}</span> : null}
       {group.collapsed && <span className="mb-group-count">{count}</span>}
