@@ -56,7 +56,8 @@ and nothing phoning home. It wears the same night-sky design as
 - **Bookmarks with folders** — on the bookmarks bar a folder opens as a menu (folders inside
   it too); the star (`Ctrl D`) names a bookmark and puts it in a folder; `moon://bookmarks`
   sorts them, and a right-click on the bar opens a folder's bookmarks all at once, renames it
-  or moves things to another folder
+  or moves things to another folder. Show the bar or not — your choice: in the menu, on
+  `moon://bookmarks`, in the star's editor, with a right-click on the bar or with `Ctrl Shift B`
 - History, downloads, find in page, zoom per site, print, full screen, developer tools
 - **Night and day themes** (or follow the system); websites follow along when they support dark
   mode

@@ -112,6 +112,8 @@ export function validateCommand(raw: unknown): UiCommand | null {
       return isNum(c.tabId) && isNum(c.x) && isNum(c.y)
         ? { type: "tabMenu", tabId: c.tabId, x: c.x, y: c.y }
         : null;
+    case "bookmarksBarMenu":
+      return isNum(c.x) && isNum(c.y) ? { type: "bookmarksBarMenu", x: c.x, y: c.y } : null;
     case "bookmarkMenu":
       return isStr(c.id, 64) && isNum(c.x) && isNum(c.y)
         ? { type: "bookmarkMenu", id: c.id, x: c.x, y: c.y }
@@ -417,6 +419,9 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       browser.notifyInternal("bookmarks");
       browser.updateAllWindows();
       return folder;
+    },
+    "bookmarks.showBar": (_tab, visible) => {
+      if (typeof visible === "boolean") browser.updateSettings({ showBookmarksBar: visible });
     },
     "bookmarks.remove": (_tab, id) => {
       if (isStr(id, 64)) profile.removeBookmark(id);

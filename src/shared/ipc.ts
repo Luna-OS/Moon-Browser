@@ -25,6 +25,8 @@ export type UiCommand =
   | { type: "stop" }
   | { type: "tabMenu"; tabId: number; x: number; y: number }
   | { type: "bookmarkMenu"; id: string; x: number; y: number }
+  /** A right-click on the bookmarks bar itself (not on a bookmark). */
+  | { type: "bookmarksBarMenu"; x: number; y: number }
   /** Renames a bookmark or moves it to another folder (null: the bookmarks bar). */
   | { type: "updateBookmark"; id: string; title?: string; parent?: string | null }
   | { type: "removeBookmark"; id: string }
@@ -115,6 +117,7 @@ export type InternalMethod =
   | "bookmarks.update"
   | "bookmarks.remove"
   | "bookmarks.addFolder"
+  | "bookmarks.showBar"
   | "downloads.list"
   | "downloads.action"
   | "downloads.clear"
@@ -187,6 +190,7 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "bookmarks.update",
     "bookmarks.remove",
     "bookmarks.addFolder",
+    "bookmarks.showBar",
   ],
   downloads: [...COMMON, "downloads.list", "downloads.action", "downloads.clear"],
   extensions: [

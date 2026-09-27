@@ -1046,7 +1046,18 @@ export class MoonWindow {
     else this.browser.createWindow({ private: disposition === "private", urls });
   }
 
-  /** A new folder next to `after` (in the same folder), named in a Moon dialog. */
+  /** "Show bookmarks bar", ticked while it shows, as in Chrome's bar menus. */
+  private barVisibilityItem(): MenuItemConstructorOptions {
+    return {
+      label: "Show bookmarks bar",
+      type: "checkbox",
+      checked: this.browser.settings.showBookmarksBar,
+      click: () =>
+        this.browser.updateSettings({ showBookmarksBar: !this.browser.settings.showBookmarksBar }),
+    };
+  }
+
+  /** A new folder next to `after` (in the same folder; the bar's end for null), named in a Moon dialog. */
   private async newBookmarkFolder(after: string | null): Promise<void> {
     const profile = this.browser.profile;
     const sibling = after ? profile.bookmarks.get().find((b) => b.id === after) : undefined;
@@ -1322,6 +1333,18 @@ export class MoonWindow {
       case "bookmarkMenu":
         this.showBookmarkMenu(cmd.id, cmd.x, cmd.y);
         break;
+      case "bookmarksBarMenu":
+        this.popup(
+          [
+            { label: "New folder…", click: () => void this.newBookmarkFolder(null) },
+            { label: "Edit bookmarks…", click: () => this.openInternal("bookmarks") },
+            { type: "separator" },
+            this.barVisibilityItem(),
+          ],
+          cmd.x,
+          cmd.y,
+        );
+        break;
       case "toggleMute":
         this.tab(cmd.tabId)?.toggleMute();
         break;
@@ -1492,6 +1515,8 @@ export class MoonWindow {
       { label: "New folder…", click: () => void this.newBookmarkFolder(id) },
       { label: "Edit bookmarks…", click: () => this.openInternal("bookmarks") },
       { label: "Delete", click: () => void this.deleteBookmark(id) },
+      { type: "separator" },
+      this.barVisibilityItem(),
     ];
     if (entry.isFolder) {
       const count = profile.bookmarkChildren(id).filter((b) => !b.isFolder).length;

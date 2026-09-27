@@ -18,6 +18,7 @@ import { Card, EmptyState, PageShell } from "./ui";
 
 export function BookmarksPage() {
   const [bookmarks] = useLive(api.bookmarks, ["bookmarks"]);
+  const [settings] = useLive(api.settings, ["settings"]);
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   /** The folder on show; null is the bookmarks bar. */
@@ -51,9 +52,22 @@ export function BookmarksPage() {
       title="Bookmarks"
       subtitle="Add one with the star in the address bar or Ctrl+D."
       actions={
-        <button type="button" className="mb-btn mb-btn-ghost" onClick={newFolder}>
-          <PlusIcon size={15} /> New folder
-        </button>
+        <>
+          {settings && (
+            <label className="flex cursor-pointer items-center gap-2.5 pr-2 text-sm text-(--mb-text-muted)">
+              Show bookmarks bar
+              <input
+                type="checkbox"
+                className="mb-switch"
+                checked={settings.settings.showBookmarksBar}
+                onChange={(e) => void api.showBookmarksBar(e.target.checked)}
+              />
+            </label>
+          )}
+          <button type="button" className="mb-btn mb-btn-ghost" onClick={newFolder}>
+            <PlusIcon size={15} /> New folder
+          </button>
+        </>
       }
     >
       <label

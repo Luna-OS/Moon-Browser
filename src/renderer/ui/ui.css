@@ -959,3 +959,22 @@ body {
   background: var(--mb-selected);
   color: var(--mb-text);
 }
+
+/* A switch drawn as a span (in menus, where the whole row is the button). */
+.mb-switch-sm {
+  width: 1.9rem;
+  height: 1.1rem;
+  pointer-events: none;
+}
+.mb-switch-sm::after {
+  width: calc(1.1rem - 6px);
+  height: calc(1.1rem - 6px);
+}
+.mb-switch[data-on="true"] {
+  background: linear-gradient(135deg, var(--color-lavender-300), #a597f5);
+  border-color: transparent;
+}
+.mb-switch[data-on="true"]::after {
+  transform: translateX(0.8rem);
+  background: var(--color-night-950);
+}
