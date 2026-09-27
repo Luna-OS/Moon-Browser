@@ -339,6 +339,7 @@ function Browser({ state }: { state: WindowState }) {
             key={state.currentBookmark.id}
             bookmark={state.currentBookmark}
             added={!!popover.added}
+            barVisible={state.showBookmarksBar}
             onClose={closePopover}
           />
         </Popover>

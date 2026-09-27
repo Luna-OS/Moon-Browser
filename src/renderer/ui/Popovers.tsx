@@ -23,6 +23,7 @@ import {
   SettingsIcon,
   ShieldIcon,
   SplitIcon,
+  StarIcon,
   TabIcon,
   UpdateIcon,
   WindowIcon,
@@ -163,6 +164,22 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
         keys={`${mod}Shift+O`}
         onClick={act({ type: "openPage", page: "bookmarks" })}
       />
+      <button
+        type="button"
+        role="menuitemcheckbox"
+        aria-checked={state.showBookmarksBar}
+        className="mb-menu-item"
+        onClick={() => run({ type: "toggleBookmarksBar" })}
+      >
+        <StarIcon />
+        <span className="flex-1">Show bookmarks bar</span>
+        <span className="text-xs text-(--mb-text-faint)">{mod}Shift+B</span>
+        <span
+          className="mb-switch mb-switch-sm"
+          data-on={state.showBookmarksBar}
+          aria-hidden="true"
+        />
+      </button>
       <Item
         icon={<PuzzleIcon />}
         label="Extensions"

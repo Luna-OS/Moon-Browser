@@ -896,6 +896,29 @@ try {
     );
     await new Promise((r) => setTimeout(r, 500));
     await shot("08c-bookmarks-page");
+    // The bar is a choice: from the menu, and from moon://bookmarks.
+    await ui.getByRole("button", { name: "Menu" }).click();
+    const barSwitch = ui.getByRole("menuitemcheckbox", { name: "Show bookmarks bar" });
+    await waitFor(() => barSwitch.isVisible(), "the bookmarks bar switch in the menu");
+    if ((await barSwitch.getAttribute("aria-checked")) !== "true") throw new Error("not checked");
+    await barSwitch.click();
+    await waitFor(async () => !(await bar.isVisible()), "the bar to hide");
+    await barSwitch.click();
+    await waitFor(() => bar.isVisible(), "the bar to show again");
+    await ui.keyboard.press("Escape");
+    const fromPage = (visible) =>
+      app.evaluate(
+        ({ webContents }, v) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL().startsWith("moon://bookmarks"))
+            .executeJavaScript(`window.moon.invoke("bookmarks.showBar", ${v})`),
+        visible,
+      );
+    await fromPage(false);
+    await waitFor(async () => !(await bar.isVisible()), "the bar to hide from the page");
+    await fromPage(true);
+    await waitFor(() => bar.isVisible(), "the bar to show from the page");
   });
 
   await check("the extensions page lists, switches off and on", async () => {

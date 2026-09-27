@@ -59,6 +59,7 @@ export const api = {
     id: string,
     patch: { title?: string; url?: string; parent?: string | null; index?: number },
   ) => m().invoke("bookmarks.update", id, patch) as Promise<void>,
+  showBookmarksBar: (visible: boolean) => m().invoke("bookmarks.showBar", visible) as Promise<void>,
   addBookmarkFolder: (title: string, parent: string | null) =>
     m().invoke("bookmarks.addFolder", title, parent) as Promise<Bookmark>,
   removeBookmark: (id: string) => m().invoke("bookmarks.remove", id) as Promise<void>,

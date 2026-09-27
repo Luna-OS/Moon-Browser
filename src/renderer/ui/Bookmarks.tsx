@@ -32,7 +32,16 @@ export function BookmarksBar({
   onOpenFolder: (folder: Bookmark, anchor: DOMRect) => void;
 }) {
   return (
-    <nav className="mb-bookmarks-bar" aria-label="Bookmarks bar">
+    <nav
+      className="mb-bookmarks-bar"
+      aria-label="Bookmarks bar"
+      onContextMenu={(e) => {
+        // On the bar itself, not on one of its bookmarks.
+        if (e.target !== e.currentTarget) return;
+        e.preventDefault();
+        void ui.command({ type: "bookmarksBarMenu", x: e.clientX, y: e.clientY });
+      }}
+    >
       {bookmarks.length === 0 && (
         <span className="px-2 text-xs text-(--mb-text-faint)">
           Bookmark pages with the star or Ctrl+D to see them here.
@@ -183,11 +192,14 @@ export function BookmarkFolderMenu({
 export function BookmarkEditor({
   bookmark,
   added,
+  barVisible,
   onClose,
 }: {
   bookmark: Bookmark;
   /** Just bookmarked (rather than opened again). */
   added: boolean;
+  /** Whether the bookmarks bar shows (it can be switched here). */
+  barVisible: boolean;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState(bookmark.title);
@@ -232,6 +244,15 @@ export function BookmarkEditor({
             </option>
           ))}
         </select>
+      </label>
+      <label className="flex cursor-pointer items-center gap-2 text-xs text-(--mb-text-muted)">
+        <span className="flex-1">Show bookmarks bar</span>
+        <input
+          type="checkbox"
+          className="mb-switch"
+          checked={barVisible}
+          onChange={() => void ui.command({ type: "toggleBookmarksBar" })}
+        />
       </label>
       <div className="mt-1 flex justify-end gap-2">
         <button
