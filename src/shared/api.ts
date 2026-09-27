@@ -3,7 +3,7 @@
  * the renderers don't depend on Electron.
  */
 import type { InternalEvent, InternalMethod, OverlaySnapshot, UiCommand, UiEvent } from "./ipc";
-import type { Suggestion, WindowState } from "./types";
+import type { Bookmark, BookmarkFolderChoice, Suggestion, WindowState } from "./types";
 
 export interface SuggestResult {
   suggestions: Suggestion[];
@@ -15,6 +15,10 @@ export interface SuggestResult {
 export interface MoonUiApi {
   command(cmd: UiCommand): Promise<void>;
   suggest(text: string): Promise<SuggestResult>;
+  /** A bookmark folder's contents, for its menu on the bookmarks bar. */
+  bookmarkChildren(folder: string): Promise<Bookmark[]>;
+  /** Every folder to choose from, the bookmarks bar first. */
+  bookmarkFolders(): Promise<BookmarkFolderChoice[]>;
   openOverlay(): Promise<OverlaySnapshot[]>;
   overlayReady(): void;
   closeOverlay(): Promise<void>;

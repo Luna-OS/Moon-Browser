@@ -22,8 +22,9 @@ and nothing phoning home. It wears the same night-sky design as
 - **Moon Shield** — ads and trackers blocked with uBlock Origin's filter lists, EasyList,
   EasyPrivacy and Peter Lowe's list (no "acceptable ads" exceptions), including cosmetic filters
   and scriptlets. Optional cookie-banner and annoyance lists. One click switches it off per site.
-- **Import from Comet** — bookmarks and history from Comet, Chrome, Brave, Edge, Helium, Vivaldi
-  or any other Chromium browser, read directly from its profile folder
+- **Import from Comet** — bookmarks (with their folders, just as they were) and history from
+  Comet, Chrome, Brave, Edge, Helium, Vivaldi or any other Chromium browser, read directly from
+  its profile folder
 - **Chrome extensions** from the Chrome Web Store — your password manager (NordPass, Bitwarden,
   1Password, …) with its toolbar button and pop-up, and side-panel extensions like Claude. The
   puzzle button lists them like Chrome does (*Full access* / *No access needed* on the current
@@ -52,8 +53,11 @@ and nothing phoning home. It wears the same night-sky design as
 - Tabs you can pin, mute, duplicate, drag around and reopen after closing
 - A quiet taskbar icon: sites can't put their unread counts on it (`navigator.setAppBadge` does
   nothing, as in Chrome for sites that aren't installed apps)
-- History, bookmarks (with an optional bookmarks bar), downloads, find in page, zoom per site,
-  print, full screen, developer tools
+- **Bookmarks with folders** — on the bookmarks bar a folder opens as a menu (folders inside
+  it too); the star (`Ctrl D`) names a bookmark and puts it in a folder; `moon://bookmarks`
+  sorts them, and a right-click on the bar opens a folder's bookmarks all at once, renames it
+  or moves things to another folder
+- History, downloads, find in page, zoom per site, print, full screen, developer tools
 - **Night and day themes** (or follow the system); websites follow along when they support dark
   mode
 - A new tab page with the **real moon phase** of today
@@ -116,7 +120,7 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 | `Alt ←` / `Alt →`                 | Back / forward                        |
 | `Ctrl R`, `F5` / `Ctrl Shift R`   | Reload / reload without cache         |
 | `Ctrl F`, `F3` / `Shift F3`       | Find in page / next / previous match  |
-| `Ctrl D`                          | Bookmark this page                    |
+| `Ctrl D`                          | Bookmark this page (name, folder)     |
 | `Ctrl H` / `Ctrl J` / `Ctrl Shift O` | History / downloads / bookmarks    |
 | `Ctrl Shift B`                    | Show or hide the bookmarks bar        |
 | `Ctrl +` / `Ctrl -` / `Ctrl 0`    | Zoom in / out / reset                 |
@@ -182,7 +186,8 @@ developer mode, where they can help.
 ### Coming from Comet
 
 Open *Settings → Import* (the new tab page offers it on a fresh profile too), pick Comet and
-import your bookmarks and history. If Comet isn't found automatically, *Choose folder…* and
+import your bookmarks and history. The bookmarks keep their folders, and the bookmarks bar
+switches on to show them. If Comet isn't found automatically, *Choose folder…* and
 point Moon Browser at Comet's profile folder (on Windows usually
 `%LOCALAPPDATA%\Perplexity\Comet\User Data\Default`). Passwords stay out on purpose: export them
 from Comet into a password manager.

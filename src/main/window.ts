@@ -33,6 +33,7 @@ import {
   splitRects,
   type Insets,
 } from "@shared/layout";
+import { descendantsOf, folderChoices } from "@shared/bookmarks";
 import { type DialogAnswer, DialogQueue, type DialogSpec } from "@shared/dialogs";
 import { resolveInput } from "@shared/omnibox";
 import {
@@ -799,6 +800,7 @@ export class MoonWindow {
     const active = this.activeTab;
     const site = active ? protectionSiteOf(active.url) : null;
     const tabIds = new Set(this.tabs.map((t) => t.id));
+    const current = active ? this.browser.profile.bookmarkFor(active.url) : undefined;
     const split =
       this.split && tabIds.has(this.split.leftId) && tabIds.has(this.split.rightId)
         ? this.split
@@ -813,9 +815,10 @@ export class MoonWindow {
       prompts: this.browser.permissions.prompts(tabIds),
       find: this.find,
       downloads: this.browser.downloads.recent(this.isPrivate),
-      bookmarked: !!active && !!this.browser.profile.bookmarkFor(active.url),
+      bookmarked: !!current,
+      currentBookmark: current ?? null,
       bookmarksBar: settings.showBookmarksBar
-        ? this.browser.profile.bookmarks.get().slice(0, 60)
+        ? this.browser.profile.bookmarkChildren(null).slice(0, 100)
         : [],
       protection: {
         adblock: settings.adblock,
@@ -990,15 +993,132 @@ export class MoonWindow {
     this.activate(this.tabs[(i + step + this.tabs.length) % this.tabs.length].id);
   }
 
-  private toggleBookmark(): void {
+  /**
+   * The star and Ctrl+D, as in Chrome: the page is bookmarked (if it isn't
+   * yet) and its editor opens — name, folder, or remove it again.
+   */
+  private bookmarkPage(): void {
     const tab = this.activeTab;
     if (!tab || isNewTabUrl(tab.url) || tab.error) return;
     const profile = this.browser.profile;
-    const existing = profile.bookmarkFor(tab.url);
-    if (existing) profile.removeBookmark(existing.id);
-    else profile.addBookmark(tab.url, tab.title, tab.favicon);
+    if (!profile.bookmarkFor(tab.url)) {
+      profile.addBookmark(tab.url, tab.title, tab.favicon);
+      this.bookmarksChanged();
+    }
+    this.send({ type: "showBookmark" });
+  }
+
+  private bookmarksChanged(): void {
     this.browser.notifyInternal("bookmarks");
     this.browser.updateAllWindows();
+  }
+
+  /** Opens the bookmarks directly in a folder (asking first for many). */
+  private async openBookmarkFolder(
+    id: string,
+    disposition: "background" | "window" | "private",
+  ): Promise<void> {
+    const profile = this.browser.profile;
+    const folder = profile.bookmarks.get().find((b) => b.id === id && b.isFolder);
+    const urls = profile
+      .bookmarkChildren(id)
+      .filter((b) => !b.isFolder)
+      .map((b) => b.url);
+    if (!folder || !urls.length) return;
+    if (urls.length > 15) {
+      const response = await this.ask({
+        tone: "calm",
+        glyph: "folder",
+        eyebrow: folder.title,
+        title: `Open ${urls.length} tabs?`,
+        message: "Every bookmark in this folder opens in a tab of its own.",
+        buttons: [
+          { label: "Cancel", style: "secondary" },
+          { label: `Open ${urls.length} tabs`, style: "primary" },
+        ],
+        defaultId: 1,
+        cancelId: 0,
+      });
+      if (response !== 1) return;
+    }
+    if (disposition === "background")
+      for (const url of urls) this.openTab({ url, background: true });
+    else this.browser.createWindow({ private: disposition === "private", urls });
+  }
+
+  /** A new folder next to `after` (in the same folder), named in a Moon dialog. */
+  private async newBookmarkFolder(after: string | null): Promise<void> {
+    const profile = this.browser.profile;
+    const sibling = after ? profile.bookmarks.get().find((b) => b.id === after) : undefined;
+    const answer = await this.askFull({
+      tone: "calm",
+      glyph: "folder",
+      eyebrow: "Bookmarks",
+      title: "New folder",
+      input: { value: "" },
+      buttons: [
+        { label: "Cancel", style: "secondary" },
+        { label: "Create", style: "primary" },
+      ],
+      defaultId: 1,
+      cancelId: 0,
+    });
+    if (answer.response !== 1) return;
+    const parent = sibling?.parent ?? null;
+    const folder = profile.addBookmarkFolder(answer.text ?? "", parent);
+    if (sibling) {
+      const index = profile.bookmarkChildren(parent).findIndex((b) => b.id === sibling.id) + 1;
+      profile.updateBookmark(folder.id, { parent, index });
+    }
+    this.bookmarksChanged();
+  }
+
+  private async renameBookmarkFolder(id: string): Promise<void> {
+    const profile = this.browser.profile;
+    const folder = profile.bookmarks.get().find((b) => b.id === id && b.isFolder);
+    if (!folder) return;
+    const answer = await this.askFull({
+      tone: "calm",
+      glyph: "folder",
+      eyebrow: "Bookmarks",
+      title: "Rename folder",
+      input: { value: folder.title },
+      buttons: [
+        { label: "Cancel", style: "secondary" },
+        { label: "Save", style: "primary" },
+      ],
+      defaultId: 1,
+      cancelId: 0,
+    });
+    if (answer.response !== 1 || !answer.text?.trim()) return;
+    profile.updateBookmark(id, { title: answer.text.trim() });
+    this.bookmarksChanged();
+  }
+
+  /** Deletes a bookmark, or a folder — asking first if it holds anything. */
+  private async deleteBookmark(id: string): Promise<void> {
+    const profile = this.browser.profile;
+    const entry = profile.bookmarks.get().find((b) => b.id === id);
+    if (!entry) return;
+    const inside = entry.isFolder ? descendantsOf(profile.bookmarks.get(), id).size : 0;
+    if (inside) {
+      const response = await this.ask({
+        tone: "calm",
+        glyph: "remove",
+        eyebrow: "Bookmarks",
+        title: `Delete “${entry.title}”?`,
+        message: `The folder and the ${inside === 1 ? "bookmark" : `${inside} bookmarks and folders`} in it are deleted.`,
+        buttons: [
+          { label: "Cancel", style: "secondary" },
+          { label: "Delete", style: "danger" },
+        ],
+        defaultId: 0,
+        cancelId: 0,
+      });
+      if (response !== 1) return;
+    }
+    profile.removeBookmark(id);
+    this.bookmarksChanged();
   }
 
   private startSplit(otherId?: number): void {
@@ -1079,7 +1199,18 @@ export class MoonWindow {
         }
         break;
       case "bookmark":
-        this.toggleBookmark();
+        this.bookmarkPage();
+        break;
+      case "updateBookmark":
+        this.browser.profile.updateBookmark(cmd.id, { title: cmd.title, parent: cmd.parent });
+        this.bookmarksChanged();
+        break;
+      case "removeBookmark":
+        this.browser.profile.removeBookmark(cmd.id);
+        this.bookmarksChanged();
+        break;
+      case "openBookmarkFolder":
+        void this.openBookmarkFolder(cmd.id, cmd.disposition);
         break;
       case "openPage":
         this.openInternal(cmd.page);
@@ -1341,24 +1472,63 @@ export class MoonWindow {
 
   private showBookmarkMenu(id: string, x: number, y: number): void {
     const profile = this.browser.profile;
-    const bookmark = profile.bookmarks.get().find((b) => b.id === id);
-    if (!bookmark) return;
+    const list = profile.bookmarks.get();
+    const entry = list.find((b) => b.id === id);
+    if (!entry) return;
+    // Every folder it can go to: not where it is, not into itself.
+    const inside = entry.isFolder ? descendantsOf(list, id) : new Set<string>();
+    const moveTo: MenuItemConstructorOptions[] = folderChoices(list)
+      .filter((f) => f.id !== entry.parent && f.id !== id && !(f.id && inside.has(f.id)))
+      .map((f) => ({
+        label: f.path,
+        click: () => {
+          profile.updateBookmark(id, { parent: f.id });
+          this.bookmarksChanged();
+        },
+      }));
+    const common: MenuItemConstructorOptions[] = [
+      { type: "separator" },
+      { label: "Move to", enabled: moveTo.length > 0, submenu: moveTo },
+      { label: "New folder…", click: () => void this.newBookmarkFolder(id) },
+      { label: "Edit bookmarks…", click: () => this.openInternal("bookmarks") },
+      { label: "Delete", click: () => void this.deleteBookmark(id) },
+    ];
+    if (entry.isFolder) {
+      const count = profile.bookmarkChildren(id).filter((b) => !b.isFolder).length;
+      this.popup(
+        [
+          {
+            label: `Open all (${count})`,
+            enabled: count > 0,
+            click: () => void this.openBookmarkFolder(id, "background"),
+          },
+          {
+            label: "Open all in new window",
+            enabled: count > 0,
+            click: () => void this.openBookmarkFolder(id, "window"),
+          },
+          {
+            label: "Open all in private window",
+            enabled: count > 0,
+            click: () => void this.openBookmarkFolder(id, "private"),
+          },
+          { type: "separator" },
+          { label: "Rename…", click: () => void this.renameBookmarkFolder(id) },
+          ...common,
+        ],
+        x,
+        y,
+      );
+      return;
+    }
     this.popup(
       [
-        { label: "Open in new tab", click: () => this.openUrl(bookmark.url, "background") },
-        { label: "Open in new window", click: () => this.openUrl(bookmark.url, "window") },
-        { label: "Open in private window", click: () => this.openUrl(bookmark.url, "private") },
+        { label: "Open in new tab", click: () => this.openUrl(entry.url, "background") },
+        { label: "Open in new window", click: () => this.openUrl(entry.url, "window") },
+        { label: "Open in private window", click: () => this.openUrl(entry.url, "private") },
         { type: "separator" },
-        { label: "Copy link", click: () => void clipboard.writeText(bookmark.url) },
-        { label: "Edit bookmarks…", click: () => this.openInternal("bookmarks") },
-        {
-          label: "Delete",
-          click: () => {
-            profile.removeBookmark(id);
-            this.browser.notifyInternal("bookmarks");
-            this.browser.updateAllWindows();
-          },
-        },
+        { label: "Copy link", click: () => void clipboard.writeText(entry.url) },
+        ...common,
       ],
       x,
       y,

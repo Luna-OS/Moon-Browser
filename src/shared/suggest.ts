@@ -74,6 +74,7 @@ export function suggest(text: string, sources: SuggestSources, limit = 6): Sugge
   const visited = new Map(history.map((h) => [h.url, h]));
 
   for (const b of sources.bookmarks) {
+    if (b.isFolder) continue;
     const m = matchScore(q, b.url, b.title);
     if (m > 0) {
       const h = visited.get(b.url);

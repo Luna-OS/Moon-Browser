@@ -55,8 +55,12 @@ export const api = {
     m().invoke("history.query", q) as Promise<HistoryEntry[]>,
   removeHistory: (urls: string[]) => m().invoke("history.remove", urls) as Promise<void>,
   bookmarks: () => m().invoke("bookmarks.list") as Promise<Bookmark[]>,
-  updateBookmark: (id: string, patch: { title?: string; url?: string; index?: number }) =>
-    m().invoke("bookmarks.update", id, patch) as Promise<void>,
+  updateBookmark: (
+    id: string,
+    patch: { title?: string; url?: string; parent?: string | null; index?: number },
+  ) => m().invoke("bookmarks.update", id, patch) as Promise<void>,
+  addBookmarkFolder: (title: string, parent: string | null) =>
+    m().invoke("bookmarks.addFolder", title, parent) as Promise<Bookmark>,
   removeBookmark: (id: string) => m().invoke("bookmarks.remove", id) as Promise<void>,
   downloads: () => m().invoke("downloads.list") as Promise<DownloadInfo[]>,
   downloadAction: (id: string, action: DownloadAction) =>

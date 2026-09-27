@@ -25,6 +25,7 @@ const PAGES = {
     <a id="blank" href="/second" target="_blank">New tab</a>
     <a id="internal" href="moon://settings/">Sneaky settings link</a></body>`,
   "/second": `<!doctype html><title>Second page</title><body style="padding:2rem"><h1>Second</h1></body>`,
+  "/folder-page": `<!doctype html><title>From a folder</title><body style="padding:2rem"><h1>Kept in a folder</h1></body>`,
   "/dialogs": `<!doctype html><title>Dialog test page</title><body style="font:16px sans-serif;padding:2rem">
     <h1>Pages ask questions</h1><p>alert(), confirm() and prompt() answer here.</p></body>`,
 };
@@ -97,9 +98,27 @@ await writeFile(
       bookmark_bar: {
         type: "folder",
         name: "Bookmarks bar",
-        children: [{ type: "url", name: "Perplexity", url: "https://www.perplexity.ai/" }],
+        children: [
+          { type: "url", name: "Perplexity", url: "https://www.perplexity.ai/" },
+          {
+            type: "folder",
+            name: "Anime",
+            children: [
+              { type: "url", name: "Crunchyroll", url: "https://www.crunchyroll.com/" },
+              {
+                type: "folder",
+                name: "New",
+                children: [{ type: "url", name: "From a folder", url: `${base}/folder-page` }],
+              },
+            ],
+          },
+        ],
       },
-      other: { type: "folder", name: "Other", children: [] },
+      other: {
+        type: "folder",
+        name: "Other bookmarks",
+        children: [{ type: "url", name: "Docs", url: "https://docs.example/" }],
+      },
     },
   }),
 );
@@ -806,7 +825,7 @@ try {
         return window.moon.invoke("import.run", comet.path, { bookmarks: true, history: true });
       })()`);
     });
-    if (result.error || result.bookmarks !== 1 || result.history !== 1)
+    if (result.error || result.bookmarks !== 4 || result.history !== 1)
       throw new Error(JSON.stringify(result));
     const bookmarked = await app.evaluate(({ webContents }) => {
       const wc = webContents
@@ -818,6 +837,66 @@ try {
   });
   await new Promise((r) => setTimeout(r, 400));
   await shot("08-import");
+
+  await check("imported bookmark folders are on the bookmarks bar and open", async () => {
+    // The import switched the bar on, with Comet's folders as they were.
+    const bar = ui.getByRole("navigation", { name: "Bookmarks bar" });
+    await waitFor(() => bar.isVisible(), "the bookmarks bar");
+    const names = await bar.getByRole("button").allTextContents();
+    for (const name of ["Perplexity", "Anime", "Other bookmarks"])
+      if (!names.includes(name)) throw new Error(`bar: ${names.join()}`);
+    // A folder opens as a menu; a folder in it opens in its place.
+    await bar.getByRole("button", { name: "Anime" }).click();
+    const anime = ui.getByRole("menu", { name: "Anime" });
+    await waitFor(() => anime.getByText("Crunchyroll").isVisible(), "the Anime folder");
+    await anime.getByRole("menuitem", { name: "New", exact: true }).click();
+    const inner = ui.getByRole("menu", { name: "New" });
+    await waitFor(() => inner.getByText("From a folder").isVisible(), "the folder in it");
+    await new Promise((r) => setTimeout(r, 300));
+    await shot("08a-bookmark-folder");
+    // Ctrl+click: in a background tab.
+    await inner.getByRole("menuitem", { name: "From a folder" }).click({ modifiers: ["Control"] });
+    await waitFor(
+      async () => (await tabs()).some((t) => t.title === "From a folder"),
+      "the bookmark to open",
+    );
+    await ui.keyboard.press("Escape");
+    // The star edits the page's bookmark: here, it goes onto the bar itself.
+    await ui.getByRole("tab", { name: /From a folder/ }).click();
+    const star = ui.getByRole("button", { name: "Edit bookmark" });
+    await waitFor(() => star.isVisible(), "the star of a bookmarked page");
+    await star.click();
+    const editor = ui.getByRole("dialog", { name: "Bookmark" });
+    await waitFor(() => editor.isVisible(), "the bookmark editor");
+    const folderSelect = editor.getByRole("combobox", { name: "Folder" });
+    if ((await folderSelect.locator("option:checked").textContent()) !== "Anime / New")
+      throw new Error("the editor doesn't show the bookmark's folder");
+    await new Promise((r) => setTimeout(r, 500));
+    await shot("08b-bookmark-editor");
+    await folderSelect.selectOption({ label: "Bookmarks bar" });
+    await editor.getByRole("button", { name: "Done" }).click();
+    await waitFor(
+      async () => (await bar.getByRole("button").allTextContents()).includes("From a folder"),
+      "the bookmark on the bar",
+    );
+    // moon://bookmarks lists the folders too.
+    const box = ui.getByRole("combobox", { name: "Address and search bar" });
+    await box.click();
+    await box.fill("moon://bookmarks");
+    await box.press("Enter");
+    await waitFor(
+      () =>
+        app.evaluate(({ webContents }) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL().startsWith("moon://bookmarks"))
+            ?.executeJavaScript("document.body.innerText.includes('Anime')"),
+        ),
+      "the folders on moon://bookmarks",
+    );
+    await new Promise((r) => setTimeout(r, 500));
+    await shot("08c-bookmarks-page");
+  });
 
   await check("the extensions page lists, switches off and on", async () => {
     const result = await app.evaluate(async ({ webContents, session }, id) => {

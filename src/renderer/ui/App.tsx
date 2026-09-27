@@ -15,7 +15,8 @@ import {
 } from "@theme/icons";
 import { useDocumentTheme } from "@theme/useTheme";
 import { AddressBar } from "./AddressBar";
-import { BookmarksBar, FindBar, PromptBar } from "./Bars";
+import { FindBar, PromptBar } from "./Bars";
+import { BookmarkEditor, BookmarkFolderMenu, BookmarksBar } from "./Bookmarks";
 import { ContentArea } from "./ContentArea";
 import { MoonDialog } from "./Dialog";
 import { useBrowserActions } from "./extension-actions";
@@ -38,6 +39,9 @@ function Browser({ state }: { state: WindowState }) {
     kind: PopoverKind;
     anchor: DOMRect;
     groupId?: number;
+    folder?: { id: string; title: string };
+    /** The star's editor: the page was just bookmarked. */
+    added?: boolean;
   } | null>(null);
   const [dropdown, setDropdown] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -82,6 +86,15 @@ function Browser({ state }: { state: WindowState }) {
       onUiEvent((event) => {
         if (event.type === "find") setFindTab(activeRef.current);
         if (event.type === "closePopovers") setPopover(null);
+        if (event.type === "showBookmark") {
+          const star = document.querySelector("[data-bookmark-star]");
+          if (star)
+            setPopover({
+              kind: "bookmark",
+              anchor: star.getBoundingClientRect(),
+              added: star.getAttribute("aria-pressed") !== "true",
+            });
+        }
         if (event.type === "editGroup") {
           // The new group's label appears with the next state; wait for it.
           let tries = 0;
@@ -266,7 +279,19 @@ function Browser({ state }: { state: WindowState }) {
               <MenuIcon />
             </button>
           </div>
-          {state.showBookmarksBar && <BookmarksBar bookmarks={state.bookmarksBar} />}
+          {state.showBookmarksBar && (
+            <BookmarksBar
+              bookmarks={state.bookmarksBar}
+              openFolder={popover?.kind === "bookmarkFolder" ? (popover.folder?.id ?? null) : null}
+              onOpenFolder={(folder, anchor) =>
+                setPopover({
+                  kind: "bookmarkFolder",
+                  anchor,
+                  folder: { id: folder.id, title: folder.title },
+                })
+              }
+            />
+          )}
           {prompt && <PromptBar key={prompt.id} prompt={prompt} />}
         </header>
       )}
@@ -293,40 +318,70 @@ function Browser({ state }: { state: WindowState }) {
           })()}
         </Popover>
       )}
-      {popover && popover.kind !== "group" && (
+      {popover?.kind === "bookmarkFolder" && popover.folder && (
         <Popover
           anchor={popover.anchor}
-          width={
-            popover.kind === "menu"
-              ? 290
-              : popover.kind === "shield" || popover.kind === "extensions"
-                ? 320
-                : 340
-          }
-          label={
-            popover.kind === "menu"
-              ? "Menu"
-              : popover.kind === "shield"
-                ? "Moon Shield"
-                : popover.kind === "extensions"
-                  ? "Extensions"
-                  : "Downloads"
-          }
+          align="left"
+          width={280}
+          label={popover.folder.title}
           onClose={closePopover}
         >
-          {popover.kind === "menu" && <MainMenu state={state} onClose={closePopover} />}
-          {popover.kind === "shield" && <ShieldPanel state={state} onClose={closePopover} />}
-          {popover.kind === "downloads" && <DownloadsPanel state={state} onClose={closePopover} />}
-          {popover.kind === "extensions" && (
-            <ExtensionsMenu
-              state={state}
-              actions={actions}
-              anchor={popover.anchor}
-              onClose={closePopover}
-            />
-          )}
+          <BookmarkFolderMenu
+            key={popover.folder.id}
+            folder={popover.folder}
+            onClose={closePopover}
+          />
         </Popover>
       )}
+      {popover?.kind === "bookmark" && state.currentBookmark && (
+        <Popover anchor={popover.anchor} width={300} label="Bookmark" onClose={closePopover}>
+          <BookmarkEditor
+            key={state.currentBookmark.id}
+            bookmark={state.currentBookmark}
+            added={!!popover.added}
+            onClose={closePopover}
+          />
+        </Popover>
+      )}
+      {popover &&
+        popover.kind !== "group" &&
+        popover.kind !== "bookmarkFolder" &&
+        popover.kind !== "bookmark" && (
+          <Popover
+            anchor={popover.anchor}
+            width={
+              popover.kind === "menu"
+                ? 290
+                : popover.kind === "shield" || popover.kind === "extensions"
+                  ? 320
+                  : 340
+            }
+            label={
+              popover.kind === "menu"
+                ? "Menu"
+                : popover.kind === "shield"
+                  ? "Moon Shield"
+                  : popover.kind === "extensions"
+                    ? "Extensions"
+                    : "Downloads"
+            }
+            onClose={closePopover}
+          >
+            {popover.kind === "menu" && <MainMenu state={state} onClose={closePopover} />}
+            {popover.kind === "shield" && <ShieldPanel state={state} onClose={closePopover} />}
+            {popover.kind === "downloads" && (
+              <DownloadsPanel state={state} onClose={closePopover} />
+            )}
+            {popover.kind === "extensions" && (
+              <ExtensionsMenu
+                state={state}
+                actions={actions}
+                anchor={popover.anchor}
+                onClose={closePopover}
+              />
+            )}
+          </Popover>
+        )}
       {state.dialog && <MoonDialog key={state.dialog.id} dialog={state.dialog} />}
     </div>
   );

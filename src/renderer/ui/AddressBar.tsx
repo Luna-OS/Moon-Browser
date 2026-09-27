@@ -260,9 +260,10 @@ export function AddressBar({
           <button
             type="button"
             className="mb-icon-btn h-7! w-7!"
+            data-bookmark-star
             aria-pressed={bookmarked}
-            aria-label={bookmarked ? "Remove bookmark" : "Bookmark this page"}
-            title={bookmarked ? "Remove bookmark (Ctrl+D)" : "Bookmark this page (Ctrl+D)"}
+            aria-label={bookmarked ? "Edit bookmark" : "Bookmark this page"}
+            title={bookmarked ? "Edit bookmark (Ctrl+D)" : "Bookmark this page (Ctrl+D)"}
             onClick={() => void ui.command({ type: "bookmark" })}
           >
             <StarIcon filled={bookmarked} />

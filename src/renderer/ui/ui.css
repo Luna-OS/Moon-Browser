@@ -934,3 +934,28 @@ body {
 .mb-dialog-check input {
   accent-color: var(--color-lavender-400);
 }
+
+/* ---- Bookmark folders (Bookmarks.tsx) ---- */
+
+.mb-folder-menu {
+  display: flex;
+  flex-direction: column;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+.mb-folder-back {
+  margin-bottom: 0.2rem;
+  border-bottom: 1px solid var(--mb-border);
+  border-radius: 0.55rem 0.55rem 0 0;
+  color: var(--mb-text-muted);
+  font-weight: 600;
+}
+.mb-folder-empty {
+  padding: 0.5rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--mb-text-faint);
+}
+.mb-bookmark[aria-expanded="true"] {
+  background: var(--mb-selected);
+  color: var(--mb-text);
+}

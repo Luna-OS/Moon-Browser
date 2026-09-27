@@ -550,3 +550,39 @@ body {
     }
   }
 }
+
+/* ---- Bookmark folders on moon://bookmarks ---- */
+
+@layer components {
+  .mb-crumb {
+    padding: 0.2rem 0.5rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: transparent;
+    color: var(--mb-text-muted);
+    font: inherit;
+    cursor: pointer;
+  }
+  .mb-crumb:hover {
+    background: var(--mb-hover);
+    color: var(--mb-text);
+  }
+  .mb-crumb[aria-current="page"] {
+    color: var(--mb-text);
+    font-weight: 600;
+  }
+
+  .mb-move-to {
+    max-width: 9rem;
+    height: 1.75rem;
+    margin: 0 0.15rem;
+    padding: 0 0.4rem;
+    border: 1px solid var(--mb-border);
+    border-radius: 0.5rem;
+    background: var(--mb-inset);
+    color: var(--mb-text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+}

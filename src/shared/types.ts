@@ -123,7 +123,8 @@ export type PermissionKind =
   | "popup";
 
 /** What a Moon dialog shows as its picture, when it has no image of its own. */
-export type DialogGlyph = "extension" | "permission" | "download" | "leave" | "remove" | "page";
+export type DialogGlyph =
+  "extension" | "permission" | "download" | "leave" | "remove" | "page" | "folder";
 
 export interface DialogButton {
   label: string;
@@ -192,10 +193,21 @@ export interface DownloadInfo {
 
 export interface Bookmark {
   id: string;
+  /** Empty for a folder. */
   url: string;
   title: string;
   favicon: string | null;
   created: number;
+  /** The folder it's in; null on the bookmarks bar itself. */
+  parent: string | null;
+  /** A folder: holds the bookmarks (and folders) whose parent it is. */
+  isFolder: boolean;
+}
+
+/** A folder to choose, with its path ("Anime / New"); null is the bookmarks bar. */
+export interface BookmarkFolderChoice {
+  id: string | null;
+  path: string;
 }
 
 export interface HistoryEntry {
@@ -237,6 +249,9 @@ export interface WindowState {
   find: FindState | null;
   downloads: DownloadInfo[];
   bookmarked: boolean;
+  /** The active page's bookmark, for the star's editor. */
+  currentBookmark: Bookmark | null;
+  /** What the bookmarks bar shows: its bookmarks and folders. */
   bookmarksBar: Bookmark[];
   protection: { adblock: boolean; siteAllowed: boolean; site: string };
   theme: ResolvedTheme;

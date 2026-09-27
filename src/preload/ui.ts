@@ -6,11 +6,15 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import { injectBrowserAction } from "electron-chrome-extensions/browser-action";
 import type { MoonUiApi, SuggestResult } from "../shared/api";
 import { UI_CHANNELS, type OverlaySnapshot, type UiCommand, type UiEvent } from "../shared/ipc";
-import type { WindowState } from "../shared/types";
+import type { Bookmark, BookmarkFolderChoice, WindowState } from "../shared/types";
 
 const api: MoonUiApi = {
   command: (cmd: UiCommand): Promise<void> => ipcRenderer.invoke(UI_CHANNELS.command, cmd),
   suggest: (text: string): Promise<SuggestResult> => ipcRenderer.invoke(UI_CHANNELS.suggest, text),
+  bookmarkChildren: (folder: string): Promise<Bookmark[]> =>
+    ipcRenderer.invoke(UI_CHANNELS.bookmarkChildren, folder),
+  bookmarkFolders: (): Promise<BookmarkFolderChoice[]> =>
+    ipcRenderer.invoke(UI_CHANNELS.bookmarkFolders),
   openOverlay: (): Promise<OverlaySnapshot[]> => ipcRenderer.invoke(UI_CHANNELS.overlayOpen),
   overlayReady: (): void => ipcRenderer.send(UI_CHANNELS.overlayReady),
   closeOverlay: (): Promise<void> => ipcRenderer.invoke(UI_CHANNELS.overlayClose),
