@@ -5,6 +5,7 @@ import {
   EXTENSION_ID,
   extensionPageUrl,
   hasSiteAccess,
+  isMessagingNoise,
   matchesPattern,
   sidePanelPage,
   localize,
@@ -27,6 +28,27 @@ import { clampPanelWidth, SIDE_PANEL_HEADER, sidePanelRects, SPLIT_GAP } from ".
 import { internalPageOf, INTERNAL_ALIASES } from "./internal";
 import { PAGE_METHODS } from "./ipc";
 import { defaultSettings, sanitizeSettings } from "./settings";
+
+describe("extension errors", () => {
+  it("leaves out unanswered messages, which Chrome doesn't list either", () => {
+    expect(
+      isMessagingNoise(
+        "Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist. (js/background.js:0)",
+      ),
+    ).toBe(true);
+    expect(
+      isMessagingNoise(
+        "Unchecked runtime.lastError: The message port closed before a response was received.",
+      ),
+    ).toBe(true);
+    expect(
+      isMessagingNoise("Uncaught SyntaxError: Unexpected end of input (js/background.js:64)"),
+    ).toBe(false);
+    expect(
+      isMessagingNoise("The service worker didn't start: Failed to start service worker."),
+    ).toBe(false);
+  });
+});
 
 describe("extension manifests", () => {
   it("recognizes Chrome Web Store IDs", () => {

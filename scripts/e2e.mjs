@@ -400,6 +400,15 @@ try {
           throw new Error(`assertion: ${got}`);
       }
     }
+    // The worker's messages reach the open pop-up; one nobody listens for
+    // (checked on the extensions page below) is only noise.
+    const heard = await inPopup(`new Promise((resolve) => {
+      chrome.runtime.onMessage.addListener((m) => { if (m && m.broadcast) resolve(true); });
+      chrome.runtime.sendMessage("broadcast").catch(() => null);
+      setTimeout(() => resolve(false), 5000);
+    })`);
+    if (heard !== true) throw new Error("the pop-up didn't hear its service worker");
+    await inPopup(`chrome.runtime.sendMessage("unheard").catch(() => null).then(() => true)`);
     // chrome.identity, which Moon Browser adds itself.
     const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
     if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)
@@ -812,10 +821,14 @@ try {
     if (!result.errors.some((e) => e.includes("moon-test: an error")))
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);
     // Starting the worker while it is still being registered isn't an error,
-    // and the chrome.* API preloads load (with --no-sandbox too).
+    // the chrome.* API preloads load (with --no-sandbox too), and a message
+    // nobody listened for isn't listed outside developer mode.
     if (
       result.errors.some(
-        (e) => e.includes("service worker didn't start") || e.includes("Unable to load preload"),
+        (e) =>
+          e.includes("service worker didn't start") ||
+          e.includes("Unable to load preload") ||
+          e.includes("Receiving end does not exist"),
       )
     )
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);

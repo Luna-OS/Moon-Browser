@@ -183,6 +183,23 @@ export function extensionPageUrl(id: string, path: string): string | null {
 
 const WEB_SCHEMES = new Set(["http:", "https:", "ws:", "wss:", "file:"]);
 
+/**
+ * Messages that went unanswered — sent while none of the extension's pages
+ * was open, or to a tab without its content script. Extensions send them
+ * all the time (NordPass tells its closed pop-up about every vault change);
+ * they are harmless, and Chrome only shows them in developer mode.
+ */
+const MESSAGING_NOISE = [
+  "Could not establish connection. Receiving end does not exist.",
+  "The message port closed before a response was received.",
+  "A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received",
+];
+
+/** Whether an extension's console error is only messaging noise (see MESSAGING_NOISE). */
+export function isMessagingNoise(message: string): boolean {
+  return MESSAGING_NOISE.some((noise) => message.includes(noise));
+}
+
 /** Whether a Chrome match pattern (`*://*.example.com/*`, `<all_urls>`, …) covers a URL. */
 export function matchesPattern(pattern: string, url: string): boolean {
   let u: URL;
