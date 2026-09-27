@@ -86,6 +86,14 @@ function install(bridge: {
             transports: d.transports,
           }))
         : undefined;
+    // Only which extensions and hints were asked for (for the diagnosis on
+    // moon://extensions); Windows is asked without them, as before.
+    const extensionNames = (v: unknown) =>
+      v && typeof v === "object"
+        ? Object.fromEntries(Object.keys(v).map((k) => [k, true]))
+        : undefined;
+    const hints = (v: unknown) =>
+      Array.isArray(v) ? v.filter((h): h is string => typeof h === "string") : undefined;
     const creationJson = (pk: Json) => {
       const rp = (pk.rp ?? {}) as Json;
       const user = (pk.user ?? {}) as Json;
@@ -106,6 +114,8 @@ function install(bridge: {
           userVerification: sel.userVerification,
         },
         attestation: pk.attestation,
+        extensions: extensionNames(pk.extensions),
+        hints: hints(pk.hints),
       };
     };
     const requestJson = (pk: Json) => ({
@@ -114,6 +124,8 @@ function install(bridge: {
       timeout: pk.timeout,
       allowCredentials: descriptors(pk.allowCredentials, "allowCredentials"),
       userVerification: pk.userVerification,
+      extensions: extensionNames(pk.extensions),
+      hints: hints(pk.hints),
     });
     /** Plain values as the object's own, read-only properties. */
     const own = (target: object, props: Json) => {

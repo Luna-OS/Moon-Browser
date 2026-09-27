@@ -3,6 +3,7 @@ import {
   clampTimeout,
   clientDataJSON,
   coseAlgorithm,
+  describeRequest,
   errorFromWindows,
   extensionRpId,
   fromBase64Url,
@@ -11,6 +12,8 @@ import {
   toBase64Url,
   transportNames,
   transportsMask,
+  tryInTurn,
+  WebAuthnError,
 } from "./webauthn";
 
 const ID = "eiaeiblijfjekdanodkjadfinkhbfgcd";
@@ -135,6 +138,97 @@ describe("WebAuthn for extensions", () => {
     expect(errorFromWindows("NotAllowedError", 0x800704c7 | 0).domName).toBe("NotAllowedError");
     expect(errorFromWindows("InvalidStateError", 0x8009000f | 0).domName).toBe("InvalidStateError");
     expect(errorFromWindows("UnknownError", -1).domName).toBe("NotAllowedError");
+    expect(errorFromWindows("NotSupportedError", 0x80090027 | 0)).toMatchObject({
+      domName: "NotSupportedError",
+      hresult: 0x80090027,
+      message: "The request isn't supported (0x80090027).",
+    });
+  });
+
+  it("asks Windows for direct attestation when the page wants indirect, like Chrome", () => {
+    const base = {
+      rp: { name: "NordPass" },
+      user: { id: "AQID", name: "luna", displayName: "Luna" },
+      challenge: "AAAA",
+    };
+    expect(parseCreationOptions({ ...base, attestation: "indirect" }).attestation).toBe(3);
+    expect(parseCreationOptions({ ...base, attestation: "none" }).attestation).toBe(1);
+  });
+
+  describe("trying again when Windows refuses at once", () => {
+    const refused = () =>
+      new WebAuthnError("NotSupportedError", "The request isn't supported.", 0x80090027);
+    const clock = (steps: number[]) => {
+      let i = 0;
+      return () => steps[Math.min(i++, steps.length - 1)];
+    };
+
+    it("goes on to the next way while the refusal is immediate", async () => {
+      const seen: string[] = [];
+      const outcome = await tryInTurn(
+        [{ label: "a" }, { label: "b" }, { label: "c" }],
+        ({ label }) => {
+          seen.push(label);
+          return label === "c" ? Promise.resolve(label) : Promise.reject(refused());
+        },
+        clock([0, 5, 10, 20, 30, 40]),
+      );
+      expect(seen).toEqual(["a", "b", "c"]);
+      expect(outcome).toMatchObject({ ok: true, value: "c" });
+      expect(outcome.log.map((t) => [t.label, t.outcome, t.ms])).toEqual([
+        ["a", "The request isn't supported.", 5],
+        ["b", "The request isn't supported.", 10],
+        ["c", "worked", 10],
+      ]);
+    });
+
+    it("never asks again after a dialog was shown, or for other errors", async () => {
+      // Refused only after 5 seconds: the person saw Windows' dialog.
+      const late = await tryInTurn(
+        [{ label: "a" }, { label: "b" }],
+        () => Promise.reject(refused()),
+        clock([0, 5_000]),
+      );
+      expect(late).toMatchObject({ ok: false, log: [{ label: "a" }] });
+      const cancelled = await tryInTurn(
+        [{ label: "a" }, { label: "b" }],
+        () => Promise.reject(new WebAuthnError("NotAllowedError", "cancelled", 0x800704c7)),
+        clock([0, 1]),
+      );
+      expect(cancelled.log).toHaveLength(1);
+      expect(!cancelled.ok && cancelled.error).toMatchObject({ domName: "NotAllowedError" });
+    });
+  });
+
+  it("describes a request's shape without its secrets", () => {
+    const text = describeRequest({
+      rp: { name: "NordPass" },
+      user: { id: "AAECAwQFBgcICQoLDA0ODw", name: "luna@example.com", displayName: "Luna" },
+      challenge: "c2VjcmV0",
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 },
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: "platform",
+        residentKey: "preferred",
+        userVerification: "required",
+      },
+      attestation: "direct",
+      excludeCredentials: [{ type: "public-key", id: "AQ" }],
+      extensions: { credProps: true },
+      timeout: 60000,
+    });
+    expect(text).toBe(
+      'rp.id: (none); attachment: "platform"; residentKey: "preferred"; userVerification: "required"' +
+        '; attestation: "direct"; algorithms: -7,-257; user.id: 16 bytes; excludeCredentials: 1' +
+        "; extensions: credProps; timeout: 60000",
+    );
+    expect(text).not.toContain("luna");
+    expect(text).not.toContain("c2VjcmV0");
+    expect(describeRequest({ rpId: "example.com", challenge: "AA", allowCredentials: [] })).toBe(
+      'rp.id: "example.com"; userVerification: (none); allowCredentials: 0',
+    );
   });
 
   it("finds the key's algorithm in the authenticator data", () => {

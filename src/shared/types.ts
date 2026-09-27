@@ -122,6 +122,45 @@ export type PermissionKind =
   | "open-external"
   | "popup";
 
+/** What a Moon dialog shows as its picture, when it has no image of its own. */
+export type DialogGlyph = "extension" | "permission" | "download" | "leave" | "remove" | "page";
+
+export interface DialogButton {
+  label: string;
+  /** "primary" is the suggested answer, "danger" one that can't be taken back. */
+  style: "primary" | "secondary" | "danger";
+}
+
+/**
+ * A question Moon Browser asks inside the window, in its own look, where
+ * other browsers show the system's message box.
+ */
+export interface DialogInfo {
+  id: number;
+  /** "warning" for a risk the person should weigh (a program download). */
+  tone: "calm" | "warning";
+  glyph: DialogGlyph;
+  /** An image instead of the glyph (a data: URL), e.g. the extension's icon. */
+  image?: string;
+  /** The small line above the title, e.g. "Extension". */
+  eyebrow?: string;
+  title: string;
+  message?: string;
+  /** A labelled list, e.g. what an extension could do. */
+  list?: { label: string; items: string[] };
+  notes?: string[];
+  /** A text field (a page's window.prompt), with the value it starts with. */
+  input?: { value: string };
+  /** A checkbox under the text, e.g. "Don't let this page show more dialogs". */
+  checkbox?: string;
+  /** In the order shown; the answer is the chosen one's index. */
+  buttons: DialogButton[];
+  /** Focused first (Enter). */
+  defaultId: number;
+  /** The answer when the dialog is dismissed (Escape, the window closing). */
+  cancelId: number;
+}
+
 export interface PermissionPrompt {
   id: number;
   tabId: number;
@@ -222,6 +261,8 @@ export interface WindowState {
   sidePanel: SidePanelState | null;
   /** The window's tab groups; their tabs sit next to each other in `tabs`. */
   groups: TabGroupInfo[];
+  /** The question the window asks right now, over everything else. */
+  dialog: DialogInfo | null;
 }
 
 /** An extension as the toolbar and the extensions menu show it. */

@@ -79,8 +79,13 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 - **Permissions are asked for** — camera, microphone, location, notifications, clipboard,
   opening other apps and pop-ups without a click. USB, serial, HID and Bluetooth access are
   refused.
-- **Downloads** — programs and scripts are only saved after you confirm, and on Windows every
-  download gets the Mark of the Web, so SmartScreen checks it.
+- **Downloads** — programs and scripts are held under a harmless name (`Unconfirmed ….crdownload`)
+  until you choose *Keep anyway*, and on Windows every download gets the Mark of the Web, so
+  SmartScreen checks it.
+- **Questions in Moon Browser's own dialogs** — adding or removing an extension, its requests
+  for more access, program downloads, *Leave site?* and a page's `alert()`, `confirm()` and
+  `prompt()` are asked in the night-sky look over the window, not in the system's message box.
+  A page that keeps asking can be stopped (*Don't let this page show more dialogs*).
 - **Sandboxed everything** — every page, Moon Browser's own pages and the browser UI run in
   Chromium's sandbox with context isolation; web pages can't reach the internal API or the
   `moon://` pages, and every IPC message is checked for who sent it.
@@ -157,7 +162,9 @@ Running the installer of a newer version by hand works too: it updates in place.
    2FA codes of NordPass Authenticator all live in the extension.
 4. On Windows, NordPass can use **Windows Hello** (fingerprint, face or PIN) to unlock and for
    NordPass Authenticator: Moon Browser passes the extension's request to Windows' own
-   WebAuthn dialog, as Chrome does.
+   WebAuthn dialog, laid out exactly as Chrome lays it out. Should Windows refuse it at once,
+   Moon Browser tries again from the page's own window and with the older layout, and
+   `moon://extensions` lists what Windows said to each try.
 
 Extensions get the Chrome APIs password managers rely on — storage, alarms, idle, tabs, windows,
 scripting, cookies, context menus, notifications, offscreen documents, identity (sign-in

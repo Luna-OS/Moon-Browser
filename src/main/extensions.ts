@@ -219,21 +219,21 @@ export class Extensions {
           host_permissions: request.origins ?? [],
         });
         if (!wanted.length) return true;
-        const parent = browser.focusedWindow()?.win;
-        const options = {
-          type: "question" as const,
-          buttons: ["Allow", "Deny"],
-          defaultId: 1,
-          cancelId: 1,
-          noLink: true,
-          title: "Extension permissions",
-          message: `“${extension.name}” asks for more access`,
-          detail: `It could then:\n• ${wanted.join("\n• ")}`,
-        };
-        const { response } = parent
-          ? await dialog.showMessageBox(parent, options)
-          : await dialog.showMessageBox(options);
-        return response === 0;
+        const response = await browser.ask({
+          tone: "calm",
+          glyph: "permission",
+          image: this.largeIconOf(extension),
+          eyebrow: "Extension permissions",
+          title: `“${extension.name}” asks for more access`,
+          list: { label: "It could then", items: wanted },
+          buttons: [
+            { label: "Deny", style: "secondary" },
+            { label: "Allow", style: "primary" },
+          ],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        return response === 1;
       },
     });
 
@@ -426,24 +426,29 @@ export class Extensions {
     icon: Electron.NativeImage,
   ): Promise<boolean> {
     const can = describePermissions(manifest);
-    const missing = unsupportedFeatures(manifest);
-    const detail = [
-      can.length ? `It can:\n• ${can.join("\n• ")}` : "It needs no special permissions.",
-      ...missing,
-      "Extensions run in normal windows, not in private ones.",
-    ].join("\n\n");
-    const { response } = await dialog.showMessageBox(parent, {
-      type: "question",
-      buttons: ["Add extension", "Cancel"],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-      title: "Add extension",
-      message: `Add “${name}” to Moon Browser?`,
-      detail,
-      icon: icon.isEmpty() ? undefined : icon.resize({ width: 64, height: 64 }),
-    });
-    return response === 0;
+    const response = await this.browser.ask(
+      {
+        tone: "calm",
+        glyph: "extension",
+        image: icon.isEmpty() ? undefined : icon.resize({ width: 96, height: 96 }).toDataURL(),
+        eyebrow: "Add extension",
+        title: `Add “${name}” to Moon Browser?`,
+        message: can.length ? undefined : "It needs no special permissions.",
+        list: can.length ? { label: "It can", items: can } : undefined,
+        notes: [
+          ...unsupportedFeatures(manifest),
+          "Extensions run in normal windows, not in private ones.",
+        ],
+        buttons: [
+          { label: "Cancel", style: "secondary" },
+          { label: "Add extension", style: "primary" },
+        ],
+        defaultId: 1,
+        cancelId: 0,
+      },
+      this.moonWindow(parent),
+    );
+    return response === 1;
   }
 
   /** The newest version of every extension in the Extensions folder. */
@@ -968,6 +973,17 @@ export class Extensions {
     return icon;
   }
 
+  /** The extension's icon, big enough for a dialog. */
+  private largeIconOf(ext: Extension | null | undefined): string | undefined {
+    if (!ext) return undefined;
+    const iconPath = pickIcon(ext.manifest as ManifestLike, 128);
+    const file = iconPath ? inside(ext.path, iconPath) : null;
+    const image = file ? nativeImage.createFromPath(file) : null;
+    return image && !image.isEmpty()
+      ? image.resize({ width: 96, height: 96 }).toDataURL()
+      : undefined;
+  }
+
   setPinned(id: string, pinned: boolean): void {
     const prefs = this.browser.profile.extensions.get();
     prefs.unpinned = prefs.unpinned.filter((x) => x !== id);
@@ -996,19 +1012,26 @@ export class Extensions {
       {
         label: "Remove from Moon Browser…",
         click: () => {
-          void dialog
-            .showMessageBox(win.win, {
-              type: "question",
-              buttons: ["Remove", "Cancel"],
-              defaultId: 1,
-              cancelId: 1,
-              noLink: true,
-              title: "Remove extension",
-              message: `Remove “${entry.name}”?`,
-              detail: "Its data in Moon Browser is deleted with it.",
-            })
-            .then(({ response }) => {
-              if (response === 0) void this.remove(id);
+          void this.browser
+            .ask(
+              {
+                tone: "calm",
+                glyph: "remove",
+                image: this.largeIconOf(this.session?.extensions.getExtension(id)),
+                eyebrow: "Remove extension",
+                title: `Remove “${entry.name}”?`,
+                message: "Its data in Moon Browser is deleted with it.",
+                buttons: [
+                  { label: "Cancel", style: "secondary" },
+                  { label: "Remove", style: "danger" },
+                ],
+                defaultId: 0,
+                cancelId: 0,
+              },
+              win,
+            )
+            .then((response) => {
+              if (response === 1) void this.remove(id);
             });
         },
       },

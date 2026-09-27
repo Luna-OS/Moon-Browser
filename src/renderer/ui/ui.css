@@ -625,3 +625,312 @@ body {
 .mb-divider:hover::after {
   background: var(--mb-accent);
 }
+
+/* ---- Moon dialogs (Dialog.tsx): questions asked over the window ---- */
+
+.mb-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    color-mix(in srgb, var(--color-night-800) 58%, transparent),
+    color-mix(in srgb, var(--color-night-950) 84%, transparent)
+  );
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: mb-dialog-fade 160ms ease-out;
+}
+:root[data-theme="light"] .mb-dialog-backdrop {
+  background: color-mix(in srgb, #2b2160 28%, transparent);
+}
+
+.mb-dialog {
+  position: relative;
+  width: min(440px, 100%);
+  max-height: calc(100vh - 3rem);
+  overflow: hidden auto;
+  padding: 1.35rem 1.35rem 1.1rem;
+  border-radius: 1.25rem;
+  border: 1px solid var(--mb-border-strong);
+  background:
+    radial-gradient(
+      circle at 88% -10%,
+      color-mix(in srgb, var(--color-lavender-400) 22%, transparent),
+      transparent 55%
+    ),
+    linear-gradient(180deg, #1f1848, var(--mb-popover) 60%);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.07),
+    0 0 0 1px rgb(0 0 0 / 0.25),
+    0 30px 80px -20px rgb(0 0 0 / 0.75),
+    0 0 60px -25px color-mix(in srgb, var(--color-lavender-400) 60%, transparent);
+  color: var(--mb-text);
+  font-size: 0.8125rem;
+  animation: mb-dialog-in 200ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+:root[data-theme="light"] .mb-dialog {
+  background:
+    radial-gradient(
+      circle at 88% -10%,
+      color-mix(in srgb, #7d6de0 16%, transparent),
+      transparent 55%
+    ),
+    #ffffff;
+  box-shadow: 0 30px 80px -24px rgb(43 33 96 / 0.45);
+}
+.mb-dialog[data-tone="warning"] {
+  border-color: color-mix(in srgb, var(--mb-warning) 45%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.07),
+    0 30px 80px -20px rgb(0 0 0 / 0.75),
+    0 0 60px -25px color-mix(in srgb, var(--mb-warning) 55%, transparent);
+}
+
+/* A little night sky in the corner: a crescent and three stars. */
+.mb-dialog-sky {
+  position: absolute;
+  inset: 0 0 auto auto;
+  width: 160px;
+  height: 64px;
+  pointer-events: none;
+}
+.mb-dialog-moon {
+  position: absolute;
+  top: 16px;
+  right: 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow:
+    inset -6px 3px 0 0 color-mix(in srgb, var(--color-lavender-300) 70%, transparent),
+    0 0 18px -4px color-mix(in srgb, var(--color-lavender-400) 70%, transparent);
+  opacity: 0.85;
+}
+.mb-dialog-star {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--color-moon-100);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-lavender-300) 60%, transparent);
+  opacity: 0.55;
+  animation: mb-twinkle 3.2s ease-in-out infinite;
+}
+.mb-dialog-star:nth-child(3) {
+  animation-delay: 1.1s;
+}
+.mb-dialog-star:nth-child(4) {
+  animation-delay: 2.2s;
+}
+:root[data-theme="light"] .mb-dialog-sky {
+  opacity: 0.55;
+}
+:root[data-theme="light"] .mb-dialog-star {
+  background: #7d6de0;
+}
+
+.mb-dialog-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding-right: 3rem;
+}
+
+.mb-dialog-medallion {
+  position: relative;
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 1rem;
+  color: var(--mb-accent);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--color-lavender-400) 22%, transparent),
+    color-mix(in srgb, var(--color-lavender-400) 6%, transparent)
+  );
+  border: 1px solid color-mix(in srgb, var(--color-lavender-400) 30%, transparent);
+  box-shadow: 0 10px 30px -14px color-mix(in srgb, var(--color-lavender-400) 90%, transparent);
+}
+.mb-dialog-medallion img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  border-radius: 0.5rem;
+}
+.mb-dialog[data-tone="warning"] .mb-dialog-medallion {
+  color: var(--mb-warning);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--mb-warning) 24%, transparent),
+    color-mix(in srgb, var(--mb-warning) 6%, transparent)
+  );
+  border-color: color-mix(in srgb, var(--mb-warning) 40%, transparent);
+  box-shadow: 0 10px 30px -14px color-mix(in srgb, var(--mb-warning) 80%, transparent);
+}
+.mb-dialog-badge {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--color-night-950);
+  background: linear-gradient(135deg, var(--color-lavender-300), #a597f5);
+  box-shadow: 0 0 0 2px var(--mb-popover);
+}
+
+.mb-dialog-eyebrow {
+  margin-bottom: 0.2rem;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--mb-accent) 80%, transparent);
+}
+.mb-dialog[data-tone="warning"] .mb-dialog-eyebrow {
+  color: var(--mb-warning);
+}
+.mb-dialog-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.mb-dialog-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 1rem;
+  line-height: 1.5;
+  color: var(--mb-text-muted);
+}
+.mb-dialog-body:empty {
+  display: none;
+}
+
+.mb-dialog-list {
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.85rem;
+  background: var(--mb-inset);
+  border: 1px solid color-mix(in srgb, var(--color-lavender-400) 14%, transparent);
+}
+.mb-dialog-list-label {
+  margin-bottom: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--mb-text);
+}
+.mb-dialog-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.mb-dialog-list li {
+  position: relative;
+  padding-left: 1.1rem;
+  color: var(--mb-text);
+}
+.mb-dialog-list li::before {
+  content: "";
+  position: absolute;
+  top: 0.5em;
+  left: 0.2rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mb-accent);
+  box-shadow: 0 0 8px 0 color-mix(in srgb, var(--color-lavender-400) 80%, transparent);
+}
+
+.mb-dialog-note {
+  font-size: 0.75rem;
+  color: var(--mb-text-faint);
+}
+
+.mb-dialog-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+.mb-dialog-actions .mb-btn {
+  min-width: 6rem;
+  height: 2.25rem;
+}
+.mb-dialog-actions .mb-btn:focus-visible {
+  outline: 2px solid var(--mb-focus-ring);
+  outline-offset: 2px;
+}
+
+@keyframes mb-dialog-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mb-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+@keyframes mb-twinkle {
+  50% {
+    opacity: 0.15;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mb-dialog-backdrop,
+  .mb-dialog,
+  .mb-dialog-star {
+    animation: none;
+  }
+}
+
+.mb-dialog-body > p:first-child {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.mb-dialog-input {
+  height: 2.25rem;
+  padding: 0 0.75rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--mb-border-strong);
+  background: var(--mb-omnibox);
+  color: var(--mb-text);
+  font: inherit;
+  outline: none;
+  transition:
+    border-color var(--mb-motion),
+    box-shadow var(--mb-motion);
+}
+.mb-dialog-input:focus {
+  border-color: var(--mb-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-lavender-400) 22%, transparent);
+}
+.mb-dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--mb-text-muted);
+  cursor: pointer;
+}
+.mb-dialog-check input {
+  accent-color: var(--color-lavender-400);
+}
