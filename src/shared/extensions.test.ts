@@ -6,6 +6,7 @@ import {
   extensionPageUrl,
   hasSiteAccess,
   isMessagingNoise,
+  listsError,
   matchesPattern,
   sidePanelPage,
   localize,
@@ -47,6 +48,19 @@ describe("extension errors", () => {
     expect(
       isMessagingNoise("The service worker didn't start: Failed to start service worker."),
     ).toBe(false);
+  });
+
+  it("lists unanswered messages only for one's own extensions in developer mode", () => {
+    const noise =
+      "Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist. (js/background.js:0)";
+    const real = "Uncaught TypeError: x is not a function (js/background.js:12)";
+    // NordPass from the Web Store: never, developer mode or not.
+    expect(listsError(noise, { developerMode: true, unpacked: false })).toBe(false);
+    expect(listsError(noise, { developerMode: false, unpacked: false })).toBe(false);
+    // One's own extension, loaded from a folder: while developing it.
+    expect(listsError(noise, { developerMode: true, unpacked: true })).toBe(true);
+    // Real errors always.
+    expect(listsError(real, { developerMode: false, unpacked: false })).toBe(true);
   });
 });
 

@@ -857,7 +857,7 @@ try {
       throw new Error(`no WebAuthn diagnosis in ${JSON.stringify(result.errors)}`);
     // Starting the worker while it is still being registered isn't an error,
     // the chrome.* API preloads load (with --no-sandbox too), and a message
-    // nobody listened for isn't listed outside developer mode.
+    // nobody listened for isn't listed (it's no one's own extension).
     if (
       result.errors.some(
         (e) =>

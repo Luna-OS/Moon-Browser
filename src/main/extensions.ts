@@ -42,7 +42,7 @@ import {
   EXTENSIONS_PARTITION,
   extensionPageUrl,
   hasSiteAccess,
-  isMessagingNoise,
+  listsError,
   localize,
   optionsPage,
   pickIcon,
@@ -1102,8 +1102,11 @@ export class Extensions {
   // ---- Errors ----
 
   recordError(id: string, text: string): void {
-    // Unanswered messages outside developer mode, as Chrome does.
-    if (!this.developerMode() && isMessagingNoise(text)) return;
+    // Unanswered messages: only for one's own extensions in developer mode.
+    if (
+      !listsError(text, { developerMode: this.developerMode(), unpacked: !!this.unpackedEntry(id) })
+    )
+      return;
     const list = this.errors.get(id) ?? [];
     list.push(text.length > 500 ? `${text.slice(0, 499)}…` : text);
     this.errors.set(id, list.slice(-MAX_ERRORS));
