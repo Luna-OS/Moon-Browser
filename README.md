@@ -163,7 +163,9 @@ Extensions get the Chrome APIs password managers rely on — storage, alarms, id
 scripting, cookies, context menus, notifications, offscreen documents, identity (sign-in
 windows), pop-ups and content scripts. Talking to the NordPass *desktop app* (native messaging)
 uses the connection the app registers for Google Chrome. If an extension misbehaves,
-`moon://extensions` shows its errors under *Errors*.
+`moon://extensions` shows its errors under *Errors*. Messages an extension sends while none of
+its pages is open to receive them (*Could not establish connection. Receiving end does not
+exist.*) are harmless and, as in Chrome, only listed in developer mode.
 
 ### Coming from Comet
 
