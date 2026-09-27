@@ -47,6 +47,11 @@ publish:
 
 win:
   icon: build/icon.png
+  # koffi's native module, for Windows Hello in extensions (src/main/webauthn-win.ts):
+  # outside the asar archive, where koffi finds it (resources/koffi/win32_x64).
+  extraResources:
+    - from: node_modules/@koromix/koffi-win32-x64/win32_x64/koffi.node
+      to: koffi/win32_x64/koffi.node
   # x64; Windows on ARM runs it through its x64 emulation. One installer per
   # architecture keeps a single update feed (latest.yml) correct.
   target:

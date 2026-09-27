@@ -37,6 +37,11 @@ await build({
   define: { ...common.define, "import.meta.dirname": "__dirname" },
   outdir: resolve(root, "out"),
   outExtension: { ".js": ".cjs" },
+  // koffi's CommonJS build (its ES module build needs import.meta.url). Its
+  // native part isn't bundled: the Windows build ships it next to the app
+  // (electron-builder.yml, extraResources), where koffi looks for it.
+  alias: { ...common.alias, koffi: require.resolve("koffi") },
+  external: [...common.external, "@koromix/*"],
 });
 
 // Preloads run in sandboxed renderers: CommonJS, only `electron` available.

@@ -155,6 +155,9 @@ Running the installer of a newer version by hand works too: it updates in place.
 2. Click **Add to Moon Browser** and confirm what the extension may do.
 3. The NordPass button appears in the toolbar: sign in there. Autofill, saved logins and the
    2FA codes of NordPass Authenticator all live in the extension.
+4. On Windows, NordPass can use **Windows Hello** (fingerprint, face or PIN) to unlock and for
+   NordPass Authenticator: Moon Browser passes the extension's request to Windows' own
+   WebAuthn dialog, as Chrome does.
 
 Extensions get the Chrome APIs password managers rely on — storage, alarms, idle, tabs, windows,
 scripting, cookies, context menus, notifications, offscreen documents, identity (sign-in

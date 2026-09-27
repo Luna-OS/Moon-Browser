@@ -83,6 +83,8 @@ export class ExtensionApis {
     ipcMain.handle(CALL, (event, name: unknown, ...args: unknown[]) => {
       const id = this.frameExtension(event);
       if (!id || typeof name !== "string") throw new Error("Not an extension");
+      // navigator.credentials: pages only (service workers have none).
+      if (name.startsWith("webauthn.")) return this.webauthn(id, event.sender, name, args);
       return this.call(id, name, args);
     });
     ipcMain.on(SUBSCRIBE, (event, name: unknown) => {
@@ -190,6 +192,23 @@ export class ExtensionApis {
       } catch {
         hosts.delete(host);
       }
+    }
+  }
+
+  private webauthn(id: string, sender: WebContents, name: string, [a, b]: unknown[]): unknown {
+    const webauthn = this.browser.extensions.webauthn;
+    switch (name) {
+      case "webauthn.isAvailable":
+        return webauthn.isAvailable();
+      case "webauthn.create":
+        return webauthn.request(id, sender, "create", a, b);
+      case "webauthn.get":
+        return webauthn.request(id, sender, "get", a, b);
+      case "webauthn.cancel":
+        webauthn.cancel(id, a);
+        return undefined;
+      default:
+        throw new Error(`${name} isn't available in Moon Browser`);
     }
   }
 

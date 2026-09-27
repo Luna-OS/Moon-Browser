@@ -135,6 +135,22 @@ async function waitFor(fn, what, timeout = 15_000) {
   throw new Error(`Timed out waiting for ${what} (last: ${JSON.stringify(last)})`);
 }
 
+// On Linux, a stand-in for Windows' webauthn.dll (scripts/fixtures/webauthn)
+// takes the part of Windows Hello, so extensions' navigator.credentials is
+// tested end to end.
+let webauthnMock = null;
+if (process.platform === "linux") {
+  const { execFileSync } = await import("node:child_process");
+  const fixture = join(root, "scripts", "fixtures", "webauthn");
+  try {
+    const lib = join(profile, "libwebauthn-mock.so");
+    execFileSync("cc", ["-shared", "-fPIC", "-I", fixture, "-o", lib, join(fixture, "mock.c")]);
+    webauthnMock = lib;
+  } catch (err) {
+    console.log(`  (no WebAuthn stand-in: ${err.message})`);
+  }
+}
+
 const args = [root];
 if (process.platform === "linux") args.push("--no-sandbox");
 const app = await electron.launch({
@@ -142,6 +158,7 @@ const app = await electron.launch({
   args,
   env: {
     ...process.env,
+    ...(webauthnMock ? { MOON_WEBAUTHN_LIBRARY: webauthnMock } : {}),
     MOON_BROWSER_PROFILE: profile,
     ...(process.platform === "win32" ? { LOCALAPPDATA: config } : { XDG_CONFIG_HOME: config }),
   },
@@ -327,6 +344,62 @@ try {
       "chrome.privacy.services.passwordSavingEnabled.get({}).then((r) => r.levelOfControl)",
     );
     if (privacy !== "not_controllable") throw new Error(`privacy: ${privacy}`);
+    // WebAuthn in extension pages (NordPass sets up Windows Hello with it):
+    // answered by the system's API — or its stand-in here on Linux.
+    if (webauthnMock || process.platform === "win32") {
+      const create = (rp, name) => `(async () => {
+        const text = (b) => new TextDecoder().decode(b);
+        const b64 = (u) => btoa(String.fromCharCode(...u)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/, "");
+        try {
+          const challenge = crypto.getRandomValues(new Uint8Array(32));
+          const cred = await navigator.credentials.create({ publicKey: {
+            rp: { ${rp ? `id: "${rp}", ` : ""}name: "Moon test" },
+            user: { id: new Uint8Array([1, 2, 3]), name: "${name}", displayName: "Luna" },
+            challenge, pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+            authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+          } });
+          return JSON.stringify({
+            real: cred instanceof PublicKeyCredential && cred.response instanceof AuthenticatorAttestationResponse,
+            id: cred.id, clientData: text(cred.response.clientDataJSON),
+            sent: text(cred.response.attestationObject), challenge: b64(challenge),
+          });
+        } catch (e) { return "error:" + e.name; }
+      })()`;
+      // A web domain the extension has no host permission for: refused
+      // before anything reaches the system.
+      const foreign = await inPopup(create("evil.example", "luna"));
+      if (foreign !== "error:SecurityError") throw new Error(`foreign RP ID: ${foreign}`);
+      const available = await inPopup(
+        "PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()",
+      );
+      if (typeof available !== "boolean") throw new Error(`isUVPAA gave ${available}`);
+      if (webauthnMock) {
+        const made = JSON.parse(await inPopup(create(null, "luna")));
+        const origin = `chrome-extension://${EXTENSION_ID}`;
+        const clientData = JSON.stringify({
+          type: "webauthn.create",
+          challenge: made.challenge,
+          origin,
+          crossOrigin: false,
+        });
+        if (!made.real || made.id !== "AQIDBA" || made.clientData !== clientData)
+          throw new Error(`created ${JSON.stringify(made)}`);
+        // What Windows got: the extension's origin as RP ID, the same client data.
+        if (!made.sent.includes(`;rp=v1:${origin}|Moon test|`) || !made.sent.includes(clientData))
+          throw new Error(`sent ${made.sent}`);
+        const cancelled = await inPopup(create(null, "!cancel"));
+        if (cancelled !== "error:NotAllowedError") throw new Error(`cancelled: ${cancelled}`);
+        const got = await inPopup(`navigator.credentials
+          .get({ publicKey: { challenge: new Uint8Array(32), allowCredentials: [{ type: "public-key", id: new Uint8Array([1, 2, 3, 4]) }] } })
+          .then((c) => [c.response instanceof AuthenticatorAssertionResponse, new TextDecoder().decode(c.response.signature), new Uint8Array(c.response.userHandle).join()].join("|"))`);
+        if (
+          !got.startsWith(`true|hwnd=`) ||
+          !got.includes(`;rp=${origin};`) ||
+          !got.endsWith("allow=v1:01020304/public-key/0|85")
+        )
+          throw new Error(`assertion: ${got}`);
+      }
+    }
     // chrome.identity, which Moon Browser adds itself.
     const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
     if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)

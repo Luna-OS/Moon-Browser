@@ -30,6 +30,8 @@ function inExtension(): boolean {
 function install(bridge: {
   call: (name: string, ...args: unknown[]) => Promise<unknown>;
   on: (name: string, listener: (...args: unknown[]) => void) => void;
+  /** Whether the main process answers navigator.credentials (Windows). */
+  webauthn: boolean;
 }): void {
   const chrome = (globalThis as { chrome?: Record<string, unknown> }).chrome;
   const runtime = chrome?.runtime as { id?: string; getManifest?: () => unknown } | undefined;
@@ -52,6 +54,177 @@ function install(bridge: {
       (globalThis as { browser?: unknown }).browser = chrome;
     }
   }
+  // navigator.credentials (WebAuthn): Electron refuses it in extension
+  // pages, which Chrome allows — NordPass sets up its biometric unlock with
+  // it. On Windows the main process answers it through the system's WebAuthn
+  // API (Windows Hello); the page gets real PublicKeyCredential objects.
+  const credentials = globalThis.navigator?.credentials as CredentialsContainer | undefined;
+  if (bridge.webauthn && credentials && typeof PublicKeyCredential === "function") {
+    type Json = Record<string, unknown>;
+    const b64 = (value: unknown, what: string): string => {
+      let bytes: Uint8Array;
+      if (value instanceof ArrayBuffer) bytes = new Uint8Array(value);
+      else if (ArrayBuffer.isView(value))
+        bytes = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+      else throw new TypeError(`${what} must be an ArrayBuffer or ArrayBufferView`);
+      let binary = "";
+      for (const b of bytes) binary += String.fromCharCode(b);
+      return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    };
+    const buffer = (value: string): ArrayBuffer => {
+      const b64std = value.replace(/-/g, "+").replace(/_/g, "/");
+      const binary = atob(b64std + "===".slice((b64std.length + 3) % 4));
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes.buffer;
+    };
+    const descriptors = (list: unknown, what: string) =>
+      Array.isArray(list)
+        ? list.map((d: Json) => ({
+            type: d.type,
+            id: b64(d.id, `${what}.id`),
+            transports: d.transports,
+          }))
+        : undefined;
+    const creationJson = (pk: Json) => {
+      const rp = (pk.rp ?? {}) as Json;
+      const user = (pk.user ?? {}) as Json;
+      const sel = pk.authenticatorSelection as Json | undefined;
+      return {
+        rp: { id: rp.id, name: rp.name },
+        user: { id: b64(user.id, "user.id"), name: user.name, displayName: user.displayName },
+        challenge: b64(pk.challenge, "challenge"),
+        pubKeyCredParams: Array.isArray(pk.pubKeyCredParams)
+          ? pk.pubKeyCredParams.map((p: Json) => ({ type: p.type, alg: p.alg }))
+          : undefined,
+        timeout: pk.timeout,
+        excludeCredentials: descriptors(pk.excludeCredentials, "excludeCredentials"),
+        authenticatorSelection: sel && {
+          authenticatorAttachment: sel.authenticatorAttachment,
+          residentKey: sel.residentKey,
+          requireResidentKey: sel.requireResidentKey,
+          userVerification: sel.userVerification,
+        },
+        attestation: pk.attestation,
+      };
+    };
+    const requestJson = (pk: Json) => ({
+      rpId: pk.rpId,
+      challenge: b64(pk.challenge, "challenge"),
+      timeout: pk.timeout,
+      allowCredentials: descriptors(pk.allowCredentials, "allowCredentials"),
+      userVerification: pk.userVerification,
+    });
+    /** Plain values as the object's own, read-only properties. */
+    const own = (target: object, props: Json) => {
+      for (const [key, value] of Object.entries(props))
+        Object.defineProperty(target, key, { value, enumerable: true });
+      return target;
+    };
+    const credentialFrom = (kind: "create" | "get", c: Json) => {
+      const response =
+        kind === "create"
+          ? own(Object.create(AuthenticatorAttestationResponse.prototype) as object, {
+              clientDataJSON: buffer(c.clientDataJSON as string),
+              attestationObject: buffer(c.attestationObject as string),
+              getTransports: () => [...(c.transports as string[])],
+              getAuthenticatorData: () => buffer(c.authenticatorData as string),
+              getPublicKey: () => null,
+              getPublicKeyAlgorithm: () => c.publicKeyAlgorithm,
+            })
+          : own(Object.create(AuthenticatorAssertionResponse.prototype) as object, {
+              clientDataJSON: buffer(c.clientDataJSON as string),
+              authenticatorData: buffer(c.authenticatorData as string),
+              signature: buffer(c.signature as string),
+              userHandle: c.userHandle ? buffer(c.userHandle as string) : null,
+            });
+      const attachment = (c.attachment as string | undefined) ?? "platform";
+      return own(Object.create(PublicKeyCredential.prototype) as object, {
+        id: c.id,
+        rawId: buffer(c.id as string),
+        type: "public-key",
+        authenticatorAttachment: attachment,
+        response,
+        getClientExtensionResults: () => ({}),
+        toJSON: () => ({
+          id: c.id,
+          rawId: c.id,
+          type: "public-key",
+          authenticatorAttachment: attachment,
+          response:
+            kind === "create"
+              ? {
+                  clientDataJSON: c.clientDataJSON,
+                  attestationObject: c.attestationObject,
+                  authenticatorData: c.authenticatorData,
+                  transports: c.transports,
+                  publicKeyAlgorithm: c.publicKeyAlgorithm,
+                }
+              : {
+                  clientDataJSON: c.clientDataJSON,
+                  authenticatorData: c.authenticatorData,
+                  signature: c.signature,
+                  userHandle: c.userHandle,
+                },
+          clientExtensionResults: {},
+        }),
+      });
+    };
+    let requests = 0;
+    const run = async (
+      kind: "create" | "get",
+      options: CredentialCreationOptions | CredentialRequestOptions,
+    ) => {
+      const pk = options.publicKey as unknown as Json;
+      const payload = kind === "create" ? creationJson(pk) : requestJson(pk);
+      const signal = options.signal;
+      const aborted = () =>
+        signal?.reason instanceof Error
+          ? signal.reason
+          : new DOMException("The operation was aborted.", "AbortError");
+      if (signal?.aborted) throw aborted();
+      const requestId = `${Date.now()}-${++requests}`;
+      const onAbort = () => void bridge.call("webauthn.cancel", requestId);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        const reply = (await bridge.call(`webauthn.${kind}`, requestId, payload)) as Json;
+        if (signal?.aborted) throw aborted();
+        if (!reply.ok) {
+          const message = String(reply.message);
+          throw reply.name === "TypeError"
+            ? new TypeError(message)
+            : new DOMException(message, String(reply.name));
+        }
+        return credentialFrom(kind, reply.credential as Json);
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+      }
+    };
+    const nativeCreate = credentials.create.bind(credentials);
+    const nativeGet = credentials.get.bind(credentials);
+    Object.defineProperty(credentials, "create", {
+      value: function create(options?: CredentialCreationOptions) {
+        return options?.publicKey ? run("create", options) : nativeCreate(options);
+      },
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(credentials, "get", {
+      value: function get(options?: CredentialRequestOptions) {
+        return options?.publicKey ? run("get", options) : nativeGet(options);
+      },
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(PublicKeyCredential, "isUserVerifyingPlatformAuthenticatorAvailable", {
+      value: function isUserVerifyingPlatformAuthenticatorAvailable() {
+        return bridge.call("webauthn.isAvailable").then(Boolean, () => false);
+      },
+      writable: true,
+      configurable: true,
+    });
+  }
+
   const id = runtime.id;
   const manifest = (runtime.getManifest?.() ?? {}) as { permissions?: unknown };
   const permissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
@@ -325,6 +498,8 @@ if (inExtension()) {
     for (const listener of listeners.get(name) ?? []) listener(...args);
   });
   const bridge = {
+    // MOON_WEBAUTHN_LIBRARY: the end-to-end test's stand-in (extension-webauthn.ts).
+    webauthn: process.platform === "win32" || !!process.env.MOON_WEBAUTHN_LIBRARY,
     call: (name: string, ...args: unknown[]) => ipcRenderer.invoke(CALL, name, ...args),
     on: (name: string, listener: (...args: unknown[]) => void) => {
       let set = listeners.get(name);
