@@ -35,6 +35,8 @@ export const TEST_LIBRARY = "MOON_WEBAUTHN_LIBRARY";
 
 export class ExtensionWebAuthn {
   private system: Promise<WindowsWebAuthn | null> | null = null;
+  /** Why the system's API couldn't be loaded, for the extension's errors. */
+  private loadError = "";
   /** Requests in flight, by extension ID and the page's request ID. */
   private readonly inFlight = new Map<string, Cancelable>();
 
@@ -45,9 +47,10 @@ export class ExtensionWebAuthn {
     const testLibrary = app.isPackaged ? undefined : process.env[TEST_LIBRARY];
     if (process.platform !== "win32" && !testLibrary) return Promise.resolve(null);
     this.system ??= import("./webauthn-win")
-      .then(({ WindowsWebAuthn }) => WindowsWebAuthn.load(testLibrary || "webauthn.dll"))
+      .then(({ WindowsWebAuthn }) => WindowsWebAuthn.open(testLibrary || "webauthn.dll"))
       .catch((err: unknown) => {
         console.warn("[moon] WebAuthn unavailable:", err);
+        this.loadError = err instanceof Error ? err.message : String(err);
         return null;
       });
     return this.system;
@@ -77,13 +80,18 @@ export class ExtensionWebAuthn {
     );
   }
 
-  /** The window the system dialog belongs to: the pop-up's, or the tab's. */
+  /**
+   * The window the system dialog belongs to: the pop-up's, or the tab's (0
+   * if none is found; the binding then uses the window in front).
+   */
   private hwnd(sender: WebContents): bigint {
+    const live = (w: BrowserWindow | null | undefined) => (w && !w.isDestroyed() ? w : null);
     const win =
-      BrowserWindow.fromWebContents(sender) ??
-      this.browser.tabFor(sender.id)?.window.win ??
-      BrowserWindow.getFocusedWindow();
-    if (!win || win.isDestroyed()) return 0n;
+      live(BrowserWindow.fromWebContents(sender)) ??
+      live(this.browser.tabFor(sender.id)?.window.win) ??
+      live(BrowserWindow.getFocusedWindow()) ??
+      live(this.browser.focusedWindow()?.win);
+    if (!win) return 0n;
     const handle = win.getNativeWindowHandle();
     return handle.length >= 8 ? handle.readBigUInt64LE(0) : BigInt(handle.readUInt32LE(0));
   }
@@ -97,8 +105,13 @@ export class ExtensionWebAuthn {
   ): Promise<WebAuthnReply> {
     const api = await this.api();
     const gone = () => this.cancel(extensionId, requestId);
+    const hwnd = this.hwnd(sender);
     try {
-      if (!api) throw new WebAuthnError("NotSupportedError", "WebAuthn isn't available here.");
+      if (!api)
+        throw new WebAuthnError(
+          "NotSupportedError",
+          `Windows' WebAuthn API isn't available${this.loadError ? `: ${this.loadError}` : "."}`,
+        );
       if (typeof requestId !== "string") throw new WebAuthnError("TypeError", "Bad request");
       const origin = `chrome-extension://${extensionId}`;
       const hasHostAccess = (url: string) => this.hostAccess(extensionId, url);
@@ -110,7 +123,7 @@ export class ExtensionWebAuthn {
         const clientData = clientDataJSON("webauthn.create", req.challenge, origin);
         const result = await api.makeCredential(
           {
-            hwnd: this.hwnd(sender),
+            hwnd,
             rpId: extensionRpId(extensionId, req.rpId, hasHostAccess),
             rpName: req.rpName,
             user: req.user,
@@ -143,7 +156,7 @@ export class ExtensionWebAuthn {
       const clientData = clientDataJSON("webauthn.get", req.challenge, origin);
       const result = await api.getAssertion(
         {
-          hwnd: this.hwnd(sender),
+          hwnd,
           rpId: extensionRpId(extensionId, req.rpId, hasHostAccess),
           clientData,
           timeout: req.timeout,
@@ -163,13 +176,43 @@ export class ExtensionWebAuthn {
         },
       };
     } catch (err) {
-      if (err instanceof WebAuthnError)
-        return { ok: false, name: err.domName, message: err.message };
-      console.error("[moon] WebAuthn request failed:", err);
-      return { ok: false, name: "NotAllowedError", message: "The operation failed." };
+      const reply: WebAuthnReply =
+        err instanceof WebAuthnError
+          ? { ok: false, name: err.domName, message: err.message }
+          : {
+              ok: false,
+              name: "NotAllowedError",
+              message: `The operation failed: ${err instanceof Error ? err.message : String(err)}`,
+            };
+      // The page only learns the DOMException's name; the extension's
+      // errors on moon://extensions say what happened (as Chrome's console).
+      this.browser.extensions.recordError(
+        extensionId,
+        `Windows Hello (navigator.credentials.${kind}) failed: ${reply.name}: ${reply.message}${describeRequest(options, hwnd)}`,
+      );
+      return reply;
     } finally {
       if (!sender.isDestroyed()) sender.off("destroyed", gone);
       if (typeof requestId === "string") this.inFlight.delete(`${extensionId} ${requestId}`);
     }
   }
+}
+
+/** The request's shape for an error message — never its challenge or user data. */
+function describeRequest(options: unknown, hwnd: bigint): string {
+  const window = hwnd ? `window 0x${hwnd.toString(16)}` : "no window of its own";
+  if (!options || typeof options !== "object") return ` (${window})`;
+  const o = options as Record<string, unknown>;
+  const rp = o.rp as Record<string, unknown> | undefined;
+  const sel = o.authenticatorSelection as Record<string, unknown> | undefined;
+  const parts = [
+    `rp.id: ${JSON.stringify(rp ? rp.id : o.rpId)}`,
+    sel && `attachment: ${String(sel.authenticatorAttachment)}`,
+    sel && `residentKey: ${String(sel.residentKey ?? sel.requireResidentKey)}`,
+    `userVerification: ${String(sel ? sel.userVerification : o.userVerification)}`,
+    Array.isArray(o.pubKeyCredParams) &&
+      `algorithms: ${o.pubKeyCredParams.map((p: { alg?: unknown }) => String(p.alg)).join(",")}`,
+    window,
+  ].filter(Boolean);
+  return ` (${parts.join("; ")})`;
 }
