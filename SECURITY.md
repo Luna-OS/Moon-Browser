@@ -141,10 +141,17 @@ never imported.
 ## Known limitations
 
 - Extensions run on Electron's extension support plus electron-chrome-extensions and Moon
-  Browser's own additions (side panel, identity, tab groups, search, debugger), which cover the
-  common APIs but not all of Chrome's: `declarativeNetRequest` rules, keyboard commands and
-  moving tab groups with `chrome.tabGroups.move` are missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
-  itself). Native messaging starts the desktop apps registered for Google Chrome, only for the
+  Browser's own additions (side panel, identity, tab groups, search, debugger, proxy,
+  `declarativeNetRequest` rules, `runtime.onInstalled` / `onStartup`), which cover the common
+  APIs but not all of Chrome's: keyboard commands and moving tab groups with
+  `chrome.tabGroups.move` are missing, and `chrome.webRequest` listeners get no events (Moon
+  Shield handles the requests itself).
+- `declarativeNetRequest` rules (static rulesets, dynamic and session rules) apply to requests
+  of web pages in normal windows, before Moon Shield: block, allow, allowAllRequests,
+  upgradeScheme, redirect and modifyHeaders. Redirects and header changes need host access to
+  the request's site, as in Chrome.
+- `chrome.proxy` sets the proxy of normal windows (the extension that set it last controls it,
+  until it's switched off or removed); private windows always use the system's proxy. Native messaging starts the desktop apps registered for Google Chrome, only for the
   extensions those apps name, as Chrome does.
 - `chrome.debugger` (for extensions that declare it, with the install warning "Access the page
   debugger") can attach to web pages only, never to Moon Browser's own pages.

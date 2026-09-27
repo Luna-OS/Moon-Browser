@@ -41,7 +41,13 @@ const PERMISSION: Record<string, string> = {
   tabGroups: "tabGroups",
   // chrome.tabs.group/ungroup need no permission, as in Chrome.
   tabs: "",
+  // Either of its two permissions; checked in call().
+  declarativeNetRequest: "",
+  proxy: "proxy",
 };
+
+/** How long an event waits for an extension to start listening (runtime.onInstalled, …). */
+const PENDING_EVENT_TTL = 60_000;
 
 type Host = { kind: "frame"; wc: WebContents } | { kind: "worker"; worker: ServiceWorkerMain };
 
@@ -60,6 +66,13 @@ export class ExtensionApis {
   private readonly workers = new WeakSet<ServiceWorkerMain>();
   /** Pages an extension debugs: webContents id → extension ID. */
   private readonly debuggees = new Map<number, string>();
+  /**
+   * Events for workers that are still starting (running their script):
+   * messages sent to them then are lost, so they wait until the worker runs.
+   */
+  private readonly starting = new Map<number, [string, unknown[]][]>();
+  /** Events waiting for the extension to listen: extension ID → event name → arguments. */
+  private readonly pending = new Map<string, Map<string, { args: unknown[]; until: number }>>();
 
   constructor(
     private readonly browser: Browser,
@@ -80,7 +93,18 @@ export class ExtensionApis {
     // Service workers talk through their own IPC; hook each extension worker
     // as it starts (before its script runs).
     this.ses.serviceWorkers.on("running-status-changed", ({ versionId, runningStatus }) => {
-      if (runningStatus !== "starting") return;
+      if (runningStatus === "running") {
+        const queued = this.starting.get(versionId);
+        this.starting.delete(versionId);
+        const running = this.ses.serviceWorkers.getWorkerFromVersionID(versionId);
+        for (const [name, args] of queued ?? []) running?.send(EVENT, name, ...args);
+        return;
+      }
+      if (runningStatus !== "starting") {
+        this.starting.delete(versionId);
+        return;
+      }
+      this.starting.set(versionId, []);
       const worker = this.ses.serviceWorkers.getWorkerFromVersionID(versionId);
       const id = worker ? extensionIdOf(worker.scope) : null;
       if (!worker || !id || this.workers.has(worker)) return;
@@ -117,6 +141,26 @@ export class ExtensionApis {
         return;
     }
     hosts.add(host);
+    const waiting = this.pending.get(id)?.get(name);
+    if (waiting) {
+      this.pending.get(id)?.delete(name);
+      if (waiting.until > Date.now()) this.emit(id, name, ...waiting.args);
+    }
+  }
+
+  /**
+   * Delivers an event now if the extension listens for it, or else as soon
+   * as it starts listening (its service worker starting up) within a minute.
+   */
+  emitSoon(id: string, name: string, ...args: unknown[]): void {
+    if (this.listeners.get(id)?.get(name)?.size) {
+      this.emit(id, name, ...args);
+      return;
+    }
+    let events = this.pending.get(id);
+    if (!events)
+      this.pending.set(id, (events = new Map<string, { args: unknown[]; until: number }>()));
+    events.set(name, { args, until: Date.now() + PENDING_EVENT_TTL });
   }
 
   /** Delivers an event to every extension that listens for it and may see it. */
@@ -139,7 +183,9 @@ export class ExtensionApis {
         } else if (host.worker.isDestroyed()) {
           hosts.delete(host);
         } else {
-          host.worker.send(EVENT, name, ...args);
+          const queued = this.starting.get(host.worker.versionId);
+          if (queued) queued.push([name, args]);
+          else host.worker.send(EVENT, name, ...args);
         }
       } catch {
         hosts.delete(host);
@@ -155,6 +201,17 @@ export class ExtensionApis {
       (permission && !this.browser.extensions.declares(id, permission))
     )
       throw new Error(`chrome.${name} needs the "${permission ?? namespace}" permission`);
+    if (namespace === "proxy")
+      return this.browser.extensions.proxy.call(id, name.slice(6), args[0]);
+    if (namespace === "declarativeNetRequest") {
+      const ext = this.browser.extensions;
+      if (
+        !ext.declares(id, "declarativeNetRequest") &&
+        !ext.declares(id, "declarativeNetRequestWithHostAccess")
+      )
+        throw new Error(`chrome.${name} needs the "declarativeNetRequest" permission`);
+      return ext.dnr.call(id, name.slice("declarativeNetRequest.".length), args[0]);
+    }
     const [a, b, c] = args;
     const ext = this.browser.extensions;
     switch (name) {

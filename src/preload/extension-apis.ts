@@ -1,8 +1,9 @@
 /**
  * Chrome extension APIs that neither Electron nor electron-chrome-extensions
- * provide: chrome.sidePanel, chrome.identity, chrome.tabGroups, chrome.search
- * and chrome.debugger. Without them, an extension whose service worker calls
- * one at start-up (Claude's side panel, logins through
+ * provide: chrome.sidePanel, chrome.identity, chrome.tabGroups, chrome.search,
+ * chrome.debugger, chrome.proxy, the rules of chrome.declarativeNetRequest, and the events
+ * runtime.onInstalled and onStartup. Without them, an extension whose service
+ * worker calls one at start-up (Claude's side panel, logins through
  * identity.launchWebAuthFlow) crashes before it does anything.
  *
  * Runs in every frame and service worker of the browsing session, but only
@@ -159,6 +160,125 @@ function install(bridge: {
       tabs.ungroup = fn("tabs.ungroup");
     } catch {
       // chrome.tabs is frozen
+    }
+  }
+
+  // chrome.runtime.onInstalled / onStartup: Electron never fires them, so
+  // Moon Browser does. Should Electron fire one itself, its listeners aren't
+  // called a second time.
+  const runtimeApi = chrome.runtime as Record<string, unknown>;
+  for (const [prop, name] of [
+    ["onInstalled", "runtime.onInstalled"],
+    ["onStartup", "runtime.onStartup"],
+  ] as const) {
+    type NativeEvent = {
+      addListener(l: (...a: unknown[]) => void): void;
+      removeListener(l: (...a: unknown[]) => void): void;
+    };
+    const native = runtimeApi[prop] as NativeEvent | undefined;
+    const ours = event(name);
+    let nativeFired = false;
+    native?.addListener(() => {
+      nativeFired = true;
+    });
+    const wrapped = new Map<(...a: unknown[]) => void, (...a: unknown[]) => void>();
+    try {
+      Object.defineProperty(runtimeApi, prop, {
+        value: {
+          addListener(l: (...a: unknown[]) => void) {
+            native?.addListener(l);
+            const w = (...a: unknown[]) => {
+              if (!nativeFired) l(...a);
+            };
+            wrapped.set(l, w);
+            ours.addListener(w);
+          },
+          removeListener(l: (...a: unknown[]) => void) {
+            native?.removeListener(l);
+            const w = wrapped.get(l);
+            if (w) ours.removeListener(w);
+            wrapped.delete(l);
+          },
+          hasListener: (l: (...a: unknown[]) => void) => wrapped.has(l),
+          hasListeners: () => wrapped.size > 0,
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    } catch {
+      // chrome.runtime is frozen: the native event stays
+    }
+  }
+
+  // chrome.declarativeNetRequest: Electron accepts the calls but applies no
+  // rules; Moon Browser keeps and applies them instead.
+  if (has("declarativeNetRequest") || has("declarativeNetRequestWithHostAccess")) {
+    const native = (chrome.declarativeNetRequest ?? {}) as Record<string, unknown>;
+    const api: Record<string, unknown> = {
+      DYNAMIC_RULESET_ID: "_dynamic",
+      SESSION_RULESET_ID: "_session",
+    };
+    // Its constants and enums (MAX_NUMBER_OF_DYNAMIC_RULES, ResourceType, …).
+    for (const key of Object.keys(native)) if (/^[A-Z]/.test(key)) api[key] = native[key];
+    for (const method of [
+      "updateDynamicRules",
+      "getDynamicRules",
+      "updateSessionRules",
+      "getSessionRules",
+      "updateEnabledRulesets",
+      "getEnabledRulesets",
+      "updateStaticRules",
+      "getDisabledRuleIds",
+      "getAvailableStaticRuleCount",
+      "isRegexSupported",
+      "testMatchOutcome",
+      "getMatchedRules",
+      "setExtensionActionOptions",
+    ])
+      api[method] = fn(`declarativeNetRequest.${method}`);
+    api.onRuleMatchedDebug = event("declarativeNetRequest.onRuleMatchedDebug");
+    try {
+      Object.defineProperty(chrome, "declarativeNetRequest", {
+        value: api,
+        enumerable: true,
+        configurable: true,
+      });
+    } catch {
+      // chrome is frozen
+    }
+  }
+
+  // chrome.proxy: Electron refuses the calls; Moon Browser sets the proxy.
+  if (has("proxy")) {
+    try {
+      Object.defineProperty(chrome, "proxy", {
+        value: {
+          settings: {
+            get: fn("proxy.settings.get"),
+            set: fn("proxy.settings.set"),
+            clear: fn("proxy.settings.clear"),
+            onChange: event("proxy.settings.onChange"),
+          },
+          onProxyError: event("proxy.onProxyError"),
+          Scope: {
+            REGULAR: "regular",
+            REGULAR_ONLY: "regular_only",
+            INCOGNITO_PERSISTENT: "incognito_persistent",
+            INCOGNITO_SESSION_ONLY: "incognito_session_only",
+          },
+          Mode: {
+            DIRECT: "direct",
+            AUTO_DETECT: "auto_detect",
+            PAC_SCRIPT: "pac_script",
+            FIXED_SERVERS: "fixed_servers",
+            SYSTEM: "system",
+          },
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    } catch {
+      // chrome is frozen
     }
   }
 

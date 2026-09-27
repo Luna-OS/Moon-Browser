@@ -27,6 +27,19 @@ const PAGES = {
 };
 
 const server = createServer((req, res) => {
+  // For the extension's declarativeNetRequest rules.
+  const dnr = {
+    "/dnr-blocked": "not blocked",
+    "/dnr-dynamic": "not blocked",
+    "/dnr-echo": String(req.headers["x-moon-dnr"] ?? "none"),
+    "/dnr-old": "old",
+    "/dnr-new": "new",
+  }[req.url ?? ""];
+  if (dnr) {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end(dnr);
+    return;
+  }
   const body = PAGES[req.url ?? "/"];
   res.writeHead(body ? 200 : 404, { "content-type": "text/html; charset=utf-8" });
   res.end(body ?? "not found");
@@ -263,6 +276,28 @@ try {
       return box && { x: box.x + box.width / 2, y: box.y + box.height / 2 };
     }, "the extension button");
 
+  /** Fetches paths from the test page; each gives its text or "blocked". */
+  const fetchFromPage = (paths) =>
+    app.evaluate(({ webContents }, list) => {
+      const wc = webContents.getAllWebContents().find((w) => w.getTitle() === "Moon test page");
+      return wc.executeJavaScript(
+        `Promise.all(${JSON.stringify(list)}.map((p) => fetch(p).then((r) => r.text(), () => "blocked")))`,
+      );
+    }, paths);
+
+  await check("the extension's declarativeNetRequest rules apply", async () => {
+    const [blocked, echo, redirected, free] = await fetchFromPage([
+      "/dnr-blocked",
+      "/dnr-echo",
+      "/dnr-old",
+      "/second",
+    ]);
+    if (blocked !== "blocked") throw new Error(`block rule: ${blocked}`);
+    if (echo !== "on") throw new Error(`header rule: ${echo}`);
+    if (redirected !== "new") throw new Error(`redirect rule: ${redirected}`);
+    if (!free.includes("Second")) throw new Error(`unmatched request: ${free}`);
+  });
+
   await check("the extension's toolbar button opens its pop-up", async () => {
     const button = await extensionButton();
     await ui.mouse.click(button.x, button.y);
@@ -294,6 +329,17 @@ try {
       .then((id) => chrome.tabGroups.update(id, { title: "From the extension" }))
       .then((group) => group.color)`);
     if (typeof color !== "string") throw new Error(`tabGroups gave ${color}`);
+    // Dynamic declarativeNetRequest rules, added and removed at run time.
+    const added = await inPopup(`chrome.declarativeNetRequest
+      .updateDynamicRules({ addRules: [{ id: 9, action: { type: "block" }, condition: { urlFilter: "/dnr-dynamic" } }] })
+      .then(() => chrome.declarativeNetRequest.getDynamicRules())
+      .then((rules) => rules.map((r) => r.id).join())`);
+    if (added !== "9") throw new Error(`dynamic rules: ${added}`);
+    if ((await fetchFromPage(["/dnr-dynamic"]))[0] !== "blocked")
+      throw new Error("the dynamic rule didn't block");
+    await inPopup("chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: [9] })");
+    if ((await fetchFromPage(["/dnr-dynamic"]))[0] !== "not blocked")
+      throw new Error("the removed rule still blocks");
     await waitFor(
       () =>
         ui

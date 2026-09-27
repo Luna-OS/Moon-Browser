@@ -23,11 +23,24 @@ export interface ExtensionPrefs {
   developerMode: boolean;
   /** Extensions loaded from a folder in developer mode, with the ID they got. */
   unpacked: UnpackedExtension[];
+  /** The version of each extension Moon Browser last loaded (for runtime.onInstalled). */
+  versions: Record<string, string>;
+  /** The proxy an extension set through chrome.proxy (checked again before use). */
+  proxy?: { id: string; value: unknown };
 }
 
 export interface UnpackedExtension {
   path: string;
   id: string;
+}
+
+function parseVersions(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!isObj(raw)) return out;
+  for (const [id, version] of Object.entries(raw).slice(0, 1000))
+    if (/^[a-p]{32}$/.test(id) && typeof version === "string" && version.length <= 64)
+      out[id] = version;
+  return out;
 }
 
 function parseUnpacked(raw: unknown): UnpackedExtension[] {
@@ -252,11 +265,19 @@ export class Profile {
     this.zoom = JsonStore.load(profilePath("zoom.json"), parseZoom);
     const ids = (v: unknown) =>
       Array.isArray(v) ? v.filter((s): s is string => typeof s === "string").slice(0, 1000) : [];
-    this.extensions = JsonStore.load(profilePath("extensions.json"), (raw) => ({
+    this.extensions = JsonStore.load(profilePath("extensions.json"), (raw): ExtensionPrefs => ({
       disabled: ids(isObj(raw) ? raw.disabled : null),
       unpinned: ids(isObj(raw) ? raw.unpinned : null),
       developerMode: isObj(raw) && raw.developerMode === true,
       unpacked: parseUnpacked(isObj(raw) ? raw.unpacked : null),
+      versions: parseVersions(isObj(raw) ? raw.versions : null),
+      ...(isObj(raw) &&
+      isObj(raw.proxy) &&
+      typeof raw.proxy.id === "string" &&
+      /^[a-p]{32}$/.test(raw.proxy.id) &&
+      isObj(raw.proxy.value)
+        ? { proxy: { id: raw.proxy.id, value: raw.proxy.value } }
+        : {}),
     }));
     this.session = JsonStore.load(profilePath("session.json"), parseSession, { delay: 2000 });
     this.stats = JsonStore.load(profilePath("stats.json"), (raw): Stats => ({

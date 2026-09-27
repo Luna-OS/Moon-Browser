@@ -128,11 +128,10 @@ export function unsupportedFeatures(manifest: ManifestLike): string[] {
     ...strings(manifest.optional_permissions),
   ]);
   const out: string[] = [];
-  if (
-    permissions.has("declarativeNetRequest") ||
-    permissions.has("declarativeNetRequestWithHostAccess")
-  )
-    out.push("Blocking rules (declarativeNetRequest) may not all work in Moon Browser.");
+  // Chrome's chrome.userScripts needs its own developer switch, which Moon
+  // Browser doesn't have.
+  if (permissions.has("userScripts"))
+    out.push("User scripts (chrome.userScripts) don't run in Moon Browser.");
   return out;
 }
 
