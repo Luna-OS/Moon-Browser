@@ -89,6 +89,10 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 - **Sandboxed everything** — every page, Moon Browser's own pages and the browser UI run in
   Chromium's sandbox with context isolation; web pages can't reach the internal API or the
   `moon://` pages, and every IPC message is checked for who sent it.
+- **Security updates on their own** — Chromium's security fixes (the ones Chrome and Helium
+  ship) reach Moon Browser through Electron's patch releases. Every six hours a workflow looks
+  for one, runs every test with it and, if they all pass, releases the next version; your copy
+  then updates itself.
 - **Hardened app** — Electron fuses are flipped in the shipped binary: no running as Node.js,
   no `--inspect`, no `NODE_OPTIONS`, only the integrity-checked `app.asar` is loaded, and
   **cookies are encrypted on disk** with the system's key store.

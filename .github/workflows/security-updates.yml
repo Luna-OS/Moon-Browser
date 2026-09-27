@@ -1,0 +1,180 @@
+name: Security updates
+
+# Chromium's security fixes — the ones Chrome and Helium ship — reach Moon
+# Browser through Electron's patch releases. Every six hours this looks for
+# one (scripts/security-update.mjs). An update is tested like any change —
+# the whole of CI — and if everything passes, it goes to main and out as
+# the next release; installed copies then update themselves. What can't
+# happen on its own becomes an issue: a failed test, or a new Electron
+# major version (that can change APIs, so it needs a person).
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      try_from:
+        description: "Try the workflow: pretend this Electron version is installed (tests the update, never releases it)"
+        type: string
+        required: false
+
+concurrency:
+  group: security-updates
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the tested update waits on the security-update branch
+      issues: write # a new major version is announced in an issue
+    outputs:
+      update: ${{ steps.look.outputs.update }}
+      electron: ${{ steps.look.outputs.electron }}
+      version: ${{ steps.look.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Look for a newer Electron
+        id: look
+        env:
+          FROM: ${{ inputs.try_from }}
+        run: |
+          set -o pipefail
+          node scripts/security-update.mjs --apply ${FROM:+--from "$FROM"} | tee -a "$GITHUB_OUTPUT"
+
+      - name: Commit the update
+        id: commit
+        if: steps.look.outputs.update == 'true'
+        env:
+          CURRENT: ${{ steps.look.outputs.current }}
+          ELECTRON: ${{ steps.look.outputs.electron }}
+          VERSION: ${{ steps.look.outputs.version }}
+          HELIUM: ${{ steps.look.outputs.helium_chromium }}
+        run: |
+          CHROMIUM="$(ELECTRON_RUN_AS_NODE=1 npx electron -p process.versions.chrome)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Security update: Electron $ELECTRON (Chromium $CHROMIUM)" \
+            -m "Electron $CURRENT → $ELECTRON brings Chromium's latest security fixes (Chromium $CHROMIUM${HELIUM:+; Helium builds on $HELIUM}). Moon Browser $VERSION." \
+            -m "Found and tested by the Security updates workflow."
+          git push --force origin HEAD:refs/heads/security-update
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "chromium=$CHROMIUM" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        env:
+          CURRENT: ${{ steps.look.outputs.current }}
+          ELECTRON: ${{ steps.look.outputs.electron }}
+          UPDATE: ${{ steps.look.outputs.update }}
+          VERSION: ${{ steps.look.outputs.version }}
+          HELIUM: ${{ steps.look.outputs.helium_chromium }}
+          MAJOR: ${{ steps.look.outputs.newer_major }}
+        run: |
+          {
+            echo "### Moon Browser's engine"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Electron in Moon Browser | $CURRENT |"
+            echo "| Newest Electron $(echo "$CURRENT" | cut -d. -f1) | $ELECTRON |"
+            echo "| Helium builds on Chromium | ${HELIUM:-unknown} |"
+            if [ "$UPDATE" = true ]; then
+              echo "| Update | Moon Browser $VERSION, tested next |"
+            else
+              echo "| Update | none needed |"
+            fi
+            if [ -n "$MAJOR" ]; then echo "| New major version | Electron $MAJOR (see issues) |"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Announce a new major version
+        if: steps.look.outputs.newer_major != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAJOR: ${{ steps.look.outputs.newer_major }}
+          CURRENT: ${{ steps.look.outputs.current }}
+        run: |
+          TITLE="Electron ${MAJOR%%.*} is out"
+          if gh issue list --state open --search "\"$TITLE\" in:title" --json title --jq '.[].title' | grep -qxF "$TITLE"; then
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body "Electron $MAJOR is the newest release; Moon Browser is on Electron $CURRENT. Security fixes keep coming for Electron ${CURRENT%%.*} (Electron supports its latest three major versions), and the Security updates workflow keeps installing them. Moving to Electron ${MAJOR%%.*} can change its APIs, so it's done by hand: update, test, release."
+
+  test:
+    needs: check
+    if: needs.check.outputs.update == 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.check.outputs.sha }}
+
+  release:
+    needs: [check, test]
+    # A try never releases.
+    if: needs.check.outputs.update == 'true' && !inputs.try_from
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # puts the tested update on main
+      actions: write # starts the Release workflow
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Put the update on main
+        id: main
+        env:
+          SHA: ${{ needs.check.outputs.sha }}
+        run: |
+          git fetch origin security-update
+          # Only what was tested: if main has moved meanwhile, the next run
+          # starts over from it.
+          if ! git merge-base --is-ancestor origin/main "$SHA"; then
+            echo "main has moved since the update was tested; the next run starts over."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git push origin "$SHA:refs/heads/main"
+          git push origin --delete security-update
+          echo "released=true" >> "$GITHUB_OUTPUT"
+
+      - name: Release it
+        if: steps.main.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          gh workflow run release.yml --ref main -f version="v$VERSION"
+          echo "Moon Browser $VERSION is being released." >> "$GITHUB_STEP_SUMMARY"
+
+  report:
+    needs: [check, test, release]
+    if: failure() && needs.check.outputs.update == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open an issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ELECTRON: ${{ needs.check.outputs.electron }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Security update to Electron $ELECTRON needs a look"
+          if gh issue list --state open --search "\"$TITLE\" in:title" --json title --jq '.[].title' | grep -qxF "$TITLE"; then
+            gh issue comment "$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number')" --body "Failed again: $RUN"
+            exit 0
+          fi
+          gh issue create --title "$TITLE" --body "Electron $ELECTRON (Chromium's newest security fixes) didn't pass Moon Browser's tests, so it wasn't released. The run: $RUN — the update waits on the security-update branch."
