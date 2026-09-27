@@ -20,7 +20,13 @@ import {
 import { isThirdParty, protectionSiteOf, siteOf } from "./sites";
 import { inlineCompletion, matchScore, suggest } from "./suggest";
 import type { HistoryEntry } from "./types";
-import { acceptLanguages, cleanUserAgent } from "./useragent";
+import {
+  acceptLanguages,
+  asFirefoxRequest,
+  cleanUserAgent,
+  firefoxUserAgent,
+  wantsFirefoxUserAgent,
+} from "./useragent";
 
 const opts = { engine: DEFAULT_ENGINE, bangs: true };
 const go = (text: string) => resolveInput(text, opts);
@@ -418,6 +424,47 @@ describe("user agent", () => {
     expect(cleanUserAgent(ua)).toBe(
       "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
     );
+  });
+
+  it("signs in to Google as Firefox of the same age, on the same system", () => {
+    const chrome = (system: string) =>
+      `Mozilla/5.0 (${system}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36`;
+    expect(firefoxUserAgent(chrome("Windows NT 10.0; Win64; x64"))).toBe(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0",
+    );
+    expect(firefoxUserAgent(chrome("Macintosh; Intel Mac OS X 10_15_7"))).toBe(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:154.0) Gecko/20100101 Firefox/154.0",
+    );
+    expect(firefoxUserAgent(chrome("X11; Linux x86_64"))).toBe(
+      "Mozilla/5.0 (X11; Linux x86_64; rv:154.0) Gecko/20100101 Firefox/154.0",
+    );
+    expect(firefoxUserAgent("")).toBe(
+      "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0",
+    );
+
+    expect(wantsFirefoxUserAgent("https://accounts.google.com/v3/signin/identifier?x=1")).toBe(
+      true,
+    );
+    expect(wantsFirefoxUserAgent("https://accounts.google.com.evil.example/")).toBe(false);
+    expect(wantsFirefoxUserAgent("https://mail.google.com/")).toBe(false);
+    expect(wantsFirefoxUserAgent("http://accounts.google.com/")).toBe(false);
+    expect(wantsFirefoxUserAgent("not a url")).toBe(false);
+
+    const headers: Record<string, string> = {
+      "User-Agent": chrome("X11; Linux x86_64"),
+      "sec-ch-ua": '"Chromium";v="152", "Not?A_Brand";v="24"',
+      "sec-ch-ua-mobile": "?0",
+      "Sec-CH-UA-Platform": '"Linux"',
+      "sec-ch-prefers-color-scheme": "dark",
+      "Sec-Fetch-Mode": "navigate",
+      Accept: "text/html",
+    };
+    asFirefoxRequest(headers, "Firefox UA");
+    expect(headers).toEqual({
+      "User-Agent": "Firefox UA",
+      "Sec-Fetch-Mode": "navigate",
+      Accept: "text/html",
+    });
   });
 
   it("sends only the preferred language", () => {

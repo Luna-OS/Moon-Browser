@@ -1,14 +1,15 @@
 /**
  * The request pipeline of a browsing session. Electron allows one listener
  * per webRequest event, so extensions' declarativeNetRequest rules,
- * HTTPS-first, the blocker, Global Privacy Control and third-party cookie
- * blocking share these three.
+ * HTTPS-first, the blocker, Global Privacy Control, third-party cookie
+ * blocking and the user agent for Google's sign-in share these three.
  */
 import { app, type Session, type WebFrameMain } from "electron";
 import { resourceType, type DnrRequest } from "@shared/dnr";
 import { httpsUpgrade } from "@shared/https";
 import { stripTrackingParams } from "@shared/security";
 import { isThirdParty } from "@shared/sites";
+import { asFirefoxRequest, firefoxUserAgent, wantsFirefoxUserAgent } from "@shared/useragent";
 import type { Browser } from "./browser";
 import type { Tab } from "./tab";
 import { adblockPreload } from "./paths";
@@ -51,6 +52,9 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
   browser.downloads.install(ses, isPrivate);
   ses.registerPreloadScript({ type: "frame", filePath: adblockPreload });
   applySpellcheck(ses, browser.settings.spellcheck);
+
+  // Google's sign-in only lets Firefox and the big browsers in (see useragent.ts).
+  const firefoxUa = firefoxUserAgent(ses.getUserAgent());
 
   // Extensions run in normal windows only, and so do their rules.
   const dnr = isPrivate ? null : browser.extensions.dnr;
@@ -171,6 +175,7 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
     const tab =
       details.webContentsId !== undefined ? browser.tabFor(details.webContentsId) : undefined;
     if (settings.globalPrivacyControl) headers["Sec-GPC"] = "1";
+    if (wantsFirefoxUserAgent(details.url)) asFirefoxRequest(headers, firefoxUa);
     if (settings.blockThirdPartyCookies && details.resourceType !== "mainFrame") {
       if (tab && browser.protectionActive(tab.url) && isThirdParty(details.url, tab.url)) {
         delete headers.Cookie;
