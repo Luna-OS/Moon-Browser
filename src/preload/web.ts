@@ -10,12 +10,64 @@
  *   icon.
  * - alert(), confirm() and prompt() ask in Moon Browser's own dialog over
  *   the tab (page-dialogs.ts), not in the system's message box.
+ * - Permissions nobody decided yet read as undecided, as in Chrome
+ *   (permissions.ts): Notification.permission "default" and
+ *   navigator.permissions "prompt", where Electron says "denied".
  */
 import { contextBridge, ipcRenderer } from "electron";
 import { completeChromeObject } from "@shared/chrome-object";
-import { PAGE_DIALOG_CHANNEL, type PageDialogKind, type PageDialogReply } from "@shared/ipc";
+import {
+  PAGE_DIALOG_CHANNEL,
+  PERMISSION_STATE_CHANNEL,
+  type PageDialogKind,
+  type PageDialogReply,
+  type PermissionState,
+} from "@shared/ipc";
 
 if (typeof window !== "undefined") contextBridge.executeInMainWorld({ func: completeChromeObject });
+
+/** Whether a permission of this page is still to be asked for (see permissions.ts). */
+function permissionState(name: string): PermissionState {
+  try {
+    return ipcRenderer.sendSync(PERMISSION_STATE_CHANNEL, name) as PermissionState;
+  } catch {
+    return "deny";
+  }
+}
+
+// Runs in the page's world (serialized: everything it needs is inside).
+function undecidedPermissions(state: typeof permissionState): void {
+  const g = globalThis as unknown as {
+    Notification?: object;
+    PermissionStatus?: { prototype: object };
+  };
+  /** Swaps a getter's "denied" for `undecided` while nobody has decided. */
+  const wrap = (
+    owner: object | undefined,
+    property: string,
+    undecided: string,
+    nameOf: (self: unknown) => string,
+  ) => {
+    const descriptor = owner ? Object.getOwnPropertyDescriptor(owner, property) : undefined;
+    const original: unknown = descriptor ? Reflect.get(descriptor, "get") : undefined;
+    if (!owner || !descriptor || typeof original !== "function") return;
+    // A proxy keeps the getter's name, length and native look.
+    const get = new Proxy(original as (this: unknown) => unknown, {
+      apply(target, self: unknown, args: unknown[]): unknown {
+        const value: unknown = Reflect.apply(target, self, args);
+        return value === "denied" && state(nameOf(self)) === "ask" ? undecided : value;
+      },
+    });
+    Object.defineProperty(owner, property, { ...descriptor, get });
+  };
+  wrap(g.Notification, "permission", "default", () => "notifications");
+  wrap(g.PermissionStatus?.prototype, "state", "prompt", (self) =>
+    String((self as { name?: unknown }).name),
+  );
+}
+
+if (typeof window !== "undefined")
+  contextBridge.executeInMainWorld({ func: undecidedPermissions, args: [permissionState] });
 
 function quietBadges(): void {
   const g = globalThis as {

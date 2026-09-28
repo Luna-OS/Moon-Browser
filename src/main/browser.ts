@@ -14,6 +14,7 @@ import {
   type Session,
 } from "electron";
 import { messageBoxOptions, type DialogSpec } from "@shared/dialogs";
+import { chosenCustomDns, hostResolverConfig } from "@shared/dns";
 import { resolveEngine, type SearchEngine } from "@shared/engines";
 import { isInternalUrl } from "@shared/internal";
 import { INTERNAL_EVENT_CHANNEL, type InternalEvent } from "@shared/ipc";
@@ -21,10 +22,10 @@ import { mergeSettings } from "@shared/settings";
 import { shortcutFor, type ShortcutCommand } from "@shared/shortcuts";
 import { protectionSiteOf } from "@shared/sites";
 import type { ClearDataOptions, ResolvedTheme, Settings } from "@shared/types";
-import { hostResolverConfig } from "@shared/security";
 import { acceptLanguages, cleanUserAgent } from "@shared/useragent";
 import { Adblocker } from "./adblock";
 import { DefaultBrowser } from "./default-browser";
+import { DnsBridge } from "./dns-bridge";
 import { Downloads } from "./downloads";
 import { Extensions } from "./extensions";
 import { Permissions } from "./permissions";
@@ -56,6 +57,9 @@ export class Browser {
     this.notifyInternal("settings");
   });
   readonly windows = new Set<MoonWindow>();
+  /** The way to a plain DNS server of the user's (see dns-bridge.ts). */
+  readonly dnsBridge = new DnsBridge();
+  private dnsGeneration = 0;
   readonly httpsExceptions = new Set<string>();
   /** Hosts whose Moon Shield warning the user chose to pass, until quit. */
   readonly shieldExceptions = new Set<string>();
@@ -134,7 +138,10 @@ export class Browser {
     this.userAgent = cleanUserAgent(app.userAgentFallback);
     app.userAgentFallback = this.userAgent;
 
-    app.configureHostResolver(hostResolverConfig(this.settings.secureDns));
+    // Every session looks names up, so each must be able to reach the DNS bridge.
+    app.on("session-created", (ses) => this.dnsBridge.watch(ses));
+    this.dnsBridge.watch(session.defaultSession);
+    await this.applyDns();
 
     this.uiSession = session.fromPartition("moon-ui");
     // Spell checking would download dictionaries from Google; only the
@@ -163,6 +170,7 @@ export class Browser {
     this.setupBrowsingSession(this.normalSession, false);
 
     installPageDialogs(this);
+    this.permissions.listen();
     this.adblock.registerCosmeticHandlers((event, url) => {
       const tab = this.tabFor(event.sender.id);
       return !!tab && this.protectionActive(tab.url.startsWith("http") ? tab.url : url);
@@ -370,6 +378,32 @@ export class Browser {
 
   // ---- Settings ----
 
+  /**
+   * Makes Chromium look names up as the settings say: a built-in choice or a
+   * DNS-over-HTTPS server of the user's directly, a plain one of theirs
+   * through the DNS bridge.
+   */
+  private async applyDns(): Promise<void> {
+    const generation = ++this.dnsGeneration;
+    const { secureDns, customDns } = this.settings;
+    const custom = chosenCustomDns(secureDns, customDns);
+    let bridge: string | null = null;
+    if (custom?.parsed.kind === "plain") {
+      const { host, port } = custom.parsed;
+      try {
+        bridge = await this.dnsBridge.start({ host, port, name: custom.name });
+      } catch (err) {
+        console.error("[moon] the DNS bridge didn't start:", err);
+      }
+    } else {
+      this.dnsBridge.stop();
+    }
+    // A later change of the settings wins.
+    if (generation !== this.dnsGeneration) return;
+    app.configureHostResolver(hostResolverConfig(secureDns, customDns, bridge));
+    this.dnsBridge.clearCaches();
+  }
+
   updateSettings(patch: Partial<Settings>): Settings {
     const before = this.settings;
     const after = mergeSettings(before, patch, process.platform);
@@ -387,8 +421,11 @@ export class Browser {
       }
     }
     if (before.adblockAnnoyances !== after.adblockAnnoyances) this.adblock.listsChanged();
-    if (before.secureDns !== after.secureDns)
-      app.configureHostResolver(hostResolverConfig(after.secureDns));
+    if (
+      before.secureDns !== after.secureDns ||
+      JSON.stringify(before.customDns) !== JSON.stringify(after.customDns)
+    )
+      void this.applyDns();
     this.updateAllWindows();
     this.notifyInternal("settings");
     return after;

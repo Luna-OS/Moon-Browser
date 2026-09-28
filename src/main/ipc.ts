@@ -473,7 +473,7 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
     "permissions.list": () => profile.listPermissions(),
     "permissions.reset": (_tab, origin, kind) => {
       if (isStr(origin, 2048))
-        profile.resetPermission(origin, isStr(kind, 64) ? (kind as PermissionKind) : undefined);
+        browser.permissions.reset(origin, isStr(kind, 64) ? (kind as PermissionKind) : undefined);
     },
     "protection.remove": (_tab, site) => {
       const s = isStr(site, 512) ? normalizeSite(site) : null;

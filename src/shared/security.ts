@@ -153,37 +153,6 @@ export function zoneIdentifier(options: { url?: string; referrer?: string }): st
   return `${lines.join("\r\n")}\r\n`;
 }
 
-export type SecureDnsChoice = "automatic" | "quad9" | "cloudflare" | "mullvad" | "off";
-
-export const SECURE_DNS: Record<
-  Exclude<SecureDnsChoice, "automatic" | "off">,
-  { name: string; template: string }
-> = {
-  quad9: {
-    name: "Quad9 (blocks known malware domains)",
-    template: "https://dns.quad9.net/dns-query",
-  },
-  mullvad: { name: "Mullvad", template: "https://dns.mullvad.net/dns-query" },
-  cloudflare: { name: "Cloudflare", template: "https://cloudflare-dns.com/dns-query" },
-};
-
-/** Arguments for Electron's app.configureHostResolver. */
-export function hostResolverConfig(choice: SecureDnsChoice): {
-  enableBuiltInResolver: boolean;
-  secureDnsMode: "off" | "automatic" | "secure";
-  secureDnsServers: string[];
-} {
-  if (choice === "off")
-    return { enableBuiltInResolver: true, secureDnsMode: "off", secureDnsServers: [] };
-  if (choice === "automatic")
-    return { enableBuiltInResolver: true, secureDnsMode: "automatic", secureDnsServers: [] };
-  return {
-    enableBuiltInResolver: true,
-    secureDnsMode: "secure",
-    secureDnsServers: [SECURE_DNS[choice].template],
-  };
-}
-
 /**
  * Whether a filter that matched a page itself should block the whole page,
  * like uBlock Origin's "strict blocking": only rules that name a whole

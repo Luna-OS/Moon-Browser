@@ -23,6 +23,12 @@ export function describeError(error: TabError): { title: string; text: string } 
       text: `${host} is on a filter list of sites that spread malware, scams or trackers. Nothing was loaded from it.`,
     };
   }
+  if (error.dnsServer) {
+    return {
+      title: "Your DNS server doesn't answer",
+      text: `“${error.dnsServer}” didn't answer, so the address of ${host} couldn't be looked up. If it's only reachable through a VPN such as Netbird, check that the VPN is connected — or choose another DNS in Settings → Privacy & Shield.`,
+    };
+  }
   const code = error.code;
   if (code <= -200 && code > -300) {
     return {

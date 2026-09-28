@@ -5,6 +5,7 @@
 //   node scripts/e2e.mjs [--screenshots dir]
 import { _electron as electron } from "playwright-core";
 import { createHash, generateKeyPairSync } from "node:crypto";
+import { createSocket } from "node:dgram";
 import { existsSync, readdirSync } from "node:fs";
 import { access, cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -26,6 +27,7 @@ const PAGES = {
     <a id="internal" href="moon://settings/">Sneaky settings link</a></body>`,
   "/second": `<!doctype html><title>Second page</title><body style="padding:2rem"><h1>Second</h1></body>`,
   "/folder-page": `<!doctype html><title>From a folder</title><body style="padding:2rem"><h1>Kept in a folder</h1></body>`,
+  "/permissions": `<!doctype html><title>Permissions page</title><body style="padding:2rem"><h1>May I?</h1></body>`,
   "/dialogs": `<!doctype html><title>Dialog test page</title><body style="font:16px sans-serif;padding:2rem">
     <h1>Pages ask questions</h1><p>alert(), confirm() and prompt() answer here.</p></body>`,
 };
@@ -195,6 +197,33 @@ async function waitFor(fn, what, timeout = 15_000) {
     await new Promise((r) => setTimeout(r, 150));
   }
   throw new Error(`Timed out waiting for ${what} (last: ${JSON.stringify(last)})`);
+}
+
+/**
+ * A DNS server's answer to `query`: moon-dns.test (and nothing under it)
+ * is 127.0.0.1, every other name doesn't exist.
+ */
+function dnsAnswer(query) {
+  let i = 12;
+  const labels = [];
+  while (query[i]) {
+    labels.push(query.subarray(i + 1, i + 1 + query[i]).toString());
+    i += query[i] + 1;
+  }
+  const type = query.readUInt16BE(i + 1);
+  const known = labels.join(".").toLowerCase() === "moon-dns.test";
+  const header = Buffer.from(query.subarray(0, 12));
+  header[2] = 0x80 | (query[2] & 0x01);
+  header[3] = known ? 0x80 : 0x83; // NXDOMAIN for the rest
+  const a = known && type === 1;
+  header.writeUInt16BE(1, 4);
+  header.writeUInt16BE(a ? 1 : 0, 6);
+  header.writeUInt16BE(0, 8);
+  header.writeUInt16BE(0, 10);
+  const record = a
+    ? Buffer.from([0xc0, 12, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 127, 0, 0, 1])
+    : Buffer.alloc(0);
+  return Buffer.concat([header, query.subarray(12, i + 5), record]);
 }
 
 // On Linux, a stand-in for Windows' webauthn.dll (scripts/fixtures/webauthn)
@@ -788,6 +817,47 @@ try {
     if (quiet !== true) throw new Error("navigator.setAppBadge still reaches the app");
   });
 
+  await check("notifications, camera and microphone are asked for, not 'blocked'", async () => {
+    await press("T", ["control"]);
+    const box = ui.getByRole("combobox", { name: "Address and search bar" });
+    await box.fill(`${base}/permissions`);
+    await box.press("Enter");
+    await waitFor(
+      async () => (await tabs()).some((t) => t.title === "Permissions page"),
+      "the permissions page",
+    );
+    const inPage = (code) =>
+      app.evaluate(
+        ({ webContents }, js) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL().endsWith("/permissions"))
+            .executeJavaScript(js, true),
+        code,
+      );
+    const states = () =>
+      inPage(`(async () => JSON.stringify([
+        Notification.permission,
+        ...(await Promise.all(["notifications", "camera", "microphone", "geolocation"].map(
+          async (name) => (await navigator.permissions.query({ name })).state,
+        ))),
+      ]))()`).then((s) => JSON.parse(s));
+    // Nobody decided yet: the page may ask (Electron alone says "denied").
+    const before = await states();
+    if (before.join() !== "default,prompt,prompt,prompt,prompt")
+      throw new Error(`undecided: ${before}`);
+    // It asks; allowed for now (not remembered), and the page sees it.
+    const asked = inPage("Notification.requestPermission()");
+    const bar = ui.getByRole("alert").filter({ hasText: "wants to show notifications" });
+    await waitFor(() => bar.isVisible(), "the notification question");
+    await bar.getByRole("checkbox").uncheck();
+    await bar.getByRole("button", { name: "Allow" }).click();
+    if ((await asked) !== "granted") throw new Error(`requestPermission gave ${await asked}`);
+    const after = await states();
+    if (after.join() !== "granted,granted,prompt,prompt,prompt")
+      throw new Error(`after allowing: ${after}`);
+  });
+
   await check("Ctrl+T opens a new tab and Ctrl+W closes it", async () => {
     const before = await ui.locator('[role="tab"]').count();
     await press("T", ["control"]);
@@ -1282,6 +1352,115 @@ try {
       );
     } finally {
       for (const name of added()) await rm(join(folder, name), { force: true });
+    }
+  });
+
+  await check("your own DNS server, named in Settings, finds the pages", async () => {
+    // A plain DNS server on 127.0.0.1, not on port 53 — like a Pi-hole in
+    // Netbird. It knows one name.
+    const dns = createSocket("udp4");
+    dns.on("message", (msg, from) => dns.send(dnsAnswer(msg), from.port, from.address));
+    await new Promise((r) => dns.bind(0, "127.0.0.1", r));
+    const dnsPort = dns.address().port;
+    const webPort = new URL(base).port;
+    const inSettings = (code) =>
+      app.evaluate(
+        ({ webContents }, js) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL().startsWith("moon://settings"))
+            .executeJavaScript(js),
+        code,
+      );
+    try {
+      await press(",", ["control"]);
+      await waitFor(
+        async () => (await tabs()).some((t) => t.url.startsWith("moon://settings")),
+        "moon://settings",
+      );
+      await new Promise((r) => setTimeout(r, 500));
+      // Added and named as a user does it: a wrong address first, then the right one.
+      const form = await inSettings(`(async () => {
+        const wait = () => new Promise((r) => setTimeout(r, 250));
+        const button = (text) =>
+          [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === text);
+        document.querySelector('select[aria-label="DNS"]').scrollIntoView({ block: "start" });
+        button("Add DNS server").click();
+        await wait();
+        const form = document.querySelector('form[aria-label="New DNS server"]');
+        const type = (label, value) => {
+          const input = form.querySelector('input[aria-label="' + label + '"]');
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        type("Name", "E2E DNS (Netbird)");
+        type("Address", "pihole.home:${dnsPort}");
+        await wait();
+        button("Save").click();
+        await wait();
+        const problem = form.querySelector('[role="alert"]')?.textContent ?? "";
+        type("Address", "127.0.0.1:${dnsPort}");
+        await wait();
+        button("Save").click();
+        await wait();
+        return { problem, select: document.querySelector('select[aria-label="DNS"]').selectedOptions[0]?.textContent };
+      })()`);
+      if (!form.problem.includes("IP address")) throw new Error(`form: ${JSON.stringify(form)}`);
+      // A server just added is the one in use.
+      if (form.select !== "E2E DNS (Netbird)") throw new Error(`chosen: ${form.select}`);
+      const saved = await inSettings("window.moon.invoke('settings.get')");
+      const settings = saved.settings ?? saved;
+      const server = settings.customDns[0];
+      if (
+        server?.name !== "E2E DNS (Netbird)" ||
+        server.address !== `127.0.0.1:${dnsPort}` ||
+        settings.secureDns !== `custom:${server.id}`
+      )
+        throw new Error(JSON.stringify(settings.customDns));
+      await new Promise((r) => setTimeout(r, 400));
+      await shot("10-own-dns-server");
+
+      // A name only this DNS server knows opens.
+      await press("T", ["control"]);
+      const box = ui.getByRole("combobox", { name: "Address and search bar" });
+      await box.fill(`http://moon-dns.test:${webPort}/`);
+      await box.press("Enter");
+      await waitFor(
+        async () =>
+          (await tabs()).some(
+            (t) => t.url.startsWith("http://moon-dns.test") && t.title === "Moon test page",
+          ),
+        "the page found through the own DNS server",
+      );
+
+      // The server stops answering (Netbird off): the error page says so.
+      dns.close();
+      await box.fill(`http://gone.moon-dns.test:${webPort}/`);
+      await box.press("Enter");
+      const hint = ui.getByText("Your DNS server doesn't answer");
+      await waitFor(
+        async () => {
+          if (await hint.isVisible()) return true;
+          // The first lookup may fail before the bridge has given up on the server.
+          const again = ui.getByRole("button", { name: "Try again" });
+          if (await again.isVisible()) await again.click();
+          return false;
+        },
+        "the error page naming the DNS server",
+        45_000,
+      );
+      const text = await ui.getByText(/didn't answer, so the address/).textContent();
+      if (!text.includes("“E2E DNS (Netbird)”")) throw new Error(`error page: ${text}`);
+      await shot("10a-dns-server-gone");
+    } finally {
+      try {
+        dns.close();
+      } catch {
+        // already closed
+      }
+      await inSettings(
+        "window.moon.invoke('settings.set', { customDns: [], secureDns: 'automatic' })",
+      );
     }
   });
 

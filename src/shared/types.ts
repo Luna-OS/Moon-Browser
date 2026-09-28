@@ -3,6 +3,7 @@
  * pages. Everything here crosses an IPC boundary, so it is plain data only.
  */
 
+import type { CustomDnsServer, DnsSetting } from "./dns";
 import type { TabGroupInfo } from "./tab-groups";
 
 export type ThemeChoice = "dark" | "light" | "system";
@@ -46,8 +47,10 @@ export interface Settings {
   webrtcProtection: boolean;
   /** Remove click IDs and campaign tags (utm_…, fbclid, …) from addresses. */
   stripTrackingParams: boolean;
-  /** DNS over HTTPS. */
-  secureDns: "automatic" | "quad9" | "cloudflare" | "mullvad" | "off";
+  /** Which DNS: a built-in choice, or `custom:<id>` for one of `customDns`. */
+  secureDns: DnsSetting;
+  /** DNS servers the user added and named. */
+  customDns: CustomDnsServer[];
   /** Delete cookies and site data when Moon Browser closes. */
   clearOnExit: boolean;
   /** Put tabs to sleep after they were unused for a while. */
@@ -101,6 +104,8 @@ export interface TabError {
   url: string;
   /** For "blocked": the filter rule that matched. */
   rule?: string;
+  /** The name of the user's DNS server when it didn't answer the lookup. */
+  dnsServer?: string;
 }
 
 export type SecurityState = "secure" | "insecure" | "internal" | "extension" | "local" | "error";

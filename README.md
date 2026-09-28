@@ -82,9 +82,13 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
   get a warning page instead (like uBlock Origin's strict blocking).
 - **Third-party cookies blocked**, **Global Privacy Control** sent, **tracking parameters**
   (`utm_…`, `fbclid`, `gclid`, …) removed from links, **WebRTC** can't reveal your local IP,
-  **secure DNS** (DNS over HTTPS, with Quad9, Mullvad or Cloudflare to choose).
+  **secure DNS** (DNS over HTTPS, with Quad9, Mullvad or Cloudflare to choose) — or **your own
+  DNS server**, named as you like: a Pi-hole or Unbound at home or one in Netbird or Tailscale
+  by IP address and port (`100.64.0.53:5335`), or any DNS-over-HTTPS address
+  (*Settings → Privacy & Shield → Your DNS servers*).
 - **Permissions are asked for** — camera, microphone, location, notifications, clipboard,
-  opening other apps and pop-ups without a click. USB, serial, HID and Bluetooth access are
+  opening other apps and pop-ups without a click. Until you've answered, sites see "not asked
+  yet" (as in Chrome), not "blocked", so they ask. USB, serial, HID and Bluetooth access are
   refused.
 - **Downloads** — programs and scripts are held under a harmless name (`Unconfirmed ….crdownload`)
   until you choose *Keep anyway*, and on Windows every download gets the Mark of the Web, so
