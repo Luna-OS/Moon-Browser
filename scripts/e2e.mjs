@@ -304,6 +304,22 @@ try {
   );
   await ui.waitForLoadState("domcontentloaded");
 
+  /**
+   * Types an address into the address bar and opens it. Focused, the bar
+   * shows the tab's whole address first; typing starts once it has.
+   */
+  const goTo = async (url) => {
+    const box = ui.getByRole("combobox", { name: "Address and search bar" });
+    await box.click();
+    await new Promise((r) => setTimeout(r, 200));
+    await box.fill(url);
+    await waitFor(
+      async () => (await box.inputValue()).startsWith(url),
+      `${url} in the address bar`,
+    );
+    await box.press("Enter");
+  };
+
   await check("the browser UI shows a tab", async () => {
     await waitFor(() => ui.locator('[role="tab"]').count(), "a tab in the tab strip");
   });
@@ -819,9 +835,7 @@ try {
 
   await check("notifications, camera and microphone are asked for, not 'blocked'", async () => {
     await press("T", ["control"]);
-    const box = ui.getByRole("combobox", { name: "Address and search bar" });
-    await box.fill(`${base}/permissions`);
-    await box.press("Enter");
+    await goTo(`${base}/permissions`);
     await waitFor(
       async () => (await tabs()).some((t) => t.title === "Permissions page"),
       "the permissions page",
@@ -1093,9 +1107,7 @@ try {
     }, "the folder in Anime");
     // The star's editor makes one in the chosen folder, and the bookmark goes in.
     await press("T", ["control"]);
-    const box = ui.getByRole("combobox", { name: "Address and search bar" });
-    await box.fill(`${base}/folder-page`);
-    await box.press("Enter");
+    await goTo(`${base}/folder-page`);
     const star = ui.getByRole("button", { name: "Edit bookmark" });
     await waitFor(() => star.isVisible(), "the star of the bookmarked page");
     await star.click();
@@ -1422,9 +1434,7 @@ try {
 
       // A name only this DNS server knows opens.
       await press("T", ["control"]);
-      const box = ui.getByRole("combobox", { name: "Address and search bar" });
-      await box.fill(`http://moon-dns.test:${webPort}/`);
-      await box.press("Enter");
+      await goTo(`http://moon-dns.test:${webPort}/`);
       await waitFor(
         async () =>
           (await tabs()).some(
@@ -1435,20 +1445,28 @@ try {
 
       // The server stops answering (Netbird off): the error page says so.
       dns.close();
-      await box.fill(`http://gone.moon-dns.test:${webPort}/`);
-      await box.press("Enter");
+      await goTo(`http://gone.moon-dns.test:${webPort}/`);
       const hint = ui.getByText("Your DNS server doesn't answer");
-      await waitFor(
-        async () => {
-          if (await hint.isVisible()) return true;
-          // The first lookup may fail before the bridge has given up on the server.
-          const again = ui.getByRole("button", { name: "Try again" });
-          if (await again.isVisible()) await again.click();
-          return false;
-        },
-        "the error page naming the DNS server",
-        45_000,
-      );
+      let seen = "";
+      try {
+        await waitFor(
+          async () => {
+            if (await hint.isVisible()) return true;
+            seen = JSON.stringify({
+              tabs: (await tabs()).filter((t) => !t.url.startsWith("moon:")).map((t) => t.url),
+              page: await ui.locator("h1").allTextContents(),
+            });
+            // The first lookup may fail before the bridge has given up on the server.
+            const again = ui.getByRole("button", { name: "Try again" });
+            if (await again.isVisible()) await again.click();
+            return false;
+          },
+          "the error page naming the DNS server",
+          45_000,
+        );
+      } catch (err) {
+        throw new Error(`${err.message}; saw ${seen}`);
+      }
       const text = await ui.getByText(/didn't answer, so the address/).textContent();
       if (!text.includes("“E2E DNS (Netbird)”")) throw new Error(`error page: ${text}`);
       await shot("10a-dns-server-gone");

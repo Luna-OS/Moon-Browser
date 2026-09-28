@@ -63,9 +63,15 @@ function askUdp(query: Buffer, target: DnsTarget, timeout: number): Promise<Buff
     };
     const timer = setTimeout(() => done(null), timeout);
     socket.on("error", () => done(null));
-    socket.on("message", (answer) => {
-      // Only the answer to this query (same ID).
-      if (answer.length >= 12 && answer.readUInt16BE(0) === query.readUInt16BE(0)) done(answer);
+    socket.on("message", (answer, from) => {
+      // Only the server's answer to this query: a response with its ID.
+      if (
+        from.port === target.port &&
+        answer.length >= 12 &&
+        answer[2] & 0x80 &&
+        answer.readUInt16BE(0) === query.readUInt16BE(0)
+      )
+        done(answer);
     });
     socket.send(query, target.port, target.host, (err) => {
       if (err) done(null);
