@@ -463,7 +463,17 @@ export class Tab {
         pending ??
         (httpsUnavailable
           ? { kind: "https", code, description, url: validatedURL.replace(/^https:/, "http:") }
-          : { kind: "network", code, description, url: validatedURL });
+          : {
+              kind: "network",
+              code,
+              description,
+              url: validatedURL,
+              // Not found because the user's own DNS server didn't answer.
+              dnsServer:
+                (code === -105 || code === -137) && browser.dnsBridge.unreachable
+                  ? browser.dnsBridge.unreachable
+                  : undefined,
+            });
       this.url = this.error.url;
       this.loading = false;
       browser.upgraded.delete(this.id);

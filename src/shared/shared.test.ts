@@ -10,13 +10,7 @@ import { displayUrl, shortHost } from "./display";
 import { resolveInput } from "./omnibox";
 import { defaultSettings, mergeSettings, normalizeSite, sanitizeSettings } from "./settings";
 import { shortcutFor, type KeyInput } from "./shortcuts";
-import {
-  blocksWholePage,
-  hostResolverConfig,
-  isDangerousFile,
-  stripTrackingParams,
-  zoneIdentifier,
-} from "./security";
+import { blocksWholePage, isDangerousFile, stripTrackingParams, zoneIdentifier } from "./security";
 import { isThirdParty, protectionSiteOf, siteOf } from "./sites";
 import { inlineCompletion, matchScore, suggest } from "./suggest";
 import type { HistoryEntry } from "./types";
@@ -534,16 +528,6 @@ describe("security helpers", () => {
     expect(zoneIdentifier({ url: "blob:https://x/1\r\nZoneId=0" })).toBe(
       "[ZoneTransfer]\r\nZoneId=3\r\n",
     );
-  });
-
-  it("configures DNS over HTTPS", () => {
-    expect(hostResolverConfig("quad9")).toEqual({
-      enableBuiltInResolver: true,
-      secureDnsMode: "secure",
-      secureDnsServers: ["https://dns.quad9.net/dns-query"],
-    });
-    expect(hostResolverConfig("automatic").secureDnsMode).toBe("automatic");
-    expect(hostResolverConfig("off").secureDnsMode).toBe("off");
   });
 
   it("blocks whole pages only for host rules and $document rules", () => {

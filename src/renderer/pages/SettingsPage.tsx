@@ -23,6 +23,7 @@ import {
   UpdateIcon,
 } from "@theme/icons";
 import { api, useLive, type SettingsInfo } from "./api";
+import { DnsSettings } from "./DnsSettings";
 import { Card, Row, Segmented, Toggle } from "./ui";
 import { UpdateRow } from "./UpdateRow";
 
@@ -299,29 +300,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             checked={s.stripTrackingParams}
             onChange={(v) => set({ stripTrackingParams: v })}
           />
-          <Row
-            label="Secure DNS"
-            hint={
-              s.secureDns === "automatic"
-                ? "Uses encrypted DNS whenever your network's DNS provider supports it."
-                : s.secureDns === "off"
-                  ? "Addresses are looked up unencrypted by your network."
-                  : "Every address lookup is encrypted and goes to this provider only. Names that exist only in your local network may stop working."
-            }
-          >
-            <select
-              className="mb-input w-64"
-              aria-label="Secure DNS"
-              value={s.secureDns}
-              onChange={(e) => set({ secureDns: e.target.value as Settings["secureDns"] })}
-            >
-              <option value="automatic">Automatic</option>
-              <option value="quad9">Quad9 — blocks malware domains</option>
-              <option value="mullvad">Mullvad</option>
-              <option value="cloudflare">Cloudflare</option>
-              <option value="off">Off</option>
-            </select>
-          </Row>
+          <DnsSettings settings={s} set={set} />
           <Toggle
             label="Delete cookies and site data when Moon Browser closes"
             hint="Every start is a fresh start: you'll be signed out of websites."

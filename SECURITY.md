@@ -62,7 +62,14 @@ can never be read as a command-line switch.
   removed from addresses; **Global Privacy Control** (`Sec-GPC: 1`) is sent.
 - **WebRTC** only uses the public network interface, so pages can't learn local IP addresses.
 - **Secure DNS**: DNS over HTTPS in automatic mode by default; Quad9, Mullvad or Cloudflare can
-  be chosen for strict mode.
+  be chosen for strict mode, and so can a DNS server of your own. A DNS-over-HTTPS server of
+  yours is used as it is. A plain one (IP address and port) is reached through a DNS-over-HTTPS
+  bridge Moon Browser runs on `127.0.0.1` for Chromium, with a certificate made at every start
+  and trusted for `127.0.0.1` only, by its fingerprint; every other certificate is checked as
+  always. From the bridge, lookups go to your server unencrypted (UDP, TCP for long answers),
+  as plain DNS does — best at home or inside a VPN such as Netbird, which encrypts them itself.
+  If your server doesn't answer, names aren't looked up elsewhere: the error page says your DNS
+  server didn't answer.
 - The user agent is a plain, version-reduced Chrome user agent, and `Accept-Language` carries
   only the preferred language, so Moon Browser doesn't stand out. Pages get Chrome's
   low-entropy client hints (`Sec-CH-UA`, `-Mobile`, `-Platform`, only over HTTPS) and Chrome's
@@ -142,6 +149,10 @@ Fullscreen, pointer lock, writing to the clipboard and similar harmless capabili
 Camera, microphone, location, notifications, reading the clipboard, opening other apps and
 pop-ups without a click are **asked for** in a bar above the page; decisions can be remembered
 per site (in private windows only until they close) and reset in *Settings → Site permissions*.
+Answers not remembered hold until Moon Browser closes. Until a site's question is answered, the
+site sees it as undecided — `Notification.permission` is `default`, `navigator.permissions` says
+`prompt` — as in Chrome; Electron alone would say `denied`, and sites would show "blocked"
+instead of asking.
 USB, serial, HID, Bluetooth and screen capture are refused.
 
 ### Downloads

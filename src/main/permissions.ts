@@ -4,14 +4,23 @@
  * and everything personal — camera, microphone, location, notifications,
  * reading the clipboard, opening other apps, pop-ups without a click — is
  * asked for in a bar above the page. Decisions can be remembered per site;
- * in private windows only until the window closes.
+ * in private windows only until the window closes. Answers not remembered
+ * hold until Moon Browser closes.
+ *
+ * Pages see what's undecided as undecided: Chrome's "default" for
+ * Notification.permission and "prompt" for navigator.permissions, not
+ * "denied" (Electron knows only yes and no) — sites that see "denied" say
+ * "blocked, change your browser settings" instead of asking.
  */
-import type {
-  PermissionCheckHandlerHandlerDetails,
-  PermissionRequest,
-  Session,
-  WebContents,
+import {
+  ipcMain,
+  type IpcMainEvent,
+  type PermissionCheckHandlerHandlerDetails,
+  type PermissionRequest,
+  type Session,
+  type WebContents,
 } from "electron";
+import { PERMISSION_STATE_CHANNEL, type PermissionState } from "@shared/ipc";
 import { originOf } from "@shared/sites";
 import type { PermissionKind, PermissionPrompt } from "@shared/types";
 import type { Browser } from "./browser";
@@ -38,6 +47,20 @@ const EXTENSION_PERMISSIONS: Record<string, string> = {
   geolocation: "geolocation",
 };
 
+/** Permissions pages can look up (navigator.permissions, Notification.permission), by web name. */
+const PAGE_PERMISSIONS: Record<string, PermissionKind> = {
+  notifications: "notifications",
+  push: "notifications",
+  camera: "camera",
+  microphone: "microphone",
+  geolocation: "geolocation",
+  "clipboard-read": "clipboard-read",
+  // PermissionStatus.name in Chromium, for some of them.
+  video_capture: "camera",
+  audio_capture: "microphone",
+  clipboard_read: "clipboard-read",
+};
+
 /** The extension a page or worker belongs to, from its origin. */
 function extensionIdOf(origin: string): string | null {
   const m = /^chrome-extension:\/\/([a-p]{32})(\/|$)/.exec(origin);
@@ -55,8 +78,36 @@ export class Permissions {
   private readonly pending = new Map<number, Pending>();
   /** Remembered decisions of private windows, gone when the app quits. */
   private readonly privateDecisions = new Map<string, Decision>();
+  /** Answers not remembered, until the app quits ("n …" normal, "p …" private windows). */
+  private readonly sessionDecisions = new Map<string, Decision>();
 
   constructor(private readonly browser: Browser) {}
+
+  /** Answers the web preload: is a page's permission still to be asked for? */
+  listen(): void {
+    ipcMain.on(PERMISSION_STATE_CHANNEL, (event: IpcMainEvent, name: unknown) => {
+      let state: PermissionState = "deny";
+      try {
+        state = this.pageState(event.sender, event.senderFrame?.url ?? "", name);
+      } catch {
+        // Unknown: as Electron says it (denied).
+      }
+      try {
+        event.returnValue = state;
+      } catch {
+        // The page is gone.
+      }
+    });
+  }
+
+  /** What a page in a tab may know about a permission of its own. */
+  private pageState(wc: WebContents, url: string, name: unknown): PermissionState {
+    const kind = typeof name === "string" ? PAGE_PERMISSIONS[name] : undefined;
+    const tab = this.browser.tabFor(wc.id);
+    const origin = originOf(url || tab?.url || "");
+    if (!kind || !tab || !/^https?:\/\//.test(origin)) return "deny";
+    return this.decision(origin, kind, tab.window.isPrivate) ?? "ask";
+  }
 
   install(ses: Session, isPrivate: boolean): void {
     ses.setPermissionRequestHandler((wc, permission, callback, details) => {
@@ -78,11 +129,20 @@ export class Permissions {
     if (!entry) return;
     this.pending.delete(id);
     const { prompt } = entry;
+    const kinds: PermissionKind[] =
+      prompt.kind === "camera-microphone" ? ["camera", "microphone"] : [prompt.kind];
+    const decision = allow ? "allow" : "deny";
     if (remember && prompt.kind !== "open-external") {
-      const kinds: PermissionKind[] =
-        prompt.kind === "camera-microphone" ? ["camera", "microphone"] : [prompt.kind];
+      for (const kind of kinds) this.remember(prompt.origin, kind, decision, entry.private);
+    } else {
+      // Not remembered: it holds until Moon Browser closes, so the page sees
+      // it was allowed (or not) and doesn't ask again at once.
       for (const kind of kinds)
-        this.remember(prompt.origin, kind, allow ? "allow" : "deny", entry.private);
+        if (Object.values(PAGE_PERMISSIONS).includes(kind))
+          this.sessionDecisions.set(
+            `${entry.private ? "p" : "n"} ${prompt.origin} ${kind}`,
+            decision,
+          );
     }
     for (const resolve of entry.resolvers) resolve(allow);
     if (prompt.kind === "popup" && allow && prompt.detail) {
@@ -122,6 +182,8 @@ export class Permissions {
   private decision(origin: string, kind: PermissionKind, isPrivate: boolean): Decision | undefined {
     const key = `${origin} ${kind}`;
     if (isPrivate && this.privateDecisions.has(key)) return this.privateDecisions.get(key);
+    const forSession = this.sessionDecisions.get(`${isPrivate ? "p" : "n"} ${key}`);
+    if (forSession) return forSession;
     return this.browser.profile.permission(origin, kind);
   }
 
@@ -131,8 +193,18 @@ export class Permissions {
     decision: Decision,
     isPrivate: boolean,
   ): void {
+    this.sessionDecisions.delete(`${isPrivate ? "p" : "n"} ${origin} ${kind}`);
     if (isPrivate) this.privateDecisions.set(`${origin} ${kind}`, decision);
     else this.browser.profile.setPermission(origin, kind, decision);
+  }
+
+  /** Settings → Site permissions reset a site: its answers of this session go too. */
+  reset(origin: string, kind?: PermissionKind): void {
+    this.browser.profile.resetPermission(origin, kind);
+    for (const key of this.sessionDecisions.keys()) {
+      const [, keyOrigin, keyKind] = key.split(" ");
+      if (keyOrigin === origin && (!kind || keyKind === kind)) this.sessionDecisions.delete(key);
+    }
   }
 
   private ask(tab: Tab, kind: PermissionKind, origin: string, detail?: string): Promise<boolean> {

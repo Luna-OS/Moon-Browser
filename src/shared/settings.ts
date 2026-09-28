@@ -4,6 +4,7 @@
  * Moon Browser from starting — unknown or invalid fields fall back to the
  * defaults, known ones are kept.
  */
+import { sanitizeCustomDns, sanitizeDnsSetting } from "./dns";
 import { isValidCustomSearchUrl, SEARCH_ENGINES } from "./engines";
 import type { SearchEngineId, Settings } from "./types";
 
@@ -29,6 +30,7 @@ export function defaultSettings(platform: string): Settings {
     webrtcProtection: true,
     stripTrackingParams: true,
     secureDns: "automatic",
+    customDns: [],
     clearOnExit: false,
     sleepTabs: true,
     sleepAfterMinutes: 60,
@@ -93,6 +95,7 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     : d.protectionAllowlist;
 
   const sleep = Number(raw.sleepAfterMinutes);
+  const customDns = sanitizeCustomDns(raw.customDns);
 
   return {
     theme: oneOf(raw.theme, ["dark", "light", "system"] as const, d.theme),
@@ -112,11 +115,8 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     globalPrivacyControl: bool(raw.globalPrivacyControl, d.globalPrivacyControl),
     webrtcProtection: bool(raw.webrtcProtection, d.webrtcProtection),
     stripTrackingParams: bool(raw.stripTrackingParams, d.stripTrackingParams),
-    secureDns: oneOf(
-      raw.secureDns,
-      ["automatic", "quad9", "cloudflare", "mullvad", "off"] as const,
-      d.secureDns,
-    ),
+    secureDns: sanitizeDnsSetting(raw.secureDns, customDns, d.secureDns),
+    customDns,
     clearOnExit: bool(raw.clearOnExit, d.clearOnExit),
     sleepTabs: bool(raw.sleepTabs, d.sleepTabs),
     sleepAfterMinutes: (SLEEP_CHOICES as readonly number[]).includes(sleep)

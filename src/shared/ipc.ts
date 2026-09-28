@@ -226,5 +226,15 @@ export type PageDialogKind = "alert" | "confirm" | "prompt";
 /** "native": Electron's own box asks (outside a tab, e.g. an extension's pop-up). */
 export type PageDialogReply = { native: true } | { ok: boolean; text: string | null };
 
+/**
+ * Whether a page's permission (by its web name: "notifications", "camera",
+ * …) is still to be asked for, asked synchronously by the web preload; the
+ * answer is a PermissionState.
+ */
+export const PERMISSION_STATE_CHANNEL = "moon:permission-state";
+
+/** "ask": nobody decided yet, so the page may ask (Chrome's "default" and "prompt"). */
+export type PermissionState = "allow" | "deny" | "ask";
+
 export type InternalEvent =
   "settings" | "downloads" | "bookmarks" | "history" | "adblock" | "extensions" | "update";
