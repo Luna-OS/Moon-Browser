@@ -395,11 +395,14 @@ export class Profile {
   topSites(limit: number): HistoryEntry[] {
     const hidden = new Set(this.stats.get().hiddenTopSites);
     const now = Date.now();
-    const byHost = new Map<string, { entry: HistoryEntry; score: number }>();
+    const byHost = new Map<string, { entry: HistoryEntry; path: number; score: number }>();
     for (const e of this.history.get().values()) {
       let host: string;
+      let path: number;
       try {
-        host = new URL(e.url).host;
+        const u = new URL(e.url);
+        host = u.host;
+        path = u.pathname.length;
       } catch {
         continue;
       }
@@ -408,11 +411,14 @@ export class Profile {
       const score = (e.visits + e.typed * 2) / (1 + age / 7);
       const prev = byHost.get(host);
       if (!prev) {
-        byHost.set(host, { entry: e, score });
+        byHost.set(host, { entry: e, path, score });
       } else {
         // Prefer the site's root page as the tile, and add up the host's visits.
-        const better = new URL(e.url).pathname.length < new URL(prev.entry.url).pathname.length;
-        byHost.set(host, { entry: better ? e : prev.entry, score: prev.score + score });
+        if (path < prev.path) {
+          prev.entry = e;
+          prev.path = path;
+        }
+        prev.score += score;
       }
     }
     return [...byHost.values()]

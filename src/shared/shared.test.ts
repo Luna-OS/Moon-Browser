@@ -393,6 +393,43 @@ describe("suggestions", () => {
     expect(inlineCompletion("git hub", history, now)).toBeNull();
     expect(inlineCompletion("github.com/", history, now)).toBeNull();
   });
+
+  it("completes hosts behind www. and user info", () => {
+    expect(inlineCompletion("exa", [entry("https://www.example.com/a", "A", 1)], now)).toBe(
+      "mple.com",
+    );
+    expect(inlineCompletion("Exa", [entry("https://Example.org/", "B", 1)], now)).toBe("mple.org");
+    expect(inlineCompletion("exa", [entry("https://me:secret@example.net/", "C", 1)], now)).toBe(
+      "mple.net",
+    );
+  });
+
+  it("scores words in the title and the address", () => {
+    expect(matchScore("moon wiki", "https://en.wikipedia.org/wiki/Moon", "Moon")).toBe(8);
+    expect(matchScore("oon", "https://example.com/", "Moon")).toBe(1);
+    expect(matchScore("moon xyz", "https://example.com/", "Moon")).toBe(0);
+    expect(matchScore("example", "http://www.example.com/", "")).toBe(10);
+  });
+
+  it("adds the frecency of a visited bookmark", () => {
+    const bookmark = (url: string, title: string) => ({
+      id: url,
+      url,
+      title,
+      favicon: null,
+      created: 0,
+      parent: null,
+      isFolder: false,
+    });
+    const s = suggest("lab", {
+      history: [entry("https://lab.example/", "Lab", 50)],
+      bookmarks: [bookmark("https://lab.example/", "Lab"), bookmark("https://lab.test/", "Lab")],
+      tabs: [],
+      now,
+    });
+    expect(s.map((x) => x.url)).toEqual(["https://lab.example/", "https://lab.test/"]);
+    expect(s.every((x) => x.kind === "bookmark")).toBe(true);
+  });
 });
 
 describe("split view layout", () => {

@@ -8,7 +8,13 @@ import type { Bookmark, HistoryEntry, Suggestion } from "./types";
 const DAY = 24 * 60 * 60 * 1000;
 
 function stripScheme(url: string): string {
-  return url.replace(/^[a-z-]+:\/\//i, "").replace(/^www\./, "");
+  // The common case without regular expressions: it runs for every entry.
+  const bare = url.startsWith("https://")
+    ? url.slice(8)
+    : url.startsWith("http://")
+      ? url.slice(7)
+      : url.replace(/^[a-z-]+:\/\//i, "");
+  return bare.startsWith("www.") ? bare.slice(4) : bare;
 }
 
 /**
@@ -16,20 +22,35 @@ function stripScheme(url: string): string {
  * the host beats a match at the start of a word, which beats any substring.
  */
 export function matchScore(text: string, url: string, title: string): number {
+  return matcher(text)(url, title);
+}
+
+/**
+ * matchScore for one typed text, prepared once: the address bar scores every
+ * history entry on each keystroke, so the query is lowercased, split and
+ * turned into regular expressions only once.
+ */
+function matcher(text: string): (url: string, title: string) => number {
   const q = text.trim().toLowerCase();
-  if (!q) return 0;
-  const bare = stripScheme(url).toLowerCase();
-  const t = title.toLowerCase();
-  if (bare.startsWith(q)) return 10;
-  const terms = q.split(/\s+/);
-  let score = 0;
-  for (const term of terms) {
-    const wordStart = new RegExp(`(^|[\\s/._-])${escapeRegExp(term)}`);
-    if (wordStart.test(t) || wordStart.test(bare)) score += 4;
-    else if (t.includes(term) || bare.includes(term)) score += 1;
-    else return 0;
-  }
-  return score;
+  if (!q) return () => 0;
+  const terms = q.split(/\s+/).map((term) => ({
+    term,
+    wordStart: new RegExp(`(^|[\\s/._-])${escapeRegExp(term)}`),
+  }));
+  return (url, title) => {
+    const bare = stripScheme(url).toLowerCase();
+    if (bare.startsWith(q)) return 10;
+    let t: string | null = null;
+    let score = 0;
+    for (const { term, wordStart } of terms) {
+      // Most entries match nothing: check for the term at all first.
+      const inUrl = bare.includes(term);
+      t ??= title.toLowerCase();
+      if (!inUrl && !t.includes(term)) return 0;
+      score += wordStart.test(t) || (inUrl && wordStart.test(bare)) ? 4 : 1;
+    }
+    return score;
+  };
 }
 
 function escapeRegExp(s: string): string {
@@ -54,10 +75,11 @@ export function suggest(text: string, sources: SuggestSources, limit = 6): Sugge
   const q = text.trim();
   if (!q) return [];
   const out: (Suggestion & { score: number })[] = [];
-  const seen = new Set<string>();
+
+  const score = matcher(q);
 
   for (const tab of sources.tabs) {
-    const m = matchScore(q, tab.url, tab.title);
+    const m = score(tab.url, tab.title);
     if (m > 0 && /^https?:/.test(tab.url)) {
       out.push({
         kind: "tab",
@@ -70,29 +92,32 @@ export function suggest(text: string, sources: SuggestSources, limit = 6): Sugge
     }
   }
 
-  const history = [...sources.history];
-  const visited = new Map(history.map((h) => [h.url, h]));
-
+  // Matching bookmarks, by address: a visited one also gets its frecency.
+  const bookmarked = new Map<string, Suggestion & { score: number }>();
   for (const b of sources.bookmarks) {
-    if (b.isFolder) continue;
-    const m = matchScore(q, b.url, b.title);
+    if (b.isFolder || bookmarked.has(b.url)) continue;
+    const m = score(b.url, b.title);
     if (m > 0) {
-      const h = visited.get(b.url);
-      const score = m * 100 + 40 + (h ? frecency(h, sources.now) : 0);
-      out.push({
-        kind: "bookmark",
+      const s = {
+        kind: "bookmark" as const,
         title: b.title || b.url,
         url: b.url,
         favicon: b.favicon,
-        score,
-      });
-      seen.add(b.url);
+        score: m * 100 + 40,
+      };
+      out.push(s);
+      bookmarked.set(b.url, s);
     }
   }
 
-  for (const h of history) {
-    if (seen.has(h.url)) continue;
-    const m = matchScore(q, h.url, h.title);
+  // One pass over the history, without copying it.
+  for (const h of sources.history) {
+    const b = bookmarked.get(h.url);
+    if (b) {
+      b.score += frecency(h, sources.now);
+      continue;
+    }
+    const m = score(h.url, h.title);
     if (m > 0) {
       out.push({
         kind: "history",
@@ -130,6 +155,14 @@ export function inlineCompletion(
   if (!q || /[\s/?#]/.test(q)) return null;
   let best: { host: string; score: number } | null = null;
   for (const h of history) {
+    // Parsing every address is slow; most can be ruled out from the text.
+    // (An address with user info ("user@host") is always parsed.)
+    const start = h.url.indexOf("://") + 3;
+    const at = h.url.indexOf("@", start);
+    const slash = h.url.indexOf("/", start);
+    const userInfo = at >= 0 && (slash < 0 || at < slash);
+    const lower = h.url.slice(start, start + 4 + q.length).toLowerCase();
+    if (!userInfo && !lower.startsWith(q) && !lower.startsWith(`www.${q}`)) continue;
     let host: string;
     try {
       const u = new URL(h.url);
