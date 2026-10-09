@@ -29,22 +29,11 @@ electronDownload:
 # signature covers it.
 afterSign: build/vmp-sign.cjs
 
-# Electron fuses — flipped in the binary itself, so they can't be turned
-# back on from outside:
-electronFuses:
-  # The app can't be abused as a plain Node.js interpreter …
-  runAsNode: false
-  enableNodeOptionsEnvironmentVariable: false
-  # … nor opened up with --inspect for debugging.
-  enableNodeCliInspectArguments: false
-  # Cookies are encrypted on disk with the system's key store.
-  enableCookieEncryption: true
-  # Only the signed-off app.asar is loaded, and it must match its hash.
-  onlyLoadAppFromAsar: true
-  enableEmbeddedAsarIntegrityValidation: true
-  loadBrowserProcessSpecificV8Snapshot: false
-  # file:// gets no extra powers beyond a normal browser's.
-  grantFileProtocolExtraPrivileges: false
+# Electron fuses (run as Node.js off, cookie encryption on, only the checked
+# app.asar, …) are flipped by build/fuses.cjs — on Linux only: castLabs' EVS
+# refuses to sign a Windows executable with flipped fuses for Verified Media
+# Path, which Netflix needs.
+afterPack: build/fuses.cjs
 
 # Updates come from GitHub Releases: electron-builder writes latest.yml /
 # latest-linux.yml next to the installers, the release workflow uploads

@@ -36,7 +36,12 @@ Fixes for Chromium itself arrive with Electron updates; Moon Browser follows the
 
 ### The shipped binary
 
-Electron fuses are flipped at package time (`electron-builder.yml`):
+Electron fuses are flipped at package time (`build/fuses.cjs`) — in the Linux builds. The
+Windows build keeps Electron's defaults: castLabs' EVS refuses to sign an executable with
+flipped fuses for Verified Media Path, without which Netflix and other streaming services don't
+play on Windows. There, Moon Browser can be started as a Node.js runtime
+(`ELECTRON_RUN_AS_NODE`), takes `NODE_OPTIONS` and `--inspect`, stores cookies unencrypted (in
+the user's profile folder) and doesn't check `app.asar` against its hash.
 
 | Fuse                                   | Setting | Why                                             |
 |----------------------------------------|---------|-------------------------------------------------|
@@ -213,5 +218,6 @@ never imported.
 - On Windows, Netflix and other streaming services only accept Widevine in a browser signed for
   Verified Media Path. The release workflow signs it with castLabs' EVS service when the
   repository has an EVS account (`EVS_ACCOUNT_NAME` and `EVS_PASSWD` secrets); without one,
-  those services refuse to play there. Linux has no Verified Media Path; Netflix plays there in
+  those services refuse to play there. For that signature, the Windows build has no Electron
+  fuses (see *The shipped binary*). Linux has no Verified Media Path; Netflix plays there in
   lower resolution, as in Chrome on Linux.
