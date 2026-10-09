@@ -154,7 +154,7 @@ jobs:
           if (Registered) { throw "still registered after uninstalling" }
           Write-Host "Installed, updated and uninstalled cleanly."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: moon-browser-${{ runner.os }}
           path: |
