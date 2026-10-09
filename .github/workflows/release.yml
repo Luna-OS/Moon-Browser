@@ -67,7 +67,7 @@ jobs:
       # browser signed for Verified Media Path: build/vmp-sign.cjs signs it
       # with castLabs EVS when the repository has an EVS account (secrets
       # EVS_ACCOUNT_NAME and EVS_PASSWD).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install --upgrade castlabs-evs
