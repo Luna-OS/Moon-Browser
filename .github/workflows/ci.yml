@@ -85,7 +85,19 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm
       - run: npm ci
       - run: npm run build
+      # Windows: signed for Verified Media Path like a release
+      # (build/vmp-sign.cjs), where the EVS secrets are available — not for
+      # pull requests from forks or Dependabot.
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Windows'
+        with:
+          python-version: "3.12"
+      - if: runner.os == 'Windows'
+        run: pip install --upgrade castlabs-evs
       - run: npx electron-builder ${{ matrix.targets }} --publish never
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
 
       # Start the packaged app (with its fuses flipped) and make sure it is
       # still running after 20 s.
