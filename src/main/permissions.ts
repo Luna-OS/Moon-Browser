@@ -7,6 +7,9 @@
  * in private windows only until the window closes. Answers not remembered
  * hold until Moon Browser closes.
  *
+ * Protected content (DRM, for Netflix and the like) is allowed as in Chrome,
+ * unless switched off in Settings.
+ *
  * Pages see what's undecided as undecided: Chrome's "default" for
  * Notification.permission and "prompt" for navigator.permissions, not
  * "denied" (Electron knows only yes and no) — sites that see "denied" say
@@ -278,6 +281,8 @@ export class Permissions {
         return this.ask(tab, "notifications", origin);
       case "clipboard-read":
         return this.ask(tab, "clipboard-read", origin);
+      case "mediaKeySystem":
+        return this.browser.startedWith.protectedContent;
       case "openExternal": {
         const external = (details as { externalURL?: string }).externalURL ?? "";
         // Only real app links, never file:// or javascript: in disguise.
@@ -324,6 +329,8 @@ export class Permissions {
       case "notifications":
       case "clipboard-read":
         return this.decision(origin, permission, isPrivate) === "allow";
+      case "mediaKeySystem":
+        return this.browser.startedWith.protectedContent;
       default:
         return false;
     }

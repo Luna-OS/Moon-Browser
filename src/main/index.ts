@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Browser } from "./browser";
+import { applyEngineSettings, prepareProtectedContent } from "./engine-settings";
 import { registerIpc } from "./ipc";
 import { registerSchemes } from "./protocol";
 
@@ -60,6 +61,8 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   const browser = new Browser();
+  // Hardware acceleration and protected content, as set in Settings → System.
+  applyEngineSettings(browser.startedWith);
 
   app.on("second-instance", (_event, argv) => {
     const urls = urlsFromArgv(argv);
@@ -108,7 +111,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(async () => {
-    await browser.init();
+    await Promise.all([browser.init(), prepareProtectedContent(browser.startedWith)]);
     registerIpc(browser);
     browser.restoreOrOpen(urlsFromArgv(process.argv));
   });

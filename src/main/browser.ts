@@ -26,6 +26,7 @@ import { acceptLanguages, cleanUserAgent } from "@shared/useragent";
 import { Adblocker } from "./adblock";
 import { DefaultBrowser } from "./default-browser";
 import { DnsBridge } from "./dns-bridge";
+import type { EngineSettings } from "./engine-settings";
 import { Downloads } from "./downloads";
 import { Extensions } from "./extensions";
 import { Permissions } from "./permissions";
@@ -76,8 +77,13 @@ export class Browser {
   private userAgent = "";
   quitting = false;
 
+  /** The settings Chromium started with (those that need a restart to change). */
+  readonly startedWith: EngineSettings;
+
   constructor() {
     this.profile = new Profile(process.platform);
+    const { protectedContent, hardwareAcceleration } = this.settings;
+    this.startedWith = { protectedContent, hardwareAcceleration };
     this.permissions = new Permissions(this);
     this.downloads = new Downloads(this);
     this.importer = new Importer(this.profile);
@@ -513,6 +519,14 @@ export class Browser {
     urls.forEach((url, i) => win.openTab({ url, background: i > 0 }));
     if (win.win.isMinimized()) win.win.restore();
     win.win.focus();
+  }
+
+  /** Starts Moon Browser again with the same tabs (after changing a setting that needs it). */
+  restart(): void {
+    this.profile.stats.get().restoreAfterUpdate = true;
+    this.profile.stats.changed();
+    app.relaunch();
+    app.quit();
   }
 
   quit(): void {

@@ -184,6 +184,20 @@ describe("settings", () => {
     expect(s.homePage).toBe("");
   });
 
+  it("plays protected content and uses the graphics card unless switched off", () => {
+    const d = defaultSettings("win32");
+    expect(d.protectedContent).toBe(true);
+    expect(d.hardwareAcceleration).toBe(true);
+    // Profiles from before these settings get the defaults.
+    expect(sanitizeSettings({ theme: "light" }, "linux").protectedContent).toBe(true);
+    const off = sanitizeSettings({ protectedContent: false, hardwareAcceleration: false }, "linux");
+    expect(off.protectedContent).toBe(false);
+    expect(off.hardwareAcceleration).toBe(false);
+    expect(sanitizeSettings({ hardwareAcceleration: "no" }, "linux").hardwareAcceleration).toBe(
+      true,
+    );
+  });
+
   it("keeps valid values", () => {
     const s = sanitizeSettings(
       {

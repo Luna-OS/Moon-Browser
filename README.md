@@ -46,6 +46,9 @@ and nothing phoning home. It wears the same night-sky design as
 - **Continue where you left off** — your tabs and tab groups come back after a restart (switch
   it off under *Settings → Tabs & startup*)
 - **Split view** — two tabs side by side, with a divider to resize
+- **Netflix, Disney+, Prime Video and Spotify** play: protected (DRM) content works with
+  Google's Widevine module, through castLabs' Electron for Content Security. *Settings → System*
+  switches it off, as well as hardware acceleration
 - **Sleeping tabs** — tabs you haven't looked at for a while give their memory back and wake up
   when you return
 - **Address bar** with suggestions from your history, bookmarks and open tabs, and inline
@@ -75,7 +78,9 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
   to refresh its filter lists every few days and to look for a new release on GitHub (every few
   hours; *Settings → Updates* switches it off). Installed extensions are kept up to date from the
   Chrome Web Store. Even Chromium's spell-check dictionaries are not fetched from Google unless
-  you switch spell checking on (Linux).
+  you switch spell checking on (Linux). The Widevine module for protected content (Netflix and
+  the like) comes from Google and is kept up to date from there, unless you switch protected
+  content off.
 - **HTTPS first** — every site is tried over HTTPS; if a site has no working HTTPS, or sends you
   back to HTTP, Moon Browser warns before loading it insecurely. Nothing is downgraded silently.
 - **Dangerous pages are stopped** before they load: sites on the malware, scam and tracker lists

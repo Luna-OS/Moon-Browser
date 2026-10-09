@@ -65,6 +65,13 @@ export interface Settings {
   newTabShortcuts: boolean;
   /** Look for a new version of Moon Browser every few hours. */
   autoUpdate: boolean;
+  /**
+   * Sites may play protected (DRM) content — Netflix, Disney+, Spotify — with
+   * the Widevine module. Takes effect after a restart.
+   */
+  protectedContent: boolean;
+  /** Use the graphics card to draw pages and video. Takes effect after a restart. */
+  hardwareAcceleration: boolean;
 }
 
 export interface TabInfo {

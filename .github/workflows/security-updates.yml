@@ -46,7 +46,7 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Look for a newer Electron
+      - name: Look for a newer Electron (castLabs ECS)
         id: look
         env:
           FROM: ${{ inputs.try_from }}

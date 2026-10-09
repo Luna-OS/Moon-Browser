@@ -1504,6 +1504,37 @@ try {
     await ui.getByRole("button", { name: "Close split view" }).first().click();
   });
 
+  await check("protected content (Widevine) plays, as Netflix needs it", async () => {
+    await ui.evaluate(
+      (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "background" }),
+      `${base}/drm`,
+    );
+    const page = await waitFor(
+      () => app.windows().find((p) => p.url() === `${base}/drm`),
+      "the page for the DRM check",
+    );
+    // The Widevine module is installed on the first start: give it time.
+    let result = "";
+    for (let i = 0; i < 24 && !result.startsWith("ok"); i++) {
+      if (i) await new Promise((r) => setTimeout(r, 5000));
+      result = await page.evaluate(async () => {
+        try {
+          const access = await navigator.requestMediaKeySystemAccess("com.widevine.alpha", [
+            {
+              initDataTypes: ["cenc"],
+              videoCapabilities: [{ contentType: 'video/mp4; codecs="avc1.42E01E"' }],
+            },
+          ]);
+          await access.createMediaKeys();
+          return "ok";
+        } catch (err) {
+          return `${err.name}: ${err.message}`;
+        }
+      });
+    }
+    if (result !== "ok") throw new Error(`no Widevine: ${result}`);
+  });
+
   await check("the window survives for a while without crashing", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);

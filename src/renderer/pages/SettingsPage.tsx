@@ -490,6 +490,29 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             checked={s.spellcheck}
             onChange={(v) => set({ spellcheck: v })}
           />
+          <Toggle
+            label="Protected content"
+            hint="Lets sites like Netflix, Disney+ and Spotify play DRM-protected video and music, with Google's Widevine module (downloaded and kept up to date from Google's servers)."
+            checked={s.protectedContent}
+            onChange={(v) => set({ protectedContent: v })}
+          />
+          <Toggle
+            label="Hardware acceleration"
+            hint="Uses your graphics card to draw pages and video. Switch it off if pages flicker or show blank areas."
+            checked={s.hardwareAcceleration}
+            onChange={(v) => set({ hardwareAcceleration: v })}
+          />
+          {info.restartNeeded && (
+            <Row label="Restart to apply" hint="Your tabs come back after the restart.">
+              <button
+                type="button"
+                className="mb-btn mb-btn-primary"
+                onClick={() => void api.restart()}
+              >
+                Restart
+              </button>
+            </Row>
+          )}
         </Card>
 
         <Card
