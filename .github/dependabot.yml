@@ -1,5 +1,5 @@
-# A browser is only as safe as its engine: Electron releases carry
-# Chromium's security fixes, so Moon Browser follows them closely.
+# The tools Moon Browser is built with. Its engine (Electron, with Chromium's
+# security fixes) is followed by the Security updates workflow instead.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -7,13 +7,23 @@ updates:
     schedule:
       interval: weekly
     groups:
-      electron:
-        patterns: ["electron"]
       blocker:
         patterns: ["@ghostery/*", "tldts"]
       tooling:
         patterns: ["*"]
         exclude-patterns: ["electron", "@ghostery/*", "tldts"]
+    ignore:
+      # Electron is castLabs' build with Widevine, from GitHub: the Security
+      # updates workflow follows it (scripts/security-update.mjs).
+      - dependency-name: "electron"
+      # Not yet supported by the ESLint plugins (eslint-plugin-jsx-a11y wants
+      # ESLint 9) and typescript-eslint (TypeScript below 6.1).
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
