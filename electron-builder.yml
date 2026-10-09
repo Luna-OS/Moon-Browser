@@ -18,6 +18,17 @@ files:
   - package.json
 asar: true
 
+# castLabs' Electron for Content Security (Widevine for Netflix and the like,
+# see src/main/engine-settings.ts) is published on castLabs' GitHub releases.
+electronDownload:
+  mirror: https://github.com/castlabs/electron-releases/releases/download/
+
+# Windows: Netflix and others only accept a Widevine module whose browser is
+# signed for Verified Media Path (castLabs EVS, see build/vmp-sign.cjs).
+# After electron-builder has edited and signed the executable: the VMP
+# signature covers it.
+afterSign: build/vmp-sign.cjs
+
 # Electron fuses — flipped in the binary itself, so they can't be turned
 # back on from outside:
 electronFuses:

@@ -43,6 +43,8 @@ export function defaultSettings(platform: string): Settings {
     spellcheck: platform === "win32",
     newTabShortcuts: true,
     autoUpdate: true,
+    protectedContent: true,
+    hardwareAcceleration: true,
   };
 }
 
@@ -129,6 +131,8 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     spellcheck: bool(raw.spellcheck, d.spellcheck),
     newTabShortcuts: bool(raw.newTabShortcuts, d.newTabShortcuts),
     autoUpdate: bool(raw.autoUpdate, d.autoUpdate),
+    protectedContent: bool(raw.protectedContent, d.protectedContent),
+    hardwareAcceleration: bool(raw.hardwareAcceleration, d.hardwareAcceleration),
   };
 }
 

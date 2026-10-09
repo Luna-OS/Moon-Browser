@@ -81,6 +81,12 @@ can never be read as a command-line switch.
   installed, Google's extension update server for them. There is no telemetry, crash reporting
   or sync. Spell-check dictionaries (downloaded from Google on Linux) are only fetched if spell
   checking is switched on.
+- Protected content (DRM, which Netflix, Disney+ and Spotify need) uses Google's Widevine
+  module, which is closed source. Moon Browser is built on castLabs' Electron for Content
+  Security (ECS): Electron with Widevine support, installed and kept up to date through
+  Chromium's component updater from Google's servers. The module runs in its own sandboxed
+  process, as in Chrome. *Settings → System → Protected content* switches it off: then the
+  component updater doesn't run (nothing is downloaded) and sites are refused media keys.
 
 ### Updates
 
@@ -97,11 +103,13 @@ uninstalled, not while an update replaces it; the profile is never deleted by th
 
 ### Engine security updates
 
-Moon Browser's engine is Chromium, inside Electron. Chromium's security fixes — the ones Chrome
-and Helium ship — reach Moon Browser through Electron's patch releases, which carry them to
-Electron's supported major versions (its latest three), usually within days. The *Security
+Moon Browser's engine is Chromium, inside Electron — castLabs' Electron for Content Security,
+which is Electron with Widevine support, released for each Electron version shortly after it.
+Chromium's security fixes — the ones Chrome and Helium ship — reach Moon Browser through
+Electron's patch releases, which carry them to Electron's supported major versions (its latest
+three), usually within days, and then through castLabs' release of them. The *Security
 updates* workflow (`.github/workflows/security-updates.yml`, `scripts/security-update.mjs`)
-looks for a newer Electron release of Moon Browser's major version every six hours. It installs
+looks for a newer castLabs release of Moon Browser's Electron major version every six hours. It installs
 it, runs all of CI with it (unit tests, the end-to-end test on Linux and Windows, packaging, the
 installer test) and, only if everything passes, puts it on `main` and releases the next patch
 version; installed copies then update themselves. A failed test or a new Electron major version
@@ -202,3 +210,8 @@ never imported.
 - Chromium's Safe Browsing service isn't part of Electron; the Moon Shield lists (including
   uBlock Origin's *Badware risks* list) and, optionally, Quad9 DNS cover part of it.
 - The builds are not code-signed yet.
+- On Windows, Netflix and other streaming services only accept Widevine in a browser signed for
+  Verified Media Path. The release workflow signs it with castLabs' EVS service when the
+  repository has an EVS account (`EVS_ACCOUNT_NAME` and `EVS_PASSWD` secrets); without one,
+  those services refuse to play there. Linux has no Verified Media Path; Netflix plays there in
+  lower resolution, as in Chrome on Linux.

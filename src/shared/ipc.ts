@@ -110,6 +110,7 @@ export type UiStateListener = (state: WindowState) => void;
 export type InternalMethod =
   | "settings.get"
   | "settings.set"
+  | "app.restart"
   | "engines.list"
   | "newtab.info"
   | "topSites.hide"
@@ -168,6 +169,7 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
   settings: [
     ...COMMON,
     "settings.set",
+    "app.restart",
     "engines.list",
     "data.clear",
     "adblock.status",

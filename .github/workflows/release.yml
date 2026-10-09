@@ -62,7 +62,25 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx electron-builder --win --publish never
+
+      # Netflix and other streaming services only accept Widevine in a
+      # browser signed for Verified Media Path: build/vmp-sign.cjs signs it
+      # with castLabs EVS when the repository has an EVS account (secrets
+      # EVS_ACCOUNT_NAME and EVS_PASSWD).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --upgrade castlabs-evs
+      - name: Package
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+        shell: bash
+        run: |
+          npx electron-builder --win --publish never
+          if [ -z "$EVS_ACCOUNT_NAME" ]; then
+            echo "::warning::Not signed for Verified Media Path (no EVS secrets): Netflix won't play on Windows."
+          fi
 
       - name: Checksums
         shell: bash

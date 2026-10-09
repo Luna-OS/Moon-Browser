@@ -2,10 +2,13 @@
  * Looks for a security update of Moon Browser's engine, for
  * .github/workflows/security-updates.yml.
  *
- * Moon Browser's engine is Chromium, inside Electron. Chromium's security
- * fixes — the ones Chrome and Helium ship — reach Electron's supported
- * versions in its patch releases, usually within days. So: is there a newer
- * Electron release of the major version Moon Browser is built on?
+ * Moon Browser's engine is Chromium, inside Electron — castLabs' Electron for
+ * Content Security (Electron with Widevine, for Netflix and the like), which
+ * castLabs releases for each Electron version shortly after it. Chromium's
+ * security fixes — the ones Chrome and Helium ship — reach Electron's
+ * supported versions in its patch releases, usually within days. So: is
+ * there a newer castLabs release of the Electron major version Moon Browser
+ * is built on?
  *
  *   node scripts/security-update.mjs           what it found, as key=value lines ($GITHUB_OUTPUT)
  *   node scripts/security-update.mjs --apply   and, if there's an update, installs it and
@@ -30,6 +33,11 @@ const npm = (...a) =>
     shell: process.platform === "win32",
   }).trim();
 
+/** castLabs' releases are on GitHub, tagged v44.5.1+wvcus. */
+const ECS = "https://github.com/castlabs/electron-releases";
+const git = (...a) =>
+  execFileSync("git", a, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }).trim();
+
 /** Release versions only (no alphas or betas), compared number by number. */
 const STABLE = /^\d+\.\d+\.\d+$/;
 const compare = (a, b) => {
@@ -39,16 +47,16 @@ const compare = (a, b) => {
 };
 
 const lock = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
-const current = from ?? lock.packages["node_modules/electron"].version;
+const current = (from ?? lock.packages["node_modules/electron"].version).replace(/\+.*$/, "");
 const major = Number(current.split(".")[0]);
 
-const releases = [].concat(JSON.parse(npm("view", `electron@${major}`, "version", "--json")));
-const newest =
-  releases
-    .filter((v) => STABLE.test(v))
-    .sort(compare)
-    .at(-1) ?? current;
-const latest = JSON.parse(npm("view", "electron", "dist-tags", "--json")).latest;
+const releases = git("ls-remote", "--tags", "--refs", ECS)
+  .split("\n")
+  .map((line) => /refs\/tags\/v(\d+\.\d+\.\d+)\+wvcus$/.exec(line)?.[1])
+  .filter((v) => v !== undefined && STABLE.test(v))
+  .sort(compare);
+const newest = releases.filter((v) => Number(v.split(".")[0]) === major).at(-1) ?? current;
+const latest = releases.at(-1) ?? current;
 const update = compare(newest, current) > 0;
 
 /** The Chromium version Helium builds on right now, for comparison ("" if unknown). */
@@ -71,12 +79,12 @@ const out = {
   update: String(update),
   // A newer major version is no automatic update: it can change Electron's
   // APIs, so it's announced in an issue instead.
-  newer_major: STABLE.test(latest) && Number(latest.split(".")[0]) > major ? latest : "",
+  newer_major: Number(latest.split(".")[0]) > major ? latest : "",
   helium_chromium: await heliumChromium(),
 };
 
 if (update && apply) {
-  npm("install", "--save-dev", `electron@^${newest}`);
+  npm("install", "--save-dev", `electron@${ECS}#v${newest}+wvcus`);
   out.version = npm("version", "patch", "--no-git-tag-version").replace(/^v/, "");
 }
 

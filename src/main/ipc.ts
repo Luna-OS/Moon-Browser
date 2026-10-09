@@ -26,6 +26,7 @@ import { normalizeSite } from "@shared/settings";
 import { inlineCompletion, suggest } from "@shared/suggest";
 import type { AboutInfo, ClearDataOptions, PermissionKind, Suggestion } from "@shared/types";
 import type { Browser } from "./browser";
+import { engineSettingsChanged } from "./engine-settings";
 import type { Tab } from "./tab";
 import { isOpenableUrl } from "./window";
 
@@ -330,7 +331,9 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       settings: browser.settings,
       theme: browser.resolvedTheme(),
       platform: process.platform,
+      restartNeeded: engineSettingsChanged(browser.startedWith, browser.settings),
     }),
+    "app.restart": () => browser.restart(),
     "settings.set": (_tab, patch) => browser.updateSettings(isObj(patch) ? patch : {}),
     "engines.list": () => ({ engines: SEARCH_ENGINES, bangs: BANGS }),
     "newtab.info": async (tab) => ({

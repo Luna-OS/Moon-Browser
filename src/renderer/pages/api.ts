@@ -29,6 +29,8 @@ export interface SettingsInfo {
   settings: Settings;
   theme: ResolvedTheme;
   platform: string;
+  /** A setting changed that takes effect after a restart. */
+  restartNeeded: boolean;
 }
 
 export interface NewTabInfo {
@@ -77,6 +79,7 @@ export const api = {
   removeProtectionException: (site: string) =>
     m().invoke("protection.remove", site) as Promise<void>,
   isDefaultBrowser: () => m().invoke("defaultBrowser.get") as Promise<boolean>,
+  restart: () => m().invoke("app.restart") as Promise<void>,
   makeDefaultBrowser: () => m().invoke("defaultBrowser.set") as Promise<boolean>,
   dismissDefaultHint: () => m().invoke("defaultBrowser.dismissHint") as Promise<void>,
   extensions: () => m().invoke("extensions.list") as Promise<ExtensionInfo[]>,
