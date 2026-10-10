@@ -42,6 +42,9 @@ flipped fuses for Verified Media Path, without which Netflix and other streaming
 play on Windows. There, Moon Browser can be started as a Node.js runtime
 (`ELECTRON_RUN_AS_NODE`), takes `NODE_OPTIONS` and `--inspect`, stores cookies unencrypted (in
 the user's profile folder) and doesn't check `app.asar` against its hash.
+A cookie store written encrypted by an earlier version is unreadable then: on the first start
+without encryption it is put aside (`Network/Cookies.encrypted-…`) and a new one started
+(`src/main/cookie-store.ts`), so sites ask to sign in again once.
 
 | Fuse                                   | Setting | Why                                             |
 |----------------------------------------|---------|-------------------------------------------------|
