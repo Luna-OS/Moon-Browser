@@ -13,7 +13,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { parse } from "tldts";
 import { blocksWholePage } from "@shared/security";
 import type { AdblockStatus } from "@shared/types";
-import { listsFor, RESOURCES_URL } from "./adblock-config";
+import { listsFor, MOON_FIXES, MOON_FIXES_ID, RESOURCES_URL } from "./adblock-config";
 import { adblockWorker, profilePath } from "./paths";
 
 const UPDATE_EVERY = 3 * 24 * 60 * 60 * 1000;
@@ -164,7 +164,7 @@ export class Adblocker {
   }
 
   private isStale(): boolean {
-    const wanted = listsFor(this.options.annoyances()).map((l) => l.url);
+    const wanted = [...listsFor(this.options.annoyances()).map((l) => l.url), MOON_FIXES_ID];
     const sameLists =
       wanted.length === this.lists.length && wanted.every((u) => this.lists.includes(u));
     return !this.engine || !sameLists || this.nextUpdateIn() <= 0;
@@ -216,12 +216,15 @@ export class Adblocker {
         Promise.all(lists.map((l) => fetchText(l.url))),
         fetchText(RESOURCES_URL).catch(() => null),
       ]);
-      const data = await parseInWorker(texts, resources);
+      const data = await parseInWorker([...texts, MOON_FIXES], resources);
       const engine = FiltersEngine.deserialize(data);
       await mkdir(profilePath("adblock"), { recursive: true });
       await writeFile(profilePath("adblock", "engine.bin.tmp"), data);
       await rename(profilePath("adblock", "engine.bin.tmp"), profilePath("adblock", "engine.bin"));
-      const meta: CacheMeta = { updatedAt: Date.now(), lists: lists.map((l) => l.url) };
+      const meta: CacheMeta = {
+        updatedAt: Date.now(),
+        lists: [...lists.map((l) => l.url), MOON_FIXES_ID],
+      };
       await writeFile(profilePath("adblock", "meta.json"), JSON.stringify(meta));
       this.engine = engine;
       this.updatedAt = meta.updatedAt;
