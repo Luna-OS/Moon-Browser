@@ -253,6 +253,8 @@ interface Stats {
   restoreAfterUpdate: boolean;
   /** Profiles from before 0.1.8 were switched to restoring their tabs once. */
   restoreByDefault: boolean;
+  /** The cookie store was started without encryption (src/main/cookie-store.ts). */
+  unencryptedCookies: boolean;
 }
 
 export class Profile {
@@ -306,6 +308,7 @@ export class Profile {
       defaultBrowserHintDismissed: isObj(raw) && raw.defaultBrowserHintDismissed === true,
       restoreAfterUpdate: isObj(raw) && raw.restoreAfterUpdate === true,
       restoreByDefault: isObj(raw) && raw.restoreByDefault === true,
+      unencryptedCookies: isObj(raw) && raw.unencryptedCookies === true,
     }));
   }
 

@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Browser } from "./browser";
+import { cookiesEncrypted, moveCookieStore } from "./cookie-store";
 import { applyEngineSettings, prepareProtectedContent } from "./engine-settings";
 import { registerIpc } from "./ipc";
 import { registerSchemes } from "./protocol";
@@ -61,6 +62,17 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   const browser = new Browser();
+  // A cookie store written encrypted is unreadable where cookies aren't
+  // encrypted (Windows since 0.1.22): start a new one, once.
+  {
+    const stats = browser.profile.stats.get();
+    if (!cookiesEncrypted(process.platform, app.isPackaged) && !stats.unencryptedCookies) {
+      if (moveCookieStore(app.getPath("userData")))
+        console.log("[moon] cookies were stored encrypted; starting a new cookie store");
+      stats.unencryptedCookies = true;
+      browser.profile.stats.changed();
+    }
+  }
   // Hardware acceleration and protected content, as set in Settings → System.
   applyEngineSettings(browser.startedWith);
 
