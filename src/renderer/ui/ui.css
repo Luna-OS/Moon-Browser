@@ -132,8 +132,26 @@ body {
     margin-right: 0.4rem;
   }
 }
+/* Narrow: no title; the icon (and on the active tab or on hover, the close
+   button) — narrower the tab can't hold more without the button sticking
+   out. */
+@container (max-width: 76px) {
+  .mb-tab-title,
+  .mb-tab-audio {
+    display: none;
+  }
+  .mb-tab-icon {
+    margin-left: 0.4rem;
+  }
+  .mb-tab:not([aria-selected="true"]):not(:hover) .mb-tab-icon {
+    margin-inline: auto;
+  }
+  .mb-tab-close {
+    margin-left: auto;
+  }
+}
 /* Narrowest: just the icon — or, on the active tab, just the close button. */
-@container (max-width: 52px) {
+@container (max-width: 58px) {
   .mb-tab-title,
   .mb-tab-audio,
   .mb-tab:not([aria-selected="true"]) .mb-tab-close {
