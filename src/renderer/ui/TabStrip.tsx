@@ -1,4 +1,11 @@
-import { useRef, useState, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import type { TabGroupInfo } from "@shared/tab-groups";
 import type { TabInfo, WindowState } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
@@ -46,6 +53,14 @@ export function TabStrip({
   const dragRef = useRef<Drag | null>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const draggedAway = useRef(false);
+
+  // When the tabs don't fit even at their narrowest, the strip scrolls: the
+  // active tab is always brought into view.
+  useEffect(() => {
+    tabsRef.current
+      ?.querySelector(`[data-tab-id="${state.activeId}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [state.activeId, state.tabs.length]);
 
   const isDragged = (el: HTMLElement, item: DragItem) =>
     item.kind === "tab"
@@ -174,6 +189,11 @@ export function TabStrip({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}
         onPointerCancel={onPointerEnd}
+        // The mouse wheel scrolls the tabs sideways.
+        onWheel={(e) => {
+          const el = tabsRef.current;
+          if (el && e.deltaY && el.scrollWidth > el.clientWidth) el.scrollLeft += e.deltaY;
+        }}
         onClickCapture={(e) => {
           if (!draggedAway.current) return;
           draggedAway.current = false;
@@ -293,7 +313,7 @@ function Tab({
       </span>
       {!tab.pinned && <span className="mb-tab-title">{tab.title}</span>}
       {!tab.pinned && tab.sleeping && (
-        <span className="text-(--mb-text-faint)" title="Asleep to save memory">
+        <span className="mb-tab-sleep text-(--mb-text-faint)" title="Asleep to save memory">
           <SleepIcon size={12} />
         </span>
       )}
