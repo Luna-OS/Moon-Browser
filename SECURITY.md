@@ -159,6 +159,15 @@ Moon Browser's Electron with the Chromium version Helium builds on.
   call goes through [koffi](https://koffi.dev/), whose native module ships with the Windows
   build (`resources/koffi`) and is loaded only when an extension asks.
 
+### Perplexity's look and Axo
+
+On `https://perplexity.ai` (and `www.`), Moon Browser adds a stylesheet that recolours the site
+and a script for Axo, the axolotl on the search box (`src/main/perplexity/`). The script runs in
+an isolated world: the page's own scripts can't see or call it, and it draws into a closed
+shadow root. It only reads the page's layout to place itself, sends nothing anywhere and keeps
+one flag in the site's local storage (whether Axo introduced itself). *Settings → Search* switches
+it off.
+
 ### Permissions
 
 Fullscreen, pointer lock, writing to the clipboard and similar harmless capabilities are granted.

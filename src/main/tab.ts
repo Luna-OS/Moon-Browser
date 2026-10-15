@@ -10,6 +10,8 @@ import { shortcutFor } from "@shared/shortcuts";
 import { originOf } from "@shared/sites";
 import type { SecurityState, TabError, TabInfo } from "@shared/types";
 import { showPageMenu } from "./context-menu";
+import { axoScript } from "./perplexity/axo";
+import { isPerplexity, PERPLEXITY_CSS } from "./perplexity/theme";
 import type { SavedTab } from "./profile";
 import type { MoonWindow } from "./window";
 
@@ -64,6 +66,9 @@ function isOpenable(url: string, from: string): boolean {
     return extensionHost(url) !== null && extensionHost(url) === extensionHost(from);
   return false;
 }
+
+/** The isolated world Axo runs in, apart from the page's own scripts. */
+const AXO_WORLD = 1077;
 
 export class Tab {
   private static nextId = 1;
@@ -427,6 +432,14 @@ export class Tab {
       this.applySavedZoom();
       this.recordVisit();
       this.changed();
+    });
+    // Perplexity in Moon's look, with Axo on its search box (Settings → Search).
+    wc.on("dom-ready", () => {
+      if (!browser.settings.perplexityLook || !isPerplexity(wc.getURL())) return;
+      void wc.insertCSS(PERPLEXITY_CSS, { cssOrigin: "author" }).catch(() => undefined);
+      void wc
+        .executeJavaScriptInIsolatedWorld(AXO_WORLD, [{ code: axoScript() }])
+        .catch(() => undefined);
     });
     wc.on("did-navigate-in-page", (_event, url, isMainFrame) => {
       if (!isMainFrame) return;

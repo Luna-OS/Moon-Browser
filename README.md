@@ -46,6 +46,9 @@ and nothing phoning home. It wears the same night-sky design as
 - **Continue where you left off** — your tabs and tab groups come back after a restart (switch
   it off under *Settings → Tabs & startup*)
 - **Split view** — two tabs side by side, with a divider to resize
+- **Perplexity in Moon's look** — the night sky and lavender instead of teal, and **Axo**, Moon
+  Code's pixel axolotl, sitting on the search box: it introduces itself, shows how the search works and
+  has tips when you click it (*Settings → Search* switches it off)
 - **Netflix, Disney+, Prime Video and Spotify** play: protected (DRM) content works with
   Google's Widevine module, through castLabs' Electron for Content Security. *Settings → System*
   switches it off, as well as hardware acceleration

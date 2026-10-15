@@ -219,6 +219,12 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             </form>
           </Row>
           <Toggle
+            label="Perplexity in Moon's look, with Axo"
+            hint="Perplexity wears the night sky, and Axo, the pixel axolotl from Moon Code, sits on its search box — click it for a tour of the search or a tip."
+            checked={s.perplexityLook}
+            onChange={(v) => set({ perplexityLook: v })}
+          />
+          <Toggle
             label="Bangs"
             hint={
               <>
