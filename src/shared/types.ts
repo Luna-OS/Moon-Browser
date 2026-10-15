@@ -72,6 +72,8 @@ export interface Settings {
   protectedContent: boolean;
   /** Use the graphics card to draw pages and video. Takes effect after a restart. */
   hardwareAcceleration: boolean;
+  /** Perplexity in Moon's night-sky look, with Axo the axolotl on its search box. */
+  perplexityLook: boolean;
 }
 
 export interface TabInfo {

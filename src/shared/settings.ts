@@ -45,6 +45,7 @@ export function defaultSettings(platform: string): Settings {
     autoUpdate: true,
     protectedContent: true,
     hardwareAcceleration: true,
+    perplexityLook: true,
   };
 }
 
@@ -133,6 +134,7 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     autoUpdate: bool(raw.autoUpdate, d.autoUpdate),
     protectedContent: bool(raw.protectedContent, d.protectedContent),
     hardwareAcceleration: bool(raw.hardwareAcceleration, d.hardwareAcceleration),
+    perplexityLook: bool(raw.perplexityLook, d.perplexityLook),
   };
 }
 
