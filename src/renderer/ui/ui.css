@@ -117,57 +117,6 @@ body {
   margin-left: 0;
 }
 
-/* Narrower tabs: no sleep sign, and the close button only on the active
-   tab and on hover. */
-@container (max-width: 120px) {
-  .mb-tab-sleep {
-    display: none;
-  }
-}
-@container (max-width: 96px) {
-  .mb-tab:not([aria-selected="true"]):not(:hover) .mb-tab-close {
-    display: none;
-  }
-  .mb-tab-title {
-    margin-right: 0.4rem;
-  }
-}
-/* Narrow: no title; the icon (and on the active tab or on hover, the close
-   button) — narrower the tab can't hold more without the button sticking
-   out. */
-@container (max-width: 76px) {
-  .mb-tab-title,
-  .mb-tab-audio {
-    display: none;
-  }
-  .mb-tab-icon {
-    margin-left: 0.4rem;
-  }
-  .mb-tab:not([aria-selected="true"]):not(:hover) .mb-tab-icon {
-    margin-inline: auto;
-  }
-  .mb-tab-close {
-    margin-left: auto;
-  }
-}
-/* Narrowest: just the icon — or, on the active tab, just the close button. */
-@container (max-width: 58px) {
-  .mb-tab-title,
-  .mb-tab-audio,
-  .mb-tab:not([aria-selected="true"]) .mb-tab-close {
-    display: none;
-  }
-  .mb-tab-icon {
-    margin-inline: auto;
-  }
-  .mb-tab[aria-selected="true"] .mb-tab-icon {
-    display: none;
-  }
-  .mb-tab[aria-selected="true"] .mb-tab-close {
-    margin-inline: auto;
-  }
-}
-
 .mb-tab[data-sleeping="true"] .mb-tab-icon {
   opacity: 0.45;
   filter: grayscale(0.6);
@@ -228,6 +177,74 @@ body {
 }
 .mb-tab-audio:hover {
   background: color-mix(in srgb, var(--color-lavender-400) 18%, transparent);
+}
+
+/* Narrower tabs: no sleep sign, and the close button only on the active
+   tab and on hover. */
+@container (max-width: 120px) {
+  .mb-tab-sleep {
+    display: none;
+  }
+}
+@container (max-width: 96px) {
+  .mb-tab:not([aria-selected="true"]):not(:hover) .mb-tab-close {
+    display: none;
+  }
+  .mb-tab-title {
+    margin-right: 0.4rem;
+  }
+}
+/* A tab that plays sound: the speaker takes the place of the icon and the
+   title, so icon, speaker and close button never crowd each other out. */
+@container (max-width: 100px) {
+  .mb-tab:has(.mb-tab-audio) .mb-tab-icon,
+  .mb-tab:has(.mb-tab-audio) .mb-tab-title {
+    display: none;
+  }
+  .mb-tab-audio {
+    margin-left: 0.4rem;
+  }
+  .mb-tab:has(.mb-tab-audio) .mb-tab-close {
+    margin-left: auto;
+  }
+}
+/* Narrow: no title; the icon (and on the active tab or on hover, the close
+   button) — narrower the tab can't hold more without the button sticking
+   out. */
+@container (max-width: 76px) {
+  .mb-tab-title,
+  .mb-tab-audio {
+    display: none;
+  }
+  .mb-tab-icon {
+    margin-left: 0.4rem;
+  }
+  .mb-tab:has(.mb-tab-audio) .mb-tab-icon {
+    display: inline-flex;
+  }
+  .mb-tab:not([aria-selected="true"]):not(:hover) .mb-tab-icon {
+    margin-inline: auto;
+  }
+  .mb-tab-close {
+    margin-left: auto;
+  }
+}
+/* Narrowest: just the icon — or, on the active tab, just the close button. */
+@container (max-width: 58px) {
+  .mb-tab-title,
+  .mb-tab-audio,
+  .mb-tab:not([aria-selected="true"]) .mb-tab-close {
+    display: none;
+  }
+  .mb-tab-icon {
+    margin-inline: auto;
+  }
+  .mb-tab[aria-selected="true"] .mb-tab-icon {
+    display: none;
+  }
+  .mb-tab[aria-selected="true"] .mb-tab-close {
+    margin-inline: auto;
+  }
 }
 
 .mb-newtab {
