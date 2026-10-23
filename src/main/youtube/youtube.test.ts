@@ -30,14 +30,17 @@ describe("YouTube in Moon's look", () => {
   });
 
   it("puts MoonTube's logo in place of YouTube's and YouTube Premium's", () => {
-    expect(YOUTUBE_CSS).toContain("ytd-topbar-logo-renderer #logo-icon > *");
+    // On the logo's link: what is inside it (<ytd-logo>, a doodle) changes.
+    expect(YOUTUBE_CSS).toContain("ytd-topbar-logo-renderer > a#logo > *");
     expect(YOUTUBE_CSS).toContain('content: "MoonTube"');
-    expect(YOUTUBE_CSS).toContain('a[title*="Premium" i]');
+    expect(YOUTUBE_CSS).toContain('[title*="Premium" i]');
   });
 
   it("paints one night colour, not a sky that shows through in patches", () => {
     expect(YOUTUBE_CSS).not.toContain("background-attachment: fixed");
     expect(YOUTUBE_CSS).toContain("html:root[dark] ytd-app");
+    // No ambient glow as a dark block around the player.
+    expect(YOUTUBE_CSS).toContain("html:root[dark] #cinematics");
   });
 
   it("recolours YouTube's dark palette only in dark mode", () => {
