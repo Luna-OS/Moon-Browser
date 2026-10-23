@@ -40,7 +40,8 @@
   --mb-bg: var(--color-night-950);
   --mb-text: var(--color-cream-100);
   --mb-text-muted: color-mix(in srgb, var(--color-cream-100) 62%, transparent);
-  --mb-text-faint: color-mix(in srgb, var(--color-cream-100) 40%, transparent);
+  /* At least 4.5:1 on the backgrounds (WCAG AA), still a step below muted. */
+  --mb-text-faint: color-mix(in srgb, var(--color-cream-100) 50%, transparent);
   --mb-border: color-mix(in srgb, var(--color-lavender-400) 18%, transparent);
   --mb-border-strong: color-mix(in srgb, var(--color-lavender-400) 36%, transparent);
   --mb-accent: var(--color-lavender-300);
@@ -73,8 +74,8 @@
 
   --mb-bg: #f5f2fb;
   --mb-text: #1c1733;
-  --mb-text-muted: color-mix(in srgb, #1c1733 64%, transparent);
-  --mb-text-faint: color-mix(in srgb, #1c1733 42%, transparent);
+  --mb-text-muted: color-mix(in srgb, #1c1733 74%, transparent);
+  --mb-text-faint: color-mix(in srgb, #1c1733 63%, transparent);
   --mb-border: color-mix(in srgb, var(--color-violet-700) 16%, transparent);
   --mb-border-strong: color-mix(in srgb, var(--color-violet-700) 32%, transparent);
   --mb-accent: #5b4bc4;
