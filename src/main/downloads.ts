@@ -36,20 +36,22 @@ export class Downloads {
   private recentIds: string[] = [];
   private privateFinished = new Map<string, DownloadInfo>();
   private notifyTimer: NodeJS.Timeout | null = null;
-  /** File names extensions chose for their downloads (chrome.downloads): URL → name. */
-  private readonly suggestedNames = new Map<string, string>();
+  /** File names extensions chose for their downloads (chrome.downloads): session → URL → name. */
+  private readonly suggestedNames = new WeakMap<Session, Map<string, string>>();
 
   constructor(private readonly browser: Browser) {}
 
-  /** The name a download of `url` starting soon gets (instead of the server's). */
-  suggestName(url: string, filename: string): void {
-    this.suggestedNames.set(url, filename);
-    setTimeout(() => this.suggestedNames.delete(url), 60_000).unref();
+  /** The name a download of `url` starting soon in `ses` gets (instead of the server's). */
+  suggestName(ses: Session, url: string, filename: string): void {
+    let names = this.suggestedNames.get(ses);
+    if (!names) this.suggestedNames.set(ses, (names = new Map<string, string>()));
+    names.set(url, filename);
+    setTimeout(() => names.delete(url), 60_000).unref();
   }
 
   install(ses: Session, isPrivate: boolean): void {
     ses.on("will-download", (_event, item, webContents) =>
-      this.onDownload(item, isPrivate, webContents),
+      this.onDownload(item, isPrivate, webContents, ses),
     );
   }
 
@@ -121,11 +123,15 @@ export class Downloads {
     item: DownloadItem,
     isPrivate: boolean,
     source: WebContents | undefined,
+    ses: Session,
   ): void {
     const settings = this.browser.settings;
     const dir = settings.downloadDir || app.getPath("downloads");
-    const suggested = this.suggestedNames.get(item.getURL());
-    this.suggestedNames.delete(item.getURL());
+    // The address asked for: getURL() is the one after redirects.
+    const asked = item.getURLChain()[0] ?? item.getURL();
+    const names = this.suggestedNames.get(ses);
+    const suggested = names?.get(asked);
+    names?.delete(asked);
     const filename = suggested || item.getFilename();
     // Programs and scripts are held under a name nothing runs until the
     // person says "Keep" (as Chrome does), even if they finish first.

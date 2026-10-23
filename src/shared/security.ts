@@ -113,6 +113,12 @@ const DANGEROUS_EXTENSIONS = new Set([
   "url",
   "library-ms",
   "settingcontent-ms",
+  "chm",
+  "xll",
+  "iso",
+  "img",
+  "vhd",
+  "vhdx",
   // Cross-platform
   "jar",
   "jnlp",
@@ -139,8 +145,27 @@ const DANGEROUS_EXTENSIONS = new Set([
 ]);
 
 export function isDangerousFile(filename: string): boolean {
-  const ext = filename.toLowerCase().split(".").pop() ?? "";
-  return filename.includes(".") && DANGEROUS_EXTENSIONS.has(ext);
+  // Windows drops trailing dots and spaces: "x.exe." is saved as "x.exe".
+  const name = filename.replace(/[. ]+$/, "");
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  return name.includes(".") && DANGEROUS_EXTENSIONS.has(ext);
+}
+
+/** Names Windows reserves for devices ("NUL", "COM1.txt", …). */
+const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\.|$)/i;
+
+/**
+ * A file name an extension or page asked for, made safe to save: no folders,
+ * no characters Windows refuses, no trailing dots or spaces, no device names.
+ */
+export function safeFilename(requested: string): string {
+  const base = requested.split(/[\\/]/).pop() ?? "";
+  const name = [...base]
+    .map((c) => (c < " " || '<>:"|?*'.includes(c) ? "_" : c))
+    .join("")
+    .trim()
+    .replace(/[. ]+$/, "");
+  return RESERVED.test(name) ? `_${name}` : name;
 }
 
 /** The Windows "Mark of the Web" for a downloaded file. */

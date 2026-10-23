@@ -20,6 +20,7 @@ import {
 } from "electron";
 import { searchUrl } from "@shared/engines";
 import { hasSiteAccess } from "@shared/extensions";
+import { safeFilename } from "@shared/security";
 import { isInternalUrl } from "@shared/internal";
 import { isGroupColor, type TabGroupInfo } from "@shared/tab-groups";
 import type { Browser } from "./browser";
@@ -51,6 +52,9 @@ const PERMISSION: Record<string, string> = {
   downloads: "downloads",
   native: "nativeMessaging",
 };
+
+/** How long runtime.sendNativeMessage waits for the host's answer. */
+const SEND_TIMEOUT = 5 * 60_000;
 
 interface ExtensionDownload {
   id: number;
@@ -98,11 +102,12 @@ export class ExtensionApis {
   private readonly pending = new Map<string, Map<string, { args: unknown[]; until: number }>>();
   /** chrome.downloads started by extensions: extension ID → download ID → download. */
   private readonly downloads = new Map<string, Map<number, ExtensionDownload>>();
-  /** Downloads an extension started that haven't begun yet: URL → download. */
-  private readonly startingDownloads = new Map<string, ExtensionDownload>();
+  /** Downloads an extension started that haven't begun yet: URL → downloads, oldest first. */
+  private readonly startingDownloads = new Map<string, ExtensionDownload[]>();
   private nextDownloadId = 1;
   /** Native messaging ports: port ID → the host process and who opened it. */
   private readonly ports = new Map<string, { id: string; host: Host; port: NativePort }>();
+  private sends = 0;
 
   constructor(
     private readonly browser: Browser,
@@ -154,9 +159,12 @@ export class ExtensionApis {
     });
     // Downloads extensions start, for downloads.search and onChanged.
     this.ses.on("will-download", (_event, item) => {
-      const download = this.startingDownloads.get(item.getURL());
+      // The address asked for: getURL() is the one after redirects.
+      const url = item.getURLChain()[0] ?? item.getURL();
+      const waiting = this.startingDownloads.get(url);
+      const download = waiting?.shift();
       if (!download) return;
-      this.startingDownloads.delete(item.getURL());
+      if (!waiting?.length) this.startingDownloads.delete(url);
       download.item = item;
       const owner = [...this.downloads].find(([, list]) => list.get(download.id) === download)?.[0];
       item.once("done", (_e, state) => {
@@ -370,9 +378,11 @@ export class ExtensionApis {
         return this.downloadSearch(id, a);
       case "native.connect":
         return this.nativeConnect(id, a, b, host);
-      case "native.post":
-        this.ports.get(String(a))?.port.post(b);
+      case "native.post": {
+        const entry = this.ports.get(String(a));
+        if (entry?.id === id) entry.port.post(b);
         return undefined;
+      }
       case "native.disconnect": {
         const entry = this.ports.get(String(a));
         if (entry?.id === id) {
@@ -382,7 +392,7 @@ export class ExtensionApis {
         return undefined;
       }
       case "native.send":
-        return this.nativeSend(id, a, b);
+        return this.nativeSend(id, a, b, host);
       default:
         throw new Error(`chrome.${name} isn't available in Moon Browser`);
     }
@@ -418,16 +428,18 @@ export class ExtensionApis {
     const url = wc.getURL();
     const manifest = this.ses.extensions.getExtension(id)?.manifest as
       { permissions?: unknown; host_permissions?: unknown } | undefined;
-    const ext = this.browser.extensions;
-    // Chrome asks for activeTab or access to the page's site.
+    // Only web pages the extension may read anyway (its host permissions):
+    // never Moon Browser's own pages, other extensions, local files or the
+    // Web Store. (activeTab alone isn't enough: Moon Browser doesn't grant
+    // it per click, so it would mean every page, any time, unasked.)
     const allowed =
-      ext.declares(id, "activeTab") ||
+      /^https?:/i.test(url) &&
+      !/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)(\/|$)/i.test(url) &&
       hasSiteAccess(
         { permissions: manifest?.permissions, host_permissions: manifest?.host_permissions },
         url,
       );
-    if (!allowed || isInternalUrl(url) || url.startsWith("chrome-extension:"))
-      throw new Error(`Cannot access contents of url "${url}".`);
+    if (!allowed || isInternalUrl(url)) throw new Error(`Cannot access contents of url "${url}".`);
     const image = await wc.capturePage();
     if (options.format === "png") return image.toDataURL();
     const quality = num(options.quality);
@@ -444,13 +456,7 @@ export class ExtensionApis {
     const blobOfOwn = url.startsWith(`blob:${own}`);
     if (!/^(https?:|data:)/i.test(url) && !blobOfOwn && !url.startsWith(own))
       throw new Error("Invalid URL");
-    const filename =
-      typeof o.filename === "string"
-        ? [...(o.filename.split(/[\\/]/).pop() ?? "")]
-            .map((c) => (c < " " || '<>:"|?*'.includes(c) ? "_" : c))
-            .join("")
-            .trim()
-        : "";
+    const filename = typeof o.filename === "string" ? safeFilename(o.filename) : "";
     const download: ExtensionDownload = {
       id: this.nextDownloadId++,
       url,
@@ -460,8 +466,14 @@ export class ExtensionApis {
     let list = this.downloads.get(id);
     if (!list) this.downloads.set(id, (list = new Map<number, ExtensionDownload>()));
     list.set(download.id, download);
-    this.startingDownloads.set(url, download);
-    if (filename) this.browser.downloads.suggestName(url, filename);
+    this.startingDownloads.set(url, [...(this.startingDownloads.get(url) ?? []), download]);
+    setTimeout(() => {
+      // Never started (an error before the download began): stop waiting for it.
+      const waiting = this.startingDownloads.get(url)?.filter((d) => d !== download);
+      if (waiting?.length) this.startingDownloads.set(url, waiting);
+      else this.startingDownloads.delete(url);
+    }, 60_000).unref();
+    if (filename) this.browser.downloads.suggestName(this.ses, url, filename);
     // A blob lives in the page that made it: download it from there.
     const page = webContents
       .getAllWebContents()
@@ -508,10 +520,12 @@ export class ExtensionApis {
   ): Promise<void> {
     if (typeof portId !== "string" || typeof name !== "string" || this.ports.has(portId))
       throw new Error("Bad native port");
+    const release = this.holdHost(host, () => this.closePorts((_h, _o, p) => p === portId));
     // Registered before the host is found: the extension may post right away.
     const port = new NativePort(
       (message) => sendTo(host, "native.message", portId, message),
       (error) => {
+        release();
         this.ports.delete(portId);
         sendTo(host, "native.disconnect", portId, error);
       },
@@ -521,18 +535,58 @@ export class ExtensionApis {
     try {
       found = await findHost(name, id);
     } catch (err) {
+      release();
       this.ports.delete(portId);
       throw err;
     }
     if (!port.isClosed) port.start(found, id);
   }
 
+  /**
+   * Ties a native port to the page or worker that opened it: a page that
+   * closes or leaves ends the port (`end`), and a service worker stays
+   * awake while its port is open, as in Chrome. Returns the undo.
+   */
+  private holdHost(host: Host, end: () => void): () => void {
+    if (host.kind === "worker") {
+      let task: { end: () => void } | null = null;
+      try {
+        task = host.worker.startTask();
+      } catch {
+        // The worker is already gone.
+      }
+      return () => {
+        task?.end();
+        task = null;
+      };
+    }
+    const wc = host.wc;
+    const onNavigate = (details: { isMainFrame: boolean; isSameDocument: boolean }) => {
+      if (details.isMainFrame && !details.isSameDocument) end();
+    };
+    wc.once("destroyed", end);
+    wc.on("did-start-navigation", onNavigate);
+    return () => {
+      if (wc.isDestroyed()) return;
+      wc.off("destroyed", end);
+      wc.off("did-start-navigation", onNavigate);
+    };
+  }
+
   /** runtime.sendNativeMessage: the host's first answer. */
-  private async nativeSend(id: string, name: unknown, message: unknown): Promise<unknown> {
+  private async nativeSend(
+    id: string,
+    name: unknown,
+    message: unknown,
+    host: Host,
+  ): Promise<unknown> {
     if (typeof name !== "string") throw new Error("Bad native host name");
     const found = await findHost(name, id);
+    const portId = `send-${++this.sends}`;
     return new Promise((resolve, reject) => {
       let answered = false;
+      const timer = setTimeout(() => port.close("Native host did not answer."), SEND_TIMEOUT);
+      const release = this.holdHost(host, () => port.close());
       const port: NativePort = new NativePort(
         (reply) => {
           if (answered) return;
@@ -541,17 +595,22 @@ export class ExtensionApis {
           port.close();
         },
         (error) => {
+          clearTimeout(timer);
+          release();
+          this.ports.delete(portId);
           if (!answered) reject(new Error(error ?? "Native host has exited."));
         },
       );
+      // Tracked like a port, so switching the extension off ends it.
+      this.ports.set(portId, { id, host, port });
       port.start(found, id);
       port.post(message);
     });
   }
 
-  private closePorts(which: (host: Host, owner: string) => boolean): void {
+  private closePorts(which: (host: Host, owner: string, portId: string) => boolean): void {
     for (const [portId, entry] of [...this.ports]) {
-      if (!which(entry.host, entry.id)) continue;
+      if (!which(entry.host, entry.id, portId)) continue;
       this.ports.delete(portId);
       entry.port.close();
     }

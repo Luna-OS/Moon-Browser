@@ -84,7 +84,9 @@ export function frameMessage(message: unknown): Buffer {
 
 function regQuery(key: string): Promise<string | null> {
   return new Promise((done) => {
-    execFile("reg", ["query", key, "/ve"], { windowsHide: true }, (err, stdout) => {
+    // By its full path: a bare "reg" could be found in the current folder first.
+    const reg = join(process.env.SystemRoot || "C:\\Windows", "System32", "reg.exe");
+    execFile(reg, ["query", key, "/ve"], { windowsHide: true }, (err, stdout) => {
       if (err) return done(null);
       const m = /REG_(?:EXPAND_)?SZ\s+(.+)\s*$/m.exec(stdout);
       done(m ? m[1].trim() : null);
@@ -161,7 +163,9 @@ export class NativePort {
     const child = script
       ? spawn(
           process.env.ComSpec || "cmd.exe",
-          ["/d", "/s", "/c", `"${host.path}" ${args.join(" ")}`],
+          // With /s, cmd drops the outermost quotes: the whole line is
+          // quoted once more so the path's own quotes (spaces!) stay.
+          ["/d", "/s", "/c", `""${host.path}" ${args.join(" ")}"`],
           {
             cwd: dirname(host.path),
             windowsHide: true,
@@ -204,7 +208,16 @@ export class NativePort {
       child.stdin?.end();
       // Give it a moment to leave on its own, as Chrome does.
       setTimeout(() => {
-        if (child.exitCode === null) child.kill();
+        if (child.exitCode !== null) return;
+        // On Windows a .bat host runs under cmd: end the whole tree.
+        if (process.platform === "win32" && child.pid)
+          execFile(
+            "taskkill",
+            ["/pid", String(child.pid), "/T", "/F"],
+            { windowsHide: true },
+            () => undefined,
+          );
+        else child.kill();
       }, 2000).unref();
     }
     this.onClose(error);
