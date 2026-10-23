@@ -147,10 +147,12 @@ ytmusic-player-bar {
 `;
 
 /**
- * The logo, YouTube's or YouTube Premium's: MoonTube in its place, written
- * in YouTube's own font next to the emblem. Premium members get a sparkle.
+ * The logo, YouTube's or YouTube Premium's (or a doodle): MoonTube in its
+ * place, written in YouTube's own font next to the emblem. Premium members
+ * get a sparkle. It is drawn on the logo's link itself, since what is inside
+ * it changes (an icon in a <ytd-logo>, a doodle, an older <yt-icon>).
  */
-const LOGO = "ytd-topbar-logo-renderer #logo-icon";
+const LOGO = "ytd-topbar-logo-renderer > a#logo";
 const LOGO_CSS = `
 ${LOGO} {
   display: inline-flex !important;
@@ -158,6 +160,7 @@ ${LOGO} {
   gap: 5px;
   width: auto !important;
   height: 24px !important;
+  text-decoration: none !important;
 }
 ${LOGO} > * {
   display: none !important;
@@ -180,7 +183,7 @@ ${LOGO}::after {
 html:root[dark] ${LOGO}::after {
   color: #f4f1ff;
 }
-ytd-topbar-logo-renderer:has(a[title*="Premium" i], a[aria-label*="Premium" i]) #logo-icon::after {
+${LOGO}:is([title*="Premium" i], [aria-label*="Premium" i])::after {
   content: "MoonTube ✦";
   background: linear-gradient(90deg, currentColor 0 78%, #b9aefb 86%);
   -webkit-background-clip: text;
@@ -279,6 +282,19 @@ html:root[dark] ytd-app {
 }
 html:root[dark] #masthead-container ytd-masthead {
   background: ${TOP_BAR_STARS} !important;
+}
+html:root[dark] #frosted-glass {
+  background: rgb(13 10 35 / 0.9) !important;
+}
+
+/*
+ * Ambient mode's glow around the player is drawn in the video's colours
+ * (often black) over the night: it would stand out as a dark block.
+ */
+html:root[dark] #cinematics,
+html:root[dark] #cinematics-container,
+html:root[dark] #cinematic-container {
+  display: none !important;
 }
 
 /* The search box has colours of its own. */
