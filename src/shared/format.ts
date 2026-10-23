@@ -34,8 +34,9 @@ export function dayLabel(time: number, now: number): string {
   });
 }
 
+/** In the user's own format: 14:05 or 2:05 PM. */
 export function timeLabel(time: number): string {
-  return new Date(time).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  return new Date(time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /** Groups items (already sorted newest first) by their day. */

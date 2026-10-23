@@ -372,7 +372,7 @@ function Browser({ state }: { state: WindowState }) {
             anchor={popover.anchor}
             width={
               popover.kind === "menu"
-                ? 290
+                ? 312
                 : popover.kind === "shield" || popover.kind === "extensions"
                   ? 320
                   : 340

@@ -38,7 +38,7 @@ function PagePanel({ tab, rect }: { tab: TabInfo; rect: Rect }) {
     );
   }
   if (tab.error) {
-    const { title, text } = describeError(tab.error);
+    const { title, text, final } = describeError(tab.error);
     return (
       <Panel rect={rect}>
         <MoonPhase phase={tab.error.kind === "network" ? 0.04 : 0.25} size={72} />
@@ -67,6 +67,16 @@ function PagePanel({ tab, rect }: { tab: TabInfo; rect: Rect }) {
                 {tab.error.kind === "https" ? "Continue to site (not secure)" : "Open anyway"}
               </button>
             </>
+          ) : final ? (
+            tab.canGoBack && (
+              <button
+                type="button"
+                className="mb-btn mb-btn-primary"
+                onClick={() => void ui.command({ type: "back" })}
+              >
+                Go back
+              </button>
+            )
           ) : (
             <button
               type="button"

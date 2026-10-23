@@ -657,6 +657,8 @@ body {
   color: var(--mb-text);
   font: inherit;
   text-align: left;
+  /* One line per item, however narrow the menu. */
+  white-space: nowrap;
   cursor: pointer;
 }
 .mb-menu-item:hover,
