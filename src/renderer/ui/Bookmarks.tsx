@@ -1,9 +1,9 @@
 /**
- * The bookmarks bar with its folders, a folder's menu (folders inside open
- * in place, with a way back; new folders go in), and the star's editor:
- * name, folder (or a new one), remove.
+ * The bookmarks bar with its folders (and » for what doesn't fit), a
+ * folder's menu (folders inside open in place, with a way back; new folders
+ * go in), and the star's editor: name, folder (or a new one), remove.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Bookmark, BookmarkFolderChoice } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
 import { BackIcon, ChevronDownIcon, FolderIcon, PlusIcon, TabIcon } from "@theme/icons";
@@ -22,18 +22,53 @@ const menu = (id: string) => (e: React.MouseEvent) => {
   void ui.command({ type: "bookmarkMenu", id, x: e.clientX, y: e.clientY });
 };
 
+/** Room kept at the end of the bar for the » button. */
+const MORE_WIDTH = 34;
+
 export function BookmarksBar({
   bookmarks,
   openFolder,
+  overflowOpen,
   onOpenFolder,
+  onOpenOverflow,
 }: {
   bookmarks: Bookmark[];
   /** The folder whose menu is open. */
   openFolder: string | null;
+  /** Whether the menu of those that don't fit is open. */
+  overflowOpen: boolean;
   onOpenFolder: (folder: Bookmark, anchor: DOMRect) => void;
+  /** Opens a menu of the bookmarks from `from` on, which don't fit. */
+  onOpenOverflow: (from: number, anchor: DOMRect) => void;
 }) {
+  const nav = useRef<HTMLElement>(null);
+  const [fit, setFit] = useState(bookmarks.length);
+  // Changes that can change the items' widths (the state's array is new every time).
+  const contents = bookmarks.map((b) => `${b.id}:${b.title}:${b.url}`).join("\n");
+
+  // All bookmarks are laid out; those past the bar's end are hidden and
+  // listed behind », like Chrome's.
+  useLayoutEffect(() => {
+    const el = nav.current;
+    if (!el) return;
+    const measure = () => {
+      const items = [...el.querySelectorAll<HTMLElement>("[data-bar-item]")];
+      const end = el.clientWidth - parseFloat(getComputedStyle(el).paddingRight);
+      const past = (limit: number) => {
+        const i = items.findIndex((b) => b.offsetLeft + b.offsetWidth > limit);
+        return i < 0 ? items.length : i;
+      };
+      setFit(past(end) === items.length ? items.length : past(end - MORE_WIDTH));
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    measure();
+    return () => observer.disconnect();
+  }, [contents]);
+
   return (
     <nav
+      ref={nav}
       className="mb-bookmarks-bar"
       aria-label="Bookmarks bar"
       onContextMenu={(e) => {
@@ -48,12 +83,14 @@ export function BookmarksBar({
           Bookmark pages with the star or Ctrl+D to see them here.
         </span>
       )}
-      {bookmarks.map((b) =>
+      {bookmarks.map((b, i) =>
         b.isFolder ? (
           <button
             type="button"
             key={b.id}
             className="mb-bookmark"
+            data-bar-item
+            data-overflow={i >= fit || undefined}
             data-bookmark-folder={b.id}
             aria-haspopup="menu"
             aria-expanded={openFolder === b.id}
@@ -71,6 +108,8 @@ export function BookmarksBar({
             type="button"
             key={b.id}
             className="mb-bookmark"
+            data-bar-item
+            data-overflow={i >= fit || undefined}
             title={`${b.title}\n${b.url}`}
             onClick={(e) => open(b.url, e)}
             onAuxClick={(e) => {
@@ -83,23 +122,43 @@ export function BookmarksBar({
           </button>
         ),
       )}
+      {fit < bookmarks.length && (
+        <button
+          type="button"
+          className="mb-bookmark mb-bookmarks-more"
+          aria-label="More bookmarks"
+          title="More bookmarks"
+          aria-haspopup="menu"
+          aria-expanded={overflowOpen}
+          onClick={(e) => onOpenOverflow(fit, e.currentTarget.getBoundingClientRect())}
+        >
+          <span aria-hidden="true">»</span>
+        </button>
+      )}
     </nav>
   );
 }
 
-/** A folder's contents; a folder inside opens in its place. */
+/**
+ * A folder's contents; a folder inside opens in its place. With `overflow`,
+ * it lists those bookmarks instead: the bar's that don't fit.
+ */
 export function BookmarkFolderMenu({
   folder,
+  overflow,
   onClose,
 }: {
   folder: { id: string; title: string };
+  overflow?: Bookmark[];
   onClose: () => void;
 }) {
   const [path, setPath] = useState([folder]);
   const [items, setItems] = useState<{ folder: string; list: Bookmark[] } | null>(null);
   const here = path[path.length - 1];
+  const overflowShown = !!overflow && path.length === 1;
 
   useEffect(() => {
+    if (overflowShown) return;
     let current = true;
     void ui.bookmarkChildren(here.id).then((list) => {
       if (current) setItems({ folder: here.id, list });
@@ -107,9 +166,9 @@ export function BookmarkFolderMenu({
     return () => {
       current = false;
     };
-  }, [here.id]);
+  }, [here.id, overflowShown]);
 
-  const list = items?.folder === here.id ? items.list : null;
+  const list = overflowShown ? overflow : items?.folder === here.id ? items.list : null;
   const links = list?.filter((b) => !b.isFolder).length ?? 0;
   return (
     <div role="menu" aria-label={here.title} className="mb-folder-menu">
@@ -164,8 +223,8 @@ export function BookmarkFolderMenu({
           </button>
         ),
       )}
-      <div className="mb-menu-sep" role="separator" />
-      {links > 0 && (
+      {!overflowShown && <div className="mb-menu-sep" role="separator" />}
+      {!overflowShown && links > 0 && (
         <button
           type="button"
           role="menuitem"
@@ -183,19 +242,21 @@ export function BookmarkFolderMenu({
           <span className="flex-1">Open all ({links}) in new tabs</span>
         </button>
       )}
-      <button
-        type="button"
-        role="menuitem"
-        className="mb-menu-item"
-        onClick={() => {
-          // Named in a Moon dialog, which takes the menu's place.
-          void ui.command({ type: "newBookmarkFolder", parent: here.id });
-          onClose();
-        }}
-      >
-        <PlusIcon size={15} />
-        <span className="flex-1 truncate">New folder in “{here.title || "Folder"}”</span>
-      </button>
+      {!overflowShown && (
+        <button
+          type="button"
+          role="menuitem"
+          className="mb-menu-item"
+          onClick={() => {
+            // Named in a Moon dialog, which takes the menu's place.
+            void ui.command({ type: "newBookmarkFolder", parent: here.id });
+            onClose();
+          }}
+        >
+          <PlusIcon size={15} />
+          <span className="flex-1 truncate">New folder in “{here.title || "Folder"}”</span>
+        </button>
+      )}
     </div>
   );
 }
