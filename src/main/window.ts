@@ -141,8 +141,23 @@ export class MoonWindow {
         this.command(command);
       }
     });
+    // The UI comes back after a crash, but one that keeps crashing (a broken
+    // GPU driver, say) must not keep the browser busy: each reload waits
+    // longer, and after a few in a row it stays down.
+    let crashes = 0;
+    let lastCrash = 0;
     ui.on("render-process-gone", () => {
-      if (!this.closed) ui.reload();
+      if (this.closed) return;
+      if (Date.now() - lastCrash > 60_000) crashes = 0;
+      lastCrash = Date.now();
+      if (++crashes > 5) {
+        console.error("[moon] the browser UI keeps crashing; not reloading it again");
+        return;
+      }
+      const delay = 250 * 2 ** (crashes - 1);
+      setTimeout(() => {
+        if (!this.closed && !ui.isDestroyed()) ui.reload();
+      }, delay);
     });
 
     this.win.on("resize", () => this.layout());
@@ -747,6 +762,9 @@ export class MoonWindow {
     setImmediate(() => {
       this.updateScheduled = false;
       if (this.closed || this.win.isDestroyed()) return;
+      // This state covers whatever an updateSoon() was waiting to send.
+      if (this.softTimer) clearTimeout(this.softTimer);
+      this.softTimer = null;
       this.win.webContents.send(UI_CHANNELS.state, this.state());
       const title = this.activeTab?.info().title;
       this.win.setTitle(
@@ -755,7 +773,7 @@ export class MoonWindow {
     });
   }
 
-  /** For frequent, unimportant changes (blocked-request counters). */
+  /** For frequent, unimportant changes (blocked-request counters, tabs in the background). */
   updateSoon(): void {
     if (this.softTimer) return;
     this.softTimer = setTimeout(() => {

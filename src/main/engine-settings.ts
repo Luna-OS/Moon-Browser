@@ -22,16 +22,16 @@ export function applyEngineSettings(settings: EngineSettings): void {
 
 /**
  * Installs the Widevine module on the first start (and loads it on later
- * ones). Waits a few seconds at most: offline, or with a slow connection,
- * the browser starts anyway and the module follows when it's there.
+ * ones), right away rather than on the component updater's delay. Nothing
+ * waits for it: offline, or with a slow connection, the browser starts
+ * anyway and the module follows when it's there.
  */
-export async function prepareProtectedContent(settings: EngineSettings): Promise<void> {
+export function prepareProtectedContent(settings: EngineSettings): void {
   if (!settings.protectedContent || typeof components?.whenReady !== "function") return;
-  const ready = components.whenReady().then(
+  void components.whenReady().then(
     () => console.log("[moon] protected content ready:", components.status()),
     (err: unknown) => console.warn("[moon] the Widevine module isn't available:", err),
   );
-  await Promise.race([ready, new Promise((resolve) => setTimeout(resolve, 5000))]);
 }
 
 /** Whether a changed setting waits for a restart. */

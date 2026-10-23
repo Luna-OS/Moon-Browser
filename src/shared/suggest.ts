@@ -17,37 +17,66 @@ function stripScheme(url: string): string {
   return bare.startsWith("www.") ? bare.slice(4) : bare;
 }
 
+/** An entry's address (without scheme and "www.") and title, lowercased. */
+interface Lowered {
+  url: string;
+  title: string;
+  bare: string;
+  lowTitle: string;
+  /** The host without "www." for http(s) addresses, null for others; parsed when first needed. */
+  host?: string | null;
+}
+
+/**
+ * Lowercased once and kept with the entry: every keystroke in the address
+ * bar goes through the whole history. A changed title or address is
+ * noticed and lowercased again.
+ */
+const loweredCache = new WeakMap<object, Lowered>();
+
+function lowered(entry: { url: string; title: string }): Lowered {
+  let l = loweredCache.get(entry);
+  if (!l || l.url !== entry.url || l.title !== entry.title) {
+    l = {
+      url: entry.url,
+      title: entry.title,
+      bare: stripScheme(entry.url).toLowerCase(),
+      lowTitle: entry.title.toLowerCase(),
+    };
+    loweredCache.set(entry, l);
+  }
+  return l;
+}
+
 /**
  * How well `text` matches an entry: 0 = not at all. A match at the start of
  * the host beats a match at the start of a word, which beats any substring.
  */
 export function matchScore(text: string, url: string, title: string): number {
-  return matcher(text)(url, title);
+  return matcher(text)(stripScheme(url).toLowerCase(), title.toLowerCase());
 }
 
 /**
  * matchScore for one typed text, prepared once: the address bar scores every
  * history entry on each keystroke, so the query is lowercased, split and
- * turned into regular expressions only once.
+ * turned into regular expressions only once. It takes the address without
+ * its scheme and the title, both lowercased.
  */
-function matcher(text: string): (url: string, title: string) => number {
+function matcher(text: string): (bare: string, title: string) => number {
   const q = text.trim().toLowerCase();
   if (!q) return () => 0;
   const terms = q.split(/\s+/).map((term) => ({
     term,
     wordStart: new RegExp(`(^|[\\s/._-])${escapeRegExp(term)}`),
   }));
-  return (url, title) => {
-    const bare = stripScheme(url).toLowerCase();
+  return (bare, title) => {
     if (bare.startsWith(q)) return 10;
-    let t: string | null = null;
     let score = 0;
     for (const { term, wordStart } of terms) {
       // Most entries match nothing: check for the term at all first.
       const inUrl = bare.includes(term);
-      t ??= title.toLowerCase();
-      if (!inUrl && !t.includes(term)) return 0;
-      score += wordStart.test(t) || (inUrl && wordStart.test(bare)) ? 4 : 1;
+      if (!inUrl && !title.includes(term)) return 0;
+      score += wordStart.test(title) || (inUrl && wordStart.test(bare)) ? 4 : 1;
     }
     return score;
   };
@@ -76,10 +105,14 @@ export function suggest(text: string, sources: SuggestSources, limit = 6): Sugge
   if (!q) return [];
   const out: (Suggestion & { score: number })[] = [];
 
-  const score = matcher(q);
+  const match = matcher(q);
+  const score = (entry: { url: string; title: string }) => {
+    const l = lowered(entry);
+    return match(l.bare, l.lowTitle);
+  };
 
   for (const tab of sources.tabs) {
-    const m = score(tab.url, tab.title);
+    const m = match(stripScheme(tab.url).toLowerCase(), tab.title.toLowerCase());
     if (m > 0 && /^https?:/.test(tab.url)) {
       out.push({
         kind: "tab",
@@ -96,7 +129,7 @@ export function suggest(text: string, sources: SuggestSources, limit = 6): Sugge
   const bookmarked = new Map<string, Suggestion & { score: number }>();
   for (const b of sources.bookmarks) {
     if (b.isFolder || bookmarked.has(b.url)) continue;
-    const m = score(b.url, b.title);
+    const m = score(b);
     if (m > 0) {
       const s = {
         kind: "bookmark" as const,
@@ -117,7 +150,7 @@ export function suggest(text: string, sources: SuggestSources, limit = 6): Sugge
       b.score += frecency(h, sources.now);
       continue;
     }
-    const m = score(h.url, h.title);
+    const m = score(h);
     if (m > 0) {
       out.push({
         kind: "history",
@@ -156,22 +189,25 @@ export function inlineCompletion(
   let best: { host: string; score: number } | null = null;
   for (const h of history) {
     // Parsing every address is slow; most can be ruled out from the text.
-    // (An address with user info ("user@host") is always parsed.)
-    const start = h.url.indexOf("://") + 3;
-    const at = h.url.indexOf("@", start);
-    const slash = h.url.indexOf("/", start);
-    const userInfo = at >= 0 && (slash < 0 || at < slash);
-    const lower = h.url.slice(start, start + 4 + q.length).toLowerCase();
-    if (!userInfo && !lower.startsWith(q) && !lower.startsWith(`www.${q}`)) continue;
-    let host: string;
-    try {
-      const u = new URL(h.url);
-      if (!/^https?:$/.test(u.protocol)) continue;
-      host = u.host.replace(/^www\./, "");
-    } catch {
-      continue;
+    // (An address with user info ("user@host") is always parsed, and each
+    // only once.)
+    const l = lowered(h);
+    if (!l.bare.startsWith(q)) {
+      const start = h.url.indexOf("://") + 3;
+      const at = h.url.indexOf("@", start);
+      const slash = h.url.indexOf("/", start);
+      if (at < 0 || (slash >= 0 && at > slash)) continue;
     }
-    if (!host.startsWith(q) || host === q) continue;
+    if (l.host === undefined) {
+      try {
+        const u = new URL(h.url);
+        l.host = /^https?:$/.test(u.protocol) ? u.host.replace(/^www\./, "") : null;
+      } catch {
+        l.host = null;
+      }
+    }
+    const host = l.host;
+    if (host === null || !host.startsWith(q) || host === q) continue;
     const score = frecency(h, now);
     if (!best || score > best.score) best = { host, score };
   }

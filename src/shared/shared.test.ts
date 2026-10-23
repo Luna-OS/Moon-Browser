@@ -438,6 +438,16 @@ describe("suggestions", () => {
     expect(matchScore("example", "http://www.example.com/", "")).toBe(10);
   });
 
+  it("notices a changed title between keystrokes", () => {
+    const page = entry("https://news.example/", "Morning", 1);
+    const find = (text: string) =>
+      suggest(text, { history: [page], bookmarks: [], tabs: [], now }).length;
+    expect(find("morning")).toBe(1);
+    page.title = "Evening";
+    expect(find("morning")).toBe(0);
+    expect(find("evening")).toBe(1);
+  });
+
   it("adds the frecency of a visited bookmark", () => {
     const bookmark = (url: string, title: string) => ({
       id: url,
