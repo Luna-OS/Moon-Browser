@@ -40,6 +40,15 @@ const EMBLEM = svg(
     `</svg>`,
 );
 
+/** The Premium sparkle after the name: lavender, seen on night and on day. */
+const PREMIUM_SPARKLE = svg(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">` +
+    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#d6cffd"/>` +
+    `<stop offset="1" stop-color="#7f6fe0"/></linearGradient></defs>` +
+    `<path fill="url(#g)" d="M12 0.5C12.9 8 16 11.1 23.5 12C16 12.9 12.9 16 12 23.5C11.1 16 8 12.9 0.5 12C8 11.1 11.1 8 12 0.5Z"/>` +
+    `</svg>`,
+);
+
 /** The lavender of the played part, darkest where it starts. */
 const TRAIL = "linear-gradient(90deg, #7f6fe0 0%, #9d8ff5 45%, #b9aefb 80%, #d6cffd 100%)";
 
@@ -184,11 +193,26 @@ html:root[dark] ${LOGO}::after {
   color: #f4f1ff;
 }
 ${LOGO}:is([title*="Premium" i], [aria-label*="Premium" i])::after {
-  content: "MoonTube ✦";
-  background: linear-gradient(90deg, currentColor 0 78%, #b9aefb 86%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  padding-right: 17px;
+  background: ${PREMIUM_SPARKLE} right 1px center / 13px 13px no-repeat;
+}
+/* The country code sits after the name, raised, wherever YouTube put it. */
+ytd-topbar-logo-renderer {
+  display: inline-flex !important;
+  align-items: center;
+}
+ytd-topbar-logo-renderer > #country-code {
+  position: static !important;
+  inset: auto !important;
+  align-self: flex-start;
+  margin: 2px 0 0 4px !important;
+  transform: none !important;
+  font-size: 10px !important;
+  line-height: 12px !important;
+  color: rgb(29 23 66 / 0.6) !important;
+}
+html:root[dark] ytd-topbar-logo-renderer > #country-code {
+  color: rgb(244 241 255 / 0.55) !important;
 }
 `;
 
