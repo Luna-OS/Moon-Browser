@@ -2,8 +2,9 @@
  * YouTube in Moon Browser's night-sky look. The player wears it always (it
  * is dark in both of YouTube's themes): the played part of the progress bar
  * is a softly glowing lavender trail that ends in a small full moon, and the
- * volume slider fills with lavender up to a four-pointed sparkle. In dark
- * mode, the site itself takes Moon's night palette over a starry sky.
+ * volume slider fills with lavender up to a four-pointed sparkle. The logo
+ * becomes MoonTube's: a crescent moon in a lavender play button. In dark
+ * mode, the site itself takes Moon's night palette, with stars in its top bar.
  *
  * YouTube names its colours twice: as `--yt-sys-color-baseline--*` custom
  * properties, and as hashed tokens (`--t…`) that most of its CSS reads. Both
@@ -11,8 +12,6 @@
  * of writing, and a later build that renames them merely loses part of the
  * palette, never the layout. The video picture itself is left alone.
  */
-
-import { SKY, SKY_SIZE } from "../moon-sky";
 
 /** An SVG as a CSS url(). */
 const svg = (markup: string) => `url("data:image/svg+xml,${encodeURIComponent(markup)}")`;
@@ -23,6 +22,21 @@ const SPARKLE = svg(
     `<defs><radialGradient id="g"><stop offset="0" stop-color="#fff"/>` +
     `<stop offset="0.55" stop-color="#fbfaff"/><stop offset="1" stop-color="#e9e4fe"/></radialGradient></defs>` +
     `<path fill="url(#g)" d="M12 0.5C12.9 8 16 11.1 23.5 12C16 12.9 12.9 16 12 23.5C11.1 16 8 12.9 0.5 12C8 11.1 11.1 8 12 0.5Z"/>` +
+    `</svg>`,
+);
+
+/**
+ * MoonTube's emblem: a lavender play button with a crescent moon in it and
+ * a sparkle beside the moon.
+ */
+const EMBLEM = svg(
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 21">` +
+    `<defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop offset="0" stop-color="#a497f7"/><stop offset="1" stop-color="#6a5ad6"/></linearGradient>` +
+    `<mask id="m"><rect width="30" height="21" fill="#fff"/><circle cx="16.6" cy="8.6" r="5.6" fill="#000"/></mask></defs>` +
+    `<rect width="30" height="21" rx="6" fill="url(#b)"/>` +
+    `<circle cx="13.6" cy="10.5" r="6" fill="#fff" mask="url(#m)"/>` +
+    `<path fill="#fff" d="M21.5 4.2C21.8 6.2 22.6 7 24.6 7.3C22.6 7.6 21.8 8.4 21.5 10.4C21.2 8.4 20.4 7.6 18.4 7.3C20.4 7 21.2 6.2 21.5 4.2Z"/>` +
     `</svg>`,
 );
 
@@ -132,6 +146,61 @@ ytmusic-player-bar {
 }
 `;
 
+/**
+ * The logo, YouTube's or YouTube Premium's: MoonTube in its place, written
+ * in YouTube's own font next to the emblem. Premium members get a sparkle.
+ */
+const LOGO = "ytd-topbar-logo-renderer #logo-icon";
+const LOGO_CSS = `
+${LOGO} {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  width: auto !important;
+  height: 24px !important;
+}
+${LOGO} > * {
+  display: none !important;
+}
+${LOGO}::before {
+  content: "";
+  flex: none;
+  width: 30px;
+  height: 21px;
+  background: ${EMBLEM} center / contain no-repeat;
+  filter: drop-shadow(0 0 6px rgb(157 143 245 / 0.45));
+}
+${LOGO}::after {
+  content: "MoonTube";
+  font: 700 19px / 24px "YouTube Sans", Roboto, Arial, sans-serif;
+  letter-spacing: -0.6px;
+  white-space: nowrap;
+  color: #1d1742;
+}
+html:root[dark] ${LOGO}::after {
+  color: #f4f1ff;
+}
+ytd-topbar-logo-renderer:has(a[title*="Premium" i], a[aria-label*="Premium" i]) #logo-icon::after {
+  content: "MoonTube ✦";
+  background: linear-gradient(90deg, currentColor 0 78%, #b9aefb 86%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+`;
+
+/** A few stars in the top bar, over the night. */
+const TOP_BAR_STARS = `
+  radial-gradient(1.5px 1.5px at 8% 30%, rgb(255 255 255 / 0.7), transparent),
+  radial-gradient(1px 1px at 19% 72%, rgb(214 207 253 / 0.8), transparent),
+  radial-gradient(1.5px 1.5px at 34% 22%, rgb(255 255 255 / 0.5), transparent),
+  radial-gradient(1px 1px at 61% 78%, rgb(255 255 255 / 0.6), transparent),
+  radial-gradient(1.5px 1.5px at 73% 26%, rgb(214 207 253 / 0.85), transparent),
+  radial-gradient(1px 1px at 88% 64%, rgb(255 255 255 / 0.6), transparent),
+  radial-gradient(2px 2px at 95% 20%, rgb(255 255 255 / 0.8), transparent),
+  linear-gradient(180deg, #141030, #0d0a23)
+`;
+
 /** Moon's night palette in place of YouTube's dark greys and blue. */
 const DARK = `
   --yt-sys-color-baseline--base-background: #0d0a23 !important;
@@ -198,15 +267,18 @@ html:root:not([dark]) { ${LIGHT} }
 html:root[dark],
 html:root[dark] [dark] { ${DARK} }
 
-/* The starry sky behind the page; its bars and menus stay solid night. */
-html:root[dark] {
-  background: ${SKY} !important;
-  background-size: ${SKY_SIZE} !important;
-  background-attachment: fixed !important;
+/*
+ * One night colour behind the whole page. (A sky behind it would only show
+ * through where YouTube happens to leave a part transparent: in patches.)
+ * The stars live in the top bar, which is one piece.
+ */
+html:root[dark],
+html:root[dark] ytd-app {
+  background: #0d0a23 !important;
   scrollbar-color: #4a3f8f transparent;
 }
-html:root[dark] ytd-app {
-  background: transparent !important;
+html:root[dark] #masthead-container ytd-masthead {
+  background: ${TOP_BAR_STARS} !important;
 }
 
 /* The search box has colours of its own. */
@@ -227,7 +299,7 @@ html:root[dark] .ytSearchboxComponentSearchButtonDark {
 }
 `;
 
-export const YOUTUBE_CSS = PLAYER_CSS + PAGE_CSS;
+export const YOUTUBE_CSS = PLAYER_CSS + LOGO_CSS + PAGE_CSS;
 
 /** The sites that get the look. */
 export function isYouTube(url: string): boolean {
