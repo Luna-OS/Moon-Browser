@@ -186,6 +186,10 @@ export function TabStrip({
         role="tablist"
         aria-label="Tabs"
         ref={tabsRef}
+        // A fade at the start shows that more tabs are scrolled out of view.
+        onScroll={(e) =>
+          e.currentTarget.toggleAttribute("data-scrolled", e.currentTarget.scrollLeft > 0)
+        }
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerEnd}

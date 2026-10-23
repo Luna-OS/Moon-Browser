@@ -32,6 +32,11 @@ body {
   overflow-y: hidden;
   scrollbar-width: none;
   padding-top: 6px;
+  /* A tab scrolled into view stays clear of the new tab button (sticky at the end). */
+  scroll-padding-inline: 8px 48px;
+}
+.mb-tabs[data-scrolled] {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
 }
 
 .mb-tab {
