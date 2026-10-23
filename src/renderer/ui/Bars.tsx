@@ -12,7 +12,7 @@ import {
   PinIcon,
   PopupIcon,
 } from "@theme/icons";
-import { ui } from "./store";
+import { onUiEvent, ui } from "./store";
 
 const PROMPTS: Record<PermissionKind, { icon: ReactNode; text: string }> = {
   camera: { icon: <CameraIcon />, text: "wants to use your camera" },
@@ -95,8 +95,15 @@ export function FindBar({ state, onClose }: { state: WindowState; onClose: () =>
   const input = useRef<HTMLInputElement>(null);
   const [text, setText] = useState("");
   useEffect(() => {
-    input.current?.focus();
-    input.current?.select();
+    const focus = () => {
+      input.current?.focus();
+      input.current?.select();
+    };
+    focus();
+    // Ctrl+F again while open: ready for a new search, like Chrome.
+    return onUiEvent((event) => {
+      if (event.type === "find") focus();
+    });
   }, []);
   const find = (value: string, forward: boolean, findNext: boolean) =>
     void ui.command({ type: "findInPage", text: value, forward, findNext });

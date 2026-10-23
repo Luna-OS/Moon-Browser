@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
@@ -249,6 +250,30 @@ export function TabStrip({
   );
 }
 
+/** Left and Right move the focus between the tabs, Home and End to the ends. */
+function moveFocus(event: KeyboardEvent<HTMLElement>) {
+  const tabs = [
+    ...(event.currentTarget
+      .closest('[role="tablist"]')
+      ?.querySelectorAll<HTMLElement>('[role="tab"]') ?? []),
+  ];
+  const at = tabs.indexOf(event.currentTarget);
+  const to =
+    event.key === "ArrowRight"
+      ? (at + 1) % tabs.length
+      : event.key === "ArrowLeft"
+        ? (at - 1 + tabs.length) % tabs.length
+        : event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? tabs.length - 1
+            : -1;
+  if (to < 0 || at < 0) return;
+  event.preventDefault();
+  tabs[to].focus();
+  tabs[to].scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
 function Tab({
   tab,
   group,
@@ -300,6 +325,12 @@ function Tab({
       }}
       onKeyDown={(e) => {
         if (e.key === "Delete") void ui.command({ type: "close", tabId: tab.id });
+        // The tab's own keys, not its buttons'.
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          void ui.command({ type: "activate", tabId: tab.id });
+        } else moveFocus(e);
       }}
     >
       <span className="mb-tab-glow" />
