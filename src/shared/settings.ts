@@ -46,6 +46,7 @@ export function defaultSettings(platform: string): Settings {
     protectedContent: true,
     hardwareAcceleration: true,
     perplexityLook: true,
+    youtubeLook: false,
   };
 }
 
@@ -135,6 +136,7 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     protectedContent: bool(raw.protectedContent, d.protectedContent),
     hardwareAcceleration: bool(raw.hardwareAcceleration, d.hardwareAcceleration),
     perplexityLook: bool(raw.perplexityLook, d.perplexityLook),
+    youtubeLook: bool(raw.youtubeLook, d.youtubeLook),
   };
 }
 

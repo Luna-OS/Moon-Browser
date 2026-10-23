@@ -3,6 +3,8 @@
  * Used for the "Add extension?" question and the extensions page.
  */
 
+import type { ExtensionError } from "./types";
+
 /** The name the toolbar's extension buttons use for the browsing session. */
 export const EXTENSIONS_PARTITION = "moon-browsing";
 
@@ -201,15 +203,67 @@ export function isMessagingNoise(message: string): boolean {
 }
 
 /**
- * Whether an extension's error goes on the extensions page. Messaging noise
- * only does for one's own (unpacked) extensions in developer mode, where it
- * can help: nobody can do anything about a Web Store extension's.
+ * What an extension's old content scripts say after it was updated or
+ * reloaded: they lost their connection to it. Moon Browser updates Web
+ * Store extensions on its own, so this isn't something to fix.
+ */
+const RELOAD_NOISE = ["Extension context invalidated."];
+
+/**
+ * Network errors that say nothing about the extension: Moon Shield blocked
+ * the request (an ad or a tracker), or the computer was offline, changed
+ * networks or went to sleep.
+ */
+const NETWORK_NOISE = [
+  "net::ERR_BLOCKED_BY_CLIENT",
+  "net::ERR_INTERNET_DISCONNECTED",
+  "net::ERR_NETWORK_CHANGED",
+  "net::ERR_NETWORK_IO_SUSPENDED",
+];
+
+/**
+ * Whether an extension's error goes on the extensions page, as Chrome's
+ * "Errors" would list it.
+ *
+ * - Messaging noise (see MESSAGING_NOISE) and old content scripts that lost
+ *   their extension only do for one's own (unpacked) extensions in developer
+ *   mode, where they can help: nobody can do anything about a Web Store
+ *   extension's.
+ * - Requests Moon Shield blocked, or that failed because the computer was
+ *   offline, never do.
+ * - Neither does a resource a web page couldn't load (`onWebPage`): the
+ *   page asked for something of the extension (sites look for extensions
+ *   that way), which isn't the extension's error. Errors of its content
+ *   scripts there still are.
  */
 export function listsError(
   message: string,
-  extension: { developerMode: boolean; unpacked: boolean },
+  extension: { developerMode: boolean; unpacked: boolean; onWebPage?: boolean },
 ): boolean {
-  return !isMessagingNoise(message) || (extension.developerMode && extension.unpacked);
+  const failedLoad = message.startsWith("Failed to load resource");
+  if (failedLoad && (extension.onWebPage || NETWORK_NOISE.some((n) => message.includes(n))))
+    return false;
+  const developing = extension.developerMode && extension.unpacked;
+  if (RELOAD_NOISE.some((n) => message.includes(n))) return developing;
+  return !isMessagingNoise(message) || developing;
+}
+
+/**
+ * Adds an error to an extension's list (newest last): one that is already
+ * there counts once more and moves to the end. Keeps at most `max`.
+ */
+export function addError(
+  list: readonly ExtensionError[],
+  error: { message: string; source?: string },
+  time: number,
+  max: number,
+): ExtensionError[] {
+  const same = list.find((e) => e.message === error.message && e.source === error.source);
+  const entry: ExtensionError = same
+    ? { ...same, count: same.count + 1, last: time }
+    : { ...error, count: 1, last: time };
+  if (!entry.source) delete entry.source;
+  return [...list.filter((e) => e !== same), entry].slice(-max);
 }
 
 /** Whether a Chrome match pattern (`*://*.example.com/*`, `<all_urls>`, …) covers a URL. */

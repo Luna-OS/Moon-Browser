@@ -1,10 +1,11 @@
 /**
  * Chrome extension APIs that neither Electron nor electron-chrome-extensions
  * provide: chrome.sidePanel, chrome.identity, chrome.tabGroups, chrome.search,
- * chrome.debugger, chrome.proxy, the rules of chrome.declarativeNetRequest, and the events
- * runtime.onInstalled and onStartup. Without them, an extension whose service
- * worker calls one at start-up (Claude's side panel, logins through
- * identity.launchWebAuthFlow) crashes before it does anything.
+ * chrome.debugger, chrome.proxy, chrome.downloads, tabs.captureVisibleTab,
+ * native messaging, the rules of chrome.declarativeNetRequest, and the
+ * events runtime.onInstalled and onStartup. Without them, an extension whose
+ * service worker calls one at start-up (Claude's side panel and tab groups,
+ * logins through identity.launchWebAuthFlow) crashes before it does anything.
  *
  * Runs in every frame and service worker of the browsing session, but only
  * acts in extensions' own pages and workers. The main process takes the
@@ -363,6 +364,157 @@ function install(bridge: {
       tabs.ungroup = fn("tabs.ungroup");
     } catch {
       // chrome.tabs is frozen
+    }
+  }
+  // chrome.tabs.captureVisibleTab (screenshots: Claude sees the page with it).
+  if (tabs && !tabs.captureVisibleTab) {
+    try {
+      tabs.captureVisibleTab = fn("tabs.captureVisibleTab");
+    } catch {
+      // chrome.tabs is frozen
+    }
+  }
+
+  // chrome.downloads: electron-chrome-extensions only has stand-ins that do
+  // nothing; downloading, finding and following one's own downloads work.
+  if (has("downloads")) {
+    const ours = {
+      download: fn("downloads.download"),
+      search: fn("downloads.search"),
+      onChanged: event("downloads.onChanged"),
+    };
+    const existing = chrome.downloads as Record<string, unknown> | undefined;
+    try {
+      if (existing) Object.assign(existing, ours);
+      else define("downloads", ours);
+    } catch {
+      // chrome.downloads is frozen
+    }
+  }
+
+  // chrome.runtime.connectNative / sendNativeMessage: talking to apps on the
+  // computer (Claude Desktop, Claude Code), the hosts registered for Chrome.
+  // Chromium's own versions exist with the permission, but go nowhere in
+  // Electron (their calls never answer), so these replace them.
+  const runtimeObj = chrome.runtime as Record<string, unknown>;
+  if (has("nativeMessaging")) {
+    type Listener = (...a: unknown[]) => void;
+    const localEvent = () => {
+      const listeners = new Set<Listener>();
+      return {
+        listeners,
+        api: {
+          addListener: (l: Listener) => void listeners.add(l),
+          removeListener: (l: Listener) => void listeners.delete(l),
+          hasListener: (l: Listener) => listeners.has(l),
+          hasListeners: () => listeners.size > 0,
+        },
+      };
+    };
+    const ports = new Map<string, { message: Listener; end: (error?: string) => void }>();
+    /** Calls `run` with chrome.runtime.lastError set to `error`, as Chrome does. */
+    const withLastError = (error: string | undefined, run: () => void) => {
+      // electron-chrome-extensions may have put its own copy of chrome.runtime in place.
+      const runtimeObj = chrome.runtime as Record<string, unknown>;
+      const before = Object.getOwnPropertyDescriptor(runtimeObj, "lastError");
+      let set = false;
+      if (error) {
+        try {
+          Object.defineProperty(runtimeObj, "lastError", {
+            value: { message: error },
+            configurable: true,
+          });
+          set = true;
+        } catch {
+          // lastError can't be set here
+        }
+      }
+      try {
+        run();
+      } finally {
+        if (set) {
+          try {
+            if (before) Object.defineProperty(runtimeObj, "lastError", before);
+            else delete runtimeObj.lastError;
+          } catch {
+            // leave it
+          }
+        }
+      }
+    };
+    bridge.on("native.message", (portId, message) => ports.get(String(portId))?.message(message));
+    bridge.on("native.disconnect", (portId, error) =>
+      ports.get(String(portId))?.end(typeof error === "string" ? error : undefined),
+    );
+    let count = 0;
+    const connectNative = (application: unknown) => {
+      const portId = `${Date.now().toString(36)}-${++count}-${Math.random().toString(36).slice(2)}`;
+      const onMessage = localEvent();
+      const onDisconnect = localEvent();
+      let connected = true;
+      const port = {
+        name: String(application),
+        onMessage: onMessage.api,
+        onDisconnect: onDisconnect.api,
+        postMessage(message: unknown) {
+          if (!connected) throw new Error("Attempting to use a disconnected port object");
+          void bridge.call("native.post", portId, message).catch(() => undefined);
+        },
+        disconnect() {
+          if (!connected) return;
+          connected = false;
+          ports.delete(portId);
+          void bridge.call("native.disconnect", portId).catch(() => undefined);
+        },
+      };
+      const end = (error?: string) => {
+        if (!connected) return;
+        connected = false;
+        ports.delete(portId);
+        withLastError(error, () => {
+          for (const l of [...onDisconnect.listeners]) {
+            try {
+              l(port);
+            } catch (err) {
+              console.error(err);
+            }
+          }
+        });
+      };
+      ports.set(portId, {
+        message: (message) => {
+          for (const l of [...onMessage.listeners]) {
+            try {
+              l(message, port);
+            } catch (err) {
+              console.error(err);
+            }
+          }
+        },
+        end,
+      });
+      bridge.call("native.connect", portId, application).catch((err: unknown) => {
+        const text = err instanceof Error ? err.message : String(err);
+        // The main process's error arrives as "Error invoking remote method …: Error: <message>".
+        end(text.replace(/^.*Error: /, ""));
+      });
+      return port;
+    };
+    // electron-chrome-extensions keeps these instead of its own (scripts/build-electron.mjs).
+    Object.defineProperty(connectNative, "moonNative", { value: true });
+    try {
+      Object.defineProperty(runtimeObj, "connectNative", {
+        value: connectNative,
+        enumerable: true,
+        configurable: true,
+      });
+      Object.defineProperty(runtimeObj, "sendNativeMessage", {
+        value: fn("native.send"),
+        enumerable: true,
+        configurable: true,
+      });
+    } catch {
+      // chrome.runtime is frozen
     }
   }
 

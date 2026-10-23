@@ -135,6 +135,28 @@ await copyFile(
         }
       }`,
     ],
+    // chrome.downloads: the library's stand-ins do nothing; the ones
+    // src/preload/extension-apis.ts adds really download, whichever preload
+    // runs first.
+    [
+      'download: invokeExtension2("downloads.download", { noop: true }),',
+      'download: base?.download ?? invokeExtension2("downloads.download", { noop: true }),',
+    ],
+    [
+      'search: invokeExtension2("downloads.search", { noop: true }),',
+      'search: base?.search ?? invokeExtension2("downloads.search", { noop: true }),',
+    ],
+    [
+      'onChanged: new ExtensionEvent("downloads.onChanged"),',
+      'onChanged: base?.onChanged ?? new ExtensionEvent("downloads.onChanged"),',
+    ],
+    // Native messaging: Moon Browser's own (src/main/native-messaging.ts)
+    // reads the hosts' messages in pieces, handles any text and .bat hosts,
+    // and answers when a host is missing; it wins over the library's.
+    [
+      'sendNativeMessage: invokeExtension2("runtime.sendNativeMessage")\n',
+      'sendNativeMessage: invokeExtension2("runtime.sendNativeMessage"),\n              ...(base?.connectNative?.moonNative ? { connectNative: base.connectNative, sendNativeMessage: base.sendNativeMessage } : {})\n',
+    ],
     [
       "webRTCIPHandlingPolicy: new ChromeSetting()",
       'webRTCIPHandlingPolicy: new ChromeSetting("default_public_interface_only")',

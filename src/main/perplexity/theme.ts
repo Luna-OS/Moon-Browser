@@ -6,6 +6,8 @@
  * become slightly translucent over a starry sky.
  */
 
+import { SKY, SKY_SIZE } from "../moon-sky";
+
 /** Moon's night palette in place of Perplexity's dark greys and teal. */
 const DARK = `
   --odin-dark-50: #0b0920 !important;
@@ -36,27 +38,6 @@ const LIGHT = `
   --odin-light-300: #ece7f7 !important;
   --shiva-light-600: #5b4bc4 !important;
 `;
-
-const SKY = `
-  radial-gradient(1.5px 1.5px at 23px 41px, rgb(255 255 255 / 0.8), transparent),
-  radial-gradient(1.5px 1.5px at 142px 88px, rgb(255 255 255 / 0.6), transparent),
-  radial-gradient(1.5px 1.5px at 251px 17px, rgb(214 207 253 / 0.9), transparent),
-  radial-gradient(1.5px 1.5px at 67px 196px, rgb(255 255 255 / 0.55), transparent),
-  radial-gradient(1.5px 1.5px at 199px 243px, rgb(255 255 255 / 0.7), transparent),
-  radial-gradient(1.5px 1.5px at 297px 158px, rgb(154 215 245 / 0.7), transparent),
-  radial-gradient(1.5px 1.5px at 111px 281px, rgb(255 255 255 / 0.5), transparent),
-  radial-gradient(1.5px 1.5px at 309px 300px, rgb(214 207 253 / 0.6), transparent),
-  radial-gradient(2px 2px at 60px 90px, rgb(255 255 255 / 0.95), transparent),
-  radial-gradient(2.5px 2.5px at 380px 210px, rgb(214 207 253 / 0.95), transparent),
-  radial-gradient(2px 2px at 250px 460px, rgb(255 255 255 / 0.9), transparent),
-  radial-gradient(2.5px 2.5px at 470px 40px, rgb(255 255 255 / 0.95), transparent),
-  radial-gradient(ellipse 80% 55% at 85% -5%, rgb(185 174 251 / 0.16), transparent 60%),
-  radial-gradient(ellipse 70% 60% at 0% 0%, rgb(59 46 107 / 0.55), transparent 65%),
-  radial-gradient(ellipse 90% 50% at 50% 115%, rgb(154 215 245 / 0.08), transparent 60%),
-  linear-gradient(180deg, #141030 0%, #0b0920 70%)
-`;
-const SKY_SIZE =
-  "320px 320px, 320px 320px, 320px 320px, 320px 320px, 320px 320px, 320px 320px, 320px 320px, 320px 320px, 540px 540px, 540px 540px, 540px 540px, 540px 540px, auto, auto, auto, auto";
 
 /** Is Perplexity dark: chosen in its settings, or following the system. */
 const DARK_SCOPE = [
@@ -100,6 +81,34 @@ ${DARK_SCOPE[0]} {
 }
 
 ::selection { background: rgb(185 174 251 / 0.35); }
+
+/*
+ * The answer Axo says (axo.ts marks it): a soft lavender speech bubble
+ * around it, its tail drawn by Axo. Outline and shadows only, so the page's
+ * layout stays as it is; "off" fades it out when Axo moves on.
+ */
+[data-moon-axo] {
+  border-radius: 14px !important;
+  outline: 1px solid transparent !important;
+  outline-offset: 10px !important;
+  transition: outline-color 0.4s, box-shadow 0.4s, background-color 0.4s !important;
+}
+[data-moon-axo="left"],
+[data-moon-axo="right"] {
+  outline-color: rgb(185 174 251 / 0.42) !important;
+  /* One tint inside and around it (the shadow is the bubble's padding),
+     fading out into a halo past the outline. */
+  background-color: rgb(185 174 251 / 0.05) !important;
+  box-shadow: 0 0 28px 36px rgb(185 174 251 / 0.05) !important;
+}
+[data-moon-axo][data-moon-axo-talking] {
+  outline-color: rgb(185 174 251 / 0.75) !important;
+  background-color: rgb(185 174 251 / 0.065) !important;
+  box-shadow: 0 0 34px 40px rgb(185 174 251 / 0.065) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-moon-axo] { transition: none !important; }
+}
 `;
 
 /** The sites that get the look (and Axo). */

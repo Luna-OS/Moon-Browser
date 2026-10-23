@@ -198,6 +198,13 @@ describe("settings", () => {
     );
   });
 
+  it("leaves YouTube as it is unless switched on", () => {
+    expect(defaultSettings("win32").youtubeLook).toBe(false);
+    expect(sanitizeSettings({ theme: "light" }, "linux").youtubeLook).toBe(false);
+    expect(sanitizeSettings({ youtubeLook: true }, "linux").youtubeLook).toBe(true);
+    expect(sanitizeSettings({ youtubeLook: "yes" }, "linux").youtubeLook).toBe(false);
+  });
+
   it("keeps valid values", () => {
     const s = sanitizeSettings(
       {

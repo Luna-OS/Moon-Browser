@@ -36,8 +36,16 @@ export class Downloads {
   private recentIds: string[] = [];
   private privateFinished = new Map<string, DownloadInfo>();
   private notifyTimer: NodeJS.Timeout | null = null;
+  /** File names extensions chose for their downloads (chrome.downloads): URL → name. */
+  private readonly suggestedNames = new Map<string, string>();
 
   constructor(private readonly browser: Browser) {}
+
+  /** The name a download of `url` starting soon gets (instead of the server's). */
+  suggestName(url: string, filename: string): void {
+    this.suggestedNames.set(url, filename);
+    setTimeout(() => this.suggestedNames.delete(url), 60_000).unref();
+  }
 
   install(ses: Session, isPrivate: boolean): void {
     ses.on("will-download", (_event, item, webContents) =>
@@ -116,7 +124,9 @@ export class Downloads {
   ): void {
     const settings = this.browser.settings;
     const dir = settings.downloadDir || app.getPath("downloads");
-    const filename = item.getFilename();
+    const suggested = this.suggestedNames.get(item.getURL());
+    this.suggestedNames.delete(item.getURL());
+    const filename = suggested || item.getFilename();
     // Programs and scripts are held under a name nothing runs until the
     // person says "Keep" (as Chrome does), even if they finish first.
     const dangerous = isDangerousFile(filename);

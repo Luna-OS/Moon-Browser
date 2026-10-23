@@ -163,6 +163,12 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             checked={s.newTabShortcuts}
             onChange={(v) => set({ newTabShortcuts: v })}
           />
+          <Toggle
+            label="YouTube in Moon's look"
+            hint="YouTube wears the night sky: a moonlit progress bar and a starry volume slider. Applies from the next page load."
+            checked={s.youtubeLook}
+            onChange={(v) => set({ youtubeLook: v })}
+          />
         </Card>
 
         <Card

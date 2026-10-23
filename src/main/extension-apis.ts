@@ -1,6 +1,7 @@
 /**
  * The main-process side of src/preload/extension-apis.ts: chrome.sidePanel,
- * chrome.identity, chrome.search and chrome.debugger for extensions.
+ * chrome.identity, chrome.search, chrome.debugger, chrome.downloads,
+ * tabs.captureVisibleTab and native messaging for extensions.
  *
  * The calling extension is always taken from where the call comes from —
  * the origin of the frame or the scope of the service worker — never from
@@ -10,6 +11,7 @@ import {
   BrowserWindow,
   ipcMain,
   webContents,
+  type DownloadItem,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   type ServiceWorkerMain,
@@ -17,9 +19,11 @@ import {
   type WebContents,
 } from "electron";
 import { searchUrl } from "@shared/engines";
+import { hasSiteAccess } from "@shared/extensions";
 import { isInternalUrl } from "@shared/internal";
 import { isGroupColor, type TabGroupInfo } from "@shared/tab-groups";
 import type { Browser } from "./browser";
+import { findHost, NativePort } from "./native-messaging";
 import type { Tab } from "./tab";
 import type { MoonWindow } from "./window";
 
@@ -44,12 +48,31 @@ const PERMISSION: Record<string, string> = {
   // Either of its two permissions; checked in call().
   declarativeNetRequest: "",
   proxy: "proxy",
+  downloads: "downloads",
+  native: "nativeMessaging",
 };
+
+interface ExtensionDownload {
+  id: number;
+  url: string;
+  filename: string;
+  state: "in_progress" | "interrupted" | "complete";
+  item?: DownloadItem;
+}
 
 /** How long an event waits for an extension to start listening (runtime.onInstalled, …). */
 const PENDING_EVENT_TTL = 60_000;
 
 type Host = { kind: "frame"; wc: WebContents } | { kind: "worker"; worker: ServiceWorkerMain };
+
+const hostGone = (host: Host) =>
+  host.kind === "frame" ? host.wc.isDestroyed() : host.worker.isDestroyed();
+
+function sendTo(host: Host, ...args: unknown[]): void {
+  if (hostGone(host)) return;
+  if (host.kind === "frame") host.wc.send(EVENT, ...args);
+  else host.worker.send(EVENT, ...args);
+}
 
 export function extensionIdOf(url: string): string | null {
   const m = /^chrome-extension:\/\/([a-p]{32})(\/|$)/.exec(url);
@@ -73,6 +96,13 @@ export class ExtensionApis {
   private readonly starting = new Map<number, [string, unknown[]][]>();
   /** Events waiting for the extension to listen: extension ID → event name → arguments. */
   private readonly pending = new Map<string, Map<string, { args: unknown[]; until: number }>>();
+  /** chrome.downloads started by extensions: extension ID → download ID → download. */
+  private readonly downloads = new Map<string, Map<number, ExtensionDownload>>();
+  /** Downloads an extension started that haven't begun yet: URL → download. */
+  private readonly startingDownloads = new Map<string, ExtensionDownload>();
+  private nextDownloadId = 1;
+  /** Native messaging ports: port ID → the host process and who opened it. */
+  private readonly ports = new Map<string, { id: string; host: Host; port: NativePort }>();
 
   constructor(
     private readonly browser: Browser,
@@ -85,7 +115,7 @@ export class ExtensionApis {
       if (!id || typeof name !== "string") throw new Error("Not an extension");
       // navigator.credentials: pages only (service workers have none).
       if (name.startsWith("webauthn.")) return this.webauthn(id, event.sender, name, args);
-      return this.call(id, name, args);
+      return this.call(id, name, args, { kind: "frame", wc: event.sender });
     });
     ipcMain.on(SUBSCRIBE, (event, name: unknown) => {
       const id = this.frameExtension(event);
@@ -104,6 +134,9 @@ export class ExtensionApis {
       }
       if (runningStatus !== "starting") {
         this.starting.delete(versionId);
+        // A stopped worker's native messaging ports end with it.
+        if (runningStatus === "stopped")
+          this.closePorts((h) => h.kind === "worker" && h.worker.versionId === versionId);
         return;
       }
       this.starting.set(versionId, []);
@@ -113,12 +146,38 @@ export class ExtensionApis {
       this.workers.add(worker);
       worker.ipc.handle(CALL, (_event, name: unknown, ...args: unknown[]) => {
         if (typeof name !== "string") throw new Error("Bad call");
-        return this.call(id, name, args);
+        return this.call(id, name, args, { kind: "worker", worker });
       });
       worker.ipc.on(SUBSCRIBE, (_event, name: unknown) => {
         if (typeof name === "string") this.subscribe(id, name, { kind: "worker", worker });
       });
     });
+    // Downloads extensions start, for downloads.search and onChanged.
+    this.ses.on("will-download", (_event, item) => {
+      const download = this.startingDownloads.get(item.getURL());
+      if (!download) return;
+      this.startingDownloads.delete(item.getURL());
+      download.item = item;
+      const owner = [...this.downloads].find(([, list]) => list.get(download.id) === download)?.[0];
+      item.once("done", (_e, state) => {
+        const current = state === "completed" ? "complete" : "interrupted";
+        download.filename = item.getSavePath() || download.filename;
+        download.state = current;
+        if (owner)
+          this.emit(owner, "downloads.onChanged", {
+            id: download.id,
+            state: { previous: "in_progress", current },
+            ...(current === "interrupted" ? { error: { current: "USER_CANCELED" } } : {}),
+          });
+      });
+    });
+  }
+
+  /** An extension was switched off or removed: the apps it talks to end. */
+  unloaded(id: string): void {
+    this.closePorts((_h, owner) => owner === id);
+    this.downloads.delete(id);
+    this.pending.delete(id);
   }
 
   private frameExtension(event: IpcMainInvokeEvent | IpcMainEvent): string | null {
@@ -212,7 +271,7 @@ export class ExtensionApis {
     }
   }
 
-  private async call(id: string, name: string, args: unknown[]): Promise<unknown> {
+  private async call(id: string, name: string, args: unknown[], host: Host): Promise<unknown> {
     const namespace = name.split(".")[0];
     const permission = PERMISSION[namespace];
     if (
@@ -303,6 +362,27 @@ export class ExtensionApis {
       case "tabs.ungroup":
         for (const tab of this.tabsOf(a)) tab.window.ungroupTabs([tab]);
         return undefined;
+      case "tabs.captureVisibleTab":
+        return this.captureVisibleTab(id, a, b);
+      case "downloads.download":
+        return this.download(id, a);
+      case "downloads.search":
+        return this.downloadSearch(id, a);
+      case "native.connect":
+        return this.nativeConnect(id, a, b, host);
+      case "native.post":
+        this.ports.get(String(a))?.port.post(b);
+        return undefined;
+      case "native.disconnect": {
+        const entry = this.ports.get(String(a));
+        if (entry?.id === id) {
+          this.ports.delete(String(a));
+          entry.port.close();
+        }
+        return undefined;
+      }
+      case "native.send":
+        return this.nativeSend(id, a, b);
       default:
         throw new Error(`chrome.${name} isn't available in Moon Browser`);
     }
@@ -321,6 +401,160 @@ export class ExtensionApis {
     }
     const focused = this.browser.focusedWindow();
     return focused && !focused.isPrivate ? focused : normal[0];
+  }
+
+  // ---- tabs.captureVisibleTab ----
+
+  /** The visible part of a window's active tab, as Chrome's data: URL. */
+  private async captureVisibleTab(id: string, a: unknown, b: unknown): Promise<string> {
+    const windowId = typeof a === "number" ? a : undefined;
+    const options = isObj(typeof a === "number" || a == null ? b : a)
+      ? ((typeof a === "number" || a == null ? b : a) as Record<string, unknown>)
+      : {};
+    const win = this.targetWindow(windowId !== undefined ? { windowId } : {});
+    const tab = win?.activeTab;
+    const wc = tab?.wc;
+    if (!win || !tab || !wc || wc.isDestroyed()) throw new Error("No active tab to capture");
+    const url = wc.getURL();
+    const manifest = this.ses.extensions.getExtension(id)?.manifest as
+      { permissions?: unknown; host_permissions?: unknown } | undefined;
+    const ext = this.browser.extensions;
+    // Chrome asks for activeTab or access to the page's site.
+    const allowed =
+      ext.declares(id, "activeTab") ||
+      hasSiteAccess(
+        { permissions: manifest?.permissions, host_permissions: manifest?.host_permissions },
+        url,
+      );
+    if (!allowed || isInternalUrl(url) || url.startsWith("chrome-extension:"))
+      throw new Error(`Cannot access contents of url "${url}".`);
+    const image = await wc.capturePage();
+    if (options.format === "png") return image.toDataURL();
+    const quality = num(options.quality);
+    const jpeg = image.toJPEG(quality !== undefined ? Math.max(0, Math.min(100, quality)) : 92);
+    return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  }
+
+  // ---- downloads ----
+
+  private download(id: string, options: unknown): number {
+    const o = isObj(options) ? options : {};
+    const url = typeof o.url === "string" ? o.url : "";
+    const own = `chrome-extension://${id}/`;
+    const blobOfOwn = url.startsWith(`blob:${own}`);
+    if (!/^(https?:|data:)/i.test(url) && !blobOfOwn && !url.startsWith(own))
+      throw new Error("Invalid URL");
+    const filename =
+      typeof o.filename === "string"
+        ? [...(o.filename.split(/[\\/]/).pop() ?? "")]
+            .map((c) => (c < " " || '<>:"|?*'.includes(c) ? "_" : c))
+            .join("")
+            .trim()
+        : "";
+    const download: ExtensionDownload = {
+      id: this.nextDownloadId++,
+      url,
+      filename,
+      state: "in_progress",
+    };
+    let list = this.downloads.get(id);
+    if (!list) this.downloads.set(id, (list = new Map<number, ExtensionDownload>()));
+    list.set(download.id, download);
+    this.startingDownloads.set(url, download);
+    if (filename) this.browser.downloads.suggestName(url, filename);
+    // A blob lives in the page that made it: download it from there.
+    const page = webContents
+      .getAllWebContents()
+      .find((wc) => !wc.isDestroyed() && wc.session === this.ses && wc.getURL().startsWith(own));
+    if (page) page.downloadURL(url);
+    else this.ses.downloadURL(url);
+    return download.id;
+  }
+
+  private downloadSearch(id: string, query: unknown): unknown[] {
+    const q = isObj(query) ? query : {};
+    return [...(this.downloads.get(id)?.values() ?? [])]
+      .filter((d) => q.id === undefined || d.id === q.id)
+      .filter((d) => q.url === undefined || d.url === q.url)
+      .filter((d) => q.state === undefined || d.state === q.state)
+      .map((d) => ({
+        id: d.id,
+        url: d.url,
+        finalUrl: d.url,
+        filename: d.item?.getSavePath() || d.filename,
+        state: d.state,
+        paused: d.item?.isPaused() ?? false,
+        bytesReceived: d.item?.getReceivedBytes() ?? 0,
+        totalBytes: d.item?.getTotalBytes() ?? 0,
+        fileSize: d.item?.getTotalBytes() ?? 0,
+        mime: d.item?.getMimeType() ?? "",
+        exists: d.state === "complete",
+        incognito: false,
+        danger: "safe",
+        canResume: false,
+        startTime: new Date(
+          d.item?.getStartTime() ? d.item.getStartTime() * 1000 : Date.now(),
+        ).toISOString(),
+      }));
+  }
+
+  // ---- Native messaging ----
+
+  private async nativeConnect(
+    id: string,
+    portId: unknown,
+    name: unknown,
+    host: Host,
+  ): Promise<void> {
+    if (typeof portId !== "string" || typeof name !== "string" || this.ports.has(portId))
+      throw new Error("Bad native port");
+    // Registered before the host is found: the extension may post right away.
+    const port = new NativePort(
+      (message) => sendTo(host, "native.message", portId, message),
+      (error) => {
+        this.ports.delete(portId);
+        sendTo(host, "native.disconnect", portId, error);
+      },
+    );
+    this.ports.set(portId, { id, host, port });
+    let found;
+    try {
+      found = await findHost(name, id);
+    } catch (err) {
+      this.ports.delete(portId);
+      throw err;
+    }
+    if (!port.isClosed) port.start(found, id);
+  }
+
+  /** runtime.sendNativeMessage: the host's first answer. */
+  private async nativeSend(id: string, name: unknown, message: unknown): Promise<unknown> {
+    if (typeof name !== "string") throw new Error("Bad native host name");
+    const found = await findHost(name, id);
+    return new Promise((resolve, reject) => {
+      let answered = false;
+      const port: NativePort = new NativePort(
+        (reply) => {
+          if (answered) return;
+          answered = true;
+          resolve(reply);
+          port.close();
+        },
+        (error) => {
+          if (!answered) reject(new Error(error ?? "Native host has exited."));
+        },
+      );
+      port.start(found, id);
+      port.post(message);
+    });
+  }
+
+  private closePorts(which: (host: Host, owner: string) => boolean): void {
+    for (const [portId, entry] of [...this.ports]) {
+      if (!which(entry.host, entry.id)) continue;
+      this.ports.delete(portId);
+      entry.port.close();
+    }
   }
 
   // ---- Tab groups ----
