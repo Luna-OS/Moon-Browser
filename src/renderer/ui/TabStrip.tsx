@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useRef,
   useState,
@@ -28,6 +29,10 @@ interface Drag {
   moved: boolean;
   target: DropTarget | null;
 }
+
+/** No part in a drag, and no style of its own: shared rather than made anew each render. */
+const NO_LOOK: DragLook = {};
+const NO_STYLE: React.CSSProperties & Record<string, string> = {};
 
 /** Pixels the pointer has to travel before a press becomes a drag. */
 const DRAG_THRESHOLD = 6;
@@ -157,18 +162,18 @@ export function TabStrip({
 
   /** How an element looks in the current drag. */
   const look = (el: { tabId?: number; groupId?: number | null; chipId?: number }): DragLook => {
-    if (!drag) return {};
+    if (!drag) return NO_LOOK;
     const { item, target, dx } = drag;
     const dragged =
       item.kind === "tab"
         ? el.tabId === item.id
         : el.chipId === item.id || (el.tabId !== undefined && el.groupId === item.id);
     if (dragged) return { offset: dx };
-    if (!target) return {};
+    if (!target) return NO_LOOK;
     if (target.kind === "tab" && el.tabId === target.id) return { drop: target.side };
     if (target.kind === "chip" && el.chipId === target.id)
       return { drop: item.kind === "tab" ? "join" : "before" };
-    return {};
+    return NO_LOOK;
   };
 
   return (
@@ -278,28 +283,54 @@ function moveFocus(event: KeyboardEvent<HTMLElement>) {
   tabs[to].scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
-function Tab({
-  tab,
-  group,
-  active,
-  inSplit,
-  look,
-}: {
+interface TabProps {
   tab: TabInfo;
   group?: TabGroupInfo;
   active: boolean;
   inSplit: boolean;
   look: DragLook;
-}) {
+}
+
+/** Same fields, for objects that arrive anew with every window state. */
+function sameFields<T extends object>(a: T | undefined, b: T | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = Object.keys(a) as (keyof T)[];
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every(
+      (k) =>
+        a[k] === b[k] ||
+        (typeof a[k] === "object" && JSON.stringify(a[k]) === JSON.stringify(b[k])),
+    )
+  );
+}
+
+// A state update re-renders only the tabs that changed, not all of them.
+const Tab = memo(
+  TabView,
+  (a: TabProps, b: TabProps) =>
+    a.active === b.active &&
+    a.inSplit === b.inSplit &&
+    a.look.offset === b.look.offset &&
+    a.look.drop === b.look.drop &&
+    sameFields(a.tab, b.tab) &&
+    sameFields(a.group, b.group),
+);
+
+function TabView({ tab, group, active, inSplit, look }: TabProps) {
   const close = (event: MouseEvent) => {
     event.stopPropagation();
     void ui.command({ type: "close", tabId: tab.id });
   };
 
   const title = tab.sleeping ? `${tab.title} (asleep)` : tab.title;
-  const style: React.CSSProperties & Record<string, string> = {};
-  if (group) style["--mb-group"] = GROUP_HEX[group.color];
-  if (look.offset !== undefined) style.transform = `translateX(${look.offset}px)`;
+  let style: React.CSSProperties & Record<string, string> = NO_STYLE;
+  if (group || look.offset !== undefined) {
+    style = {};
+    if (group) style["--mb-group"] = GROUP_HEX[group.color];
+    if (look.offset !== undefined) style.transform = `translateX(${look.offset}px)`;
+  }
 
   return (
     <div

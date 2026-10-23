@@ -7,6 +7,28 @@ import { MoonPhase } from "@theme/MoonPhase";
 import { describeError } from "./errors";
 import { ui } from "./store";
 
+/** Calls `send` with the latest value at most once per frame (pointer moves come faster). */
+function perFrame<T>(send: (value: T) => void) {
+  let latest: T;
+  let frame = 0;
+  return {
+    push(value: T) {
+      latest = value;
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          send(latest);
+        });
+    },
+    flush() {
+      if (!frame) return;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      send(latest);
+    },
+  };
+}
+
 function Panel({ rect, children }: { rect: Rect; children: ReactNode }) {
   return (
     <div
@@ -158,11 +180,12 @@ export function ContentArea({
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
     onDividerDrag(true);
+    const send = perFrame((ratio: number) => void ui.command({ type: "splitRatio", ratio }));
     const move = (e: PointerEvent) => {
-      const ratio = (e.clientX - origin.x - SPLIT_GAP / 2) / Math.max(1, size.width - SPLIT_GAP);
-      void ui.command({ type: "splitRatio", ratio });
+      send.push((e.clientX - origin.x - SPLIT_GAP / 2) / Math.max(1, size.width - SPLIT_GAP));
     };
     const up = () => {
+      send.flush();
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);
@@ -180,10 +203,10 @@ export function ContentArea({
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
     onDividerDrag(true);
-    const move = (e: PointerEvent) => {
-      void ui.command({ type: "sidePanelWidth", width: origin.x + size.width - e.clientX });
-    };
+    const send = perFrame((width: number) => void ui.command({ type: "sidePanelWidth", width }));
+    const move = (e: PointerEvent) => send.push(origin.x + size.width - e.clientX);
     const up = () => {
+      send.flush();
       target.removeEventListener("pointermove", move);
       target.removeEventListener("pointerup", up);
       target.removeEventListener("pointercancel", up);

@@ -712,21 +712,24 @@ export class MoonWindow {
   }
 
   async openOverlay(): Promise<OverlaySnapshot[]> {
-    const shots: OverlaySnapshot[] = [];
-    for (const view of this.shown) {
-      try {
-        const image = await view.webContents.capturePage();
-        if (!image.isEmpty()) {
-          shots.push({
+    // Both halves of a split view at once; a still picture behind a menu
+    // needs no more than a medium JPEG quality.
+    const shots = await Promise.all(
+      [...this.shown].map(async (view): Promise<OverlaySnapshot | null> => {
+        try {
+          const image = await view.webContents.capturePage();
+          if (image.isEmpty()) return null;
+          return {
             rect: view.getBounds(),
-            dataUrl: `data:image/jpeg;base64,${image.toJPEG(90).toString("base64")}`,
-          });
+            dataUrl: `data:image/jpeg;base64,${image.toJPEG(75).toString("base64")}`,
+          };
+        } catch {
+          // No snapshot: the page area just shows the background meanwhile.
+          return null;
         }
-      } catch {
-        // No snapshot: the page area just shows the background meanwhile.
-      }
-    }
-    return shots;
+      }),
+    );
+    return shots.filter((shot) => shot !== null);
   }
 
   overlayReady(): void {
