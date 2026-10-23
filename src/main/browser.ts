@@ -74,6 +74,8 @@ export class Browser {
   private closedTabs: ClosedTab[] = [];
   private lastFocused: MoonWindow | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
+  /** Kinds of internal events sent in the last second, and whether more came since. */
+  private readonly notified = new Map<InternalEvent, { again: boolean }>();
   private userAgent = "";
   quitting = false;
 
@@ -109,6 +111,7 @@ export class Browser {
         this.profile.stats.get().restoreAfterUpdate = true;
         this.profile.stats.changed();
       },
+      openPage: (url) => this.openExternalUrls([url]),
     });
   }
 
@@ -153,7 +156,7 @@ export class Browser {
     // Spell checking would download dictionaries from Google; only the
     // browsing sessions may, and only when switched on in Settings.
     this.uiSession.setSpellCheckerEnabled(false);
-    handleInternalProtocol(this.uiSession, { ui: true });
+    handleInternalProtocol(this.uiSession, { ui: true, theme: () => this.resolvedTheme() });
     this.uiSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     this.uiSession.setPermissionCheckHandler(() => false);
     // The browser UI loads nothing from the web except the sites' icons.
@@ -181,13 +184,16 @@ export class Browser {
       const tab = this.tabFor(event.sender.id);
       return !!tab && this.protectionActive(tab.url.startsWith("http") ? tab.url : url);
     });
-    await this.adblock.start();
-
-    // Chrome extensions, in the normal session only. A broken extension
-    // must never keep the browser from starting.
-    await this.extensions
-      .init(this.normalSession)
-      .catch((err: unknown) => console.error("[moon] extensions failed to start:", err));
+    // The blocker's lists and the extensions load side by side. Windows
+    // open only after both, so no page loads before the blocker is ready.
+    await Promise.all([
+      this.adblock.start(),
+      // Chrome extensions, in the normal session only. A broken extension
+      // must never keep the browser from starting.
+      this.extensions
+        .init(this.normalSession)
+        .catch((err: unknown) => console.error("[moon] extensions failed to start:", err)),
+    ]);
 
     // Tabs nobody looked at for a while go to sleep.
     setInterval(() => this.sleepIdleTabs(), 60_000).unref();
@@ -349,7 +355,7 @@ export class Browser {
     if (!s.sleepTabs) return;
     const cutoff = Date.now() - s.sleepAfterMinutes * 60_000;
     for (const tab of this.allTabs()) {
-      if (tab.sleeping || tab.audible || tab.pinned || tab.loading) continue;
+      if (tab.sleeping || tab.audible || tab.pinned || tab.loading || tab.mustStayAwake()) continue;
       if (tab.lastActive > cutoff || tab.window.isVisible(tab)) continue;
       if (tab.window.visibleTabs().includes(tab)) continue;
       tab.sleep();
@@ -437,8 +443,28 @@ export class Browser {
     return after;
   }
 
-  /** Tells the open internal pages that something they show has changed. */
+  /**
+   * Tells the open internal pages that something they show has changed: at
+   * once, then at most once a second for each kind. A page that changes its
+   * address many times a second would otherwise have every New Tab page
+   * work out its top sites as often.
+   */
   notifyInternal(event: InternalEvent): void {
+    const recent = this.notified.get(event);
+    if (recent) {
+      recent.again = true;
+      return;
+    }
+    const entry = { again: false };
+    this.notified.set(event, entry);
+    setTimeout(() => {
+      this.notified.delete(event);
+      if (entry.again) this.notifyInternal(event);
+    }, 1000);
+    this.sendInternal(event);
+  }
+
+  private sendInternal(event: InternalEvent): void {
     for (const wc of webContents.getAllWebContents()) {
       if (wc.isDestroyed() || !this.tabFor(wc.id)) continue;
       if (isInternalUrl(wc.getURL())) wc.send(INTERNAL_EVENT_CHANNEL, event);

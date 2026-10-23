@@ -54,6 +54,10 @@ export function shortcutFor(input: KeyInput, platform: string): ShortcutCommand 
   const key = input.key.length === 1 ? input.key.toLowerCase() : input.key;
   const { shift, alt } = input;
 
+  if (mac) {
+    const command = macOnly(key, input);
+    if (command !== undefined) return command;
+  }
   if (other) return null;
 
   if (mod && !alt) {
@@ -85,6 +89,8 @@ export function shortcutFor(input: KeyInput, platform: string): ShortcutCommand 
           return { type: "findNext" };
         case "d":
           return { type: "bookmark" };
+        // On macOS, Cmd+H hides the app (the app menu's Hide) and Cmd+Y
+        // opens the history, as in Chrome.
         case "h":
           return mac ? null : { type: "openPage", page: "history" };
         case "y":
@@ -124,14 +130,17 @@ export function shortcutFor(input: KeyInput, platform: string): ShortcutCommand 
           return { type: "findPrevious" };
         case "o":
           return { type: "openPage", page: "bookmarks" };
+        case "h":
+          return mac ? { type: "home" } : null;
         case "b":
           return { type: "toggleBookmarksBar" };
         case "Delete":
         case "Backspace":
           return { type: "clearData" };
         case "i":
-        case "j":
           return { type: "devtools" };
+        case "j":
+          return mac ? { type: "openPage", page: "downloads" } : { type: "devtools" };
         case "q":
           return mac ? null : { type: "quit" };
         case "+":
@@ -182,4 +191,95 @@ export function shortcutFor(input: KeyInput, platform: string): ShortcutCommand 
     }
   }
   return null;
+}
+
+/**
+ * Chrome's own keys on macOS, with Cmd plus Option, Control or a bracket.
+ * Undefined for everything else: the shared table decides those.
+ */
+function macOnly(key: string, input: KeyInput): ShortcutCommand | null | undefined {
+  const { meta, control, shift, alt } = input;
+  // Ctrl+Tab switches tabs on macOS too.
+  if (control && !meta && !alt && key === "Tab") return { type: shift ? "previousTab" : "nextTab" };
+  if (!meta) return undefined;
+  // With Option or Control held, macOS types other characters (Option+I is
+  // a dead key), so these go by the key's place on the keyboard.
+  const code = /^Key[A-Z]$/.test(input.code ?? "") ? (input.code ?? "") : "";
+  const letter = code ? code.slice(3).toLowerCase() : key;
+  if (control) return !shift && !alt && letter === "f" ? { type: "fullscreen" } : null;
+  // Cmd+[ and Cmd+] go back and forward; with Shift they switch tabs.
+  // Where brackets need Option (German keyboards: Option+5 and 6), the
+  // bracket still counts.
+  if (key === "[" || key === "{") return { type: shift ? "previousTab" : "back" };
+  if (key === "]" || key === "}") return { type: shift ? "nextTab" : "forward" };
+  if (!alt || shift) return undefined;
+  switch (key === "ArrowLeft" || key === "ArrowRight" ? key : letter) {
+    case "ArrowLeft":
+      return { type: "previousTab" };
+    case "ArrowRight":
+      return { type: "nextTab" };
+    case "i":
+    case "j":
+    case "c":
+      return { type: "devtools" };
+    case "u":
+      return { type: "viewSource" };
+    case "b":
+      return { type: "openPage", page: "bookmarks" };
+    case "l":
+      return { type: "openPage", page: "downloads" };
+  }
+  return null;
+}
+
+/** Keys the menus and tooltips name. */
+export type ShortcutHint =
+  | "newTab"
+  | "closeTab"
+  | "newWindow"
+  | "newPrivateWindow"
+  | "back"
+  | "forward"
+  | "reload"
+  | "home"
+  | "history"
+  | "downloads"
+  | "bookmarks"
+  | "bookmarksBar"
+  | "bookmark"
+  | "zoomReset"
+  | "find"
+  | "print"
+  | "fullscreen"
+  | "devtools"
+  | "settings"
+  | "quit";
+
+/** Windows and Linux, then macOS (in Apple's order: ⌃ ⌥ ⇧ ⌘). */
+const HINTS: Record<ShortcutHint, [string, string]> = {
+  newTab: ["Ctrl+T", "⌘T"],
+  closeTab: ["Ctrl+W", "⌘W"],
+  newWindow: ["Ctrl+N", "⌘N"],
+  newPrivateWindow: ["Ctrl+Shift+N", "⇧⌘N"],
+  back: ["Alt+Left", "⌘["],
+  forward: ["Alt+Right", "⌘]"],
+  reload: ["Ctrl+R", "⌘R"],
+  home: ["Alt+Home", "⇧⌘H"],
+  history: ["Ctrl+H", "⌘Y"],
+  downloads: ["Ctrl+J", "⇧⌘J"],
+  bookmarks: ["Ctrl+Shift+O", "⌥⌘B"],
+  bookmarksBar: ["Ctrl+Shift+B", "⇧⌘B"],
+  bookmark: ["Ctrl+D", "⌘D"],
+  zoomReset: ["Ctrl+0", "⌘0"],
+  find: ["Ctrl+F", "⌘F"],
+  print: ["Ctrl+P", "⌘P"],
+  fullscreen: ["F11", "⌃⌘F"],
+  devtools: ["F12", "⌥⌘I"],
+  settings: ["Ctrl+,", "⌘,"],
+  quit: ["Ctrl+Shift+Q", "⌘Q"],
+};
+
+/** How a shortcut is written on this platform: "Ctrl+Shift+N" or "⇧⌘N". */
+export function shortcutHint(hint: ShortcutHint, platform: string): string {
+  return HINTS[hint][platform === "darwin" ? 1 : 0];
 }

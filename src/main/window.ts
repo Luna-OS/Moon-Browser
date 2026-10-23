@@ -15,7 +15,7 @@ import {
   WebContentsView,
   type WebPreferences,
 } from "electron";
-import { FRAME_COLORS, TAB_STRIP_HEIGHT } from "@shared/chrome-colors";
+import { DIALOG_SCRIM, FRAME_COLORS, mixColors, TAB_STRIP_HEIGHT } from "@shared/chrome-colors";
 import { internalUrl, isNewTabUrl, NEWTAB_URL, type InternalPage } from "@shared/internal";
 import {
   UI_CHANNELS,
@@ -57,6 +57,10 @@ export interface WindowOptions {
   urls?: string[];
   saved?: SavedWindow;
 }
+
+const MAC = process.platform === "darwin";
+/** Where the traffic lights go: vertically centred on the tabs (src/renderer/ui/ui.css). */
+const TRAFFIC_LIGHTS = { x: 14, y: 15 };
 
 /** Addresses the UI may open directly (bookmarks, suggestions). */
 export function isOpenableUrl(url: string): boolean {
@@ -112,11 +116,18 @@ export class MoonWindow {
       title: "Moon Browser",
       backgroundColor: this.isPrivate ? colors.privateFrame : colors.frame,
       titleBarStyle: "hidden",
-      titleBarOverlay: {
-        color: this.isPrivate ? colors.privateFrame : colors.frame,
-        symbolColor: colors.symbols,
-        height: TAB_STRIP_HEIGHT,
-      },
+      // The window buttons sit in the tab strip: drawn by the system on the
+      // right (Windows, Linux), or as the traffic lights on the left
+      // (macOS), lined up with the tabs. The tab strip leaves room for them.
+      ...(MAC
+        ? { trafficLightPosition: TRAFFIC_LIGHTS }
+        : {
+            titleBarOverlay: {
+              color: this.isPrivate ? colors.privateFrame : colors.frame,
+              symbolColor: colors.symbols,
+              height: TAB_STRIP_HEIGHT,
+            },
+          }),
       icon: process.platform === "linux" ? windowIcon : undefined,
       autoHideMenuBar: true,
       webPreferences: {
@@ -141,8 +152,23 @@ export class MoonWindow {
         this.command(command);
       }
     });
+    // The UI comes back after a crash, but one that keeps crashing (a broken
+    // GPU driver, say) must not keep the browser busy: each reload waits
+    // longer, and after a few in a row it stays down.
+    let crashes = 0;
+    let lastCrash = 0;
     ui.on("render-process-gone", () => {
-      if (!this.closed) ui.reload();
+      if (this.closed) return;
+      if (Date.now() - lastCrash > 60_000) crashes = 0;
+      lastCrash = Date.now();
+      if (++crashes > 5) {
+        console.error("[moon] the browser UI keeps crashing; not reloading it again");
+        return;
+      }
+      const delay = 250 * 2 ** (crashes - 1);
+      setTimeout(() => {
+        if (!this.closed && !ui.isDestroyed()) ui.reload();
+      }, delay);
     });
 
     this.win.on("resize", () => this.layout());
@@ -166,6 +192,11 @@ export class MoonWindow {
     this.win.on("app-command", (_event, cmd) => {
       if (cmd === "browser-backward") this.activeTab?.back();
       if (cmd === "browser-forward") this.activeTab?.forward();
+    });
+    // macOS: swiping between pages with three fingers (if the trackpad is set so).
+    this.win.on("swipe", (_event, direction) => {
+      if (direction === "right") this.activeTab?.back();
+      if (direction === "left") this.activeTab?.forward();
     });
     this.win.on("close", () => browser.windowClosing(this));
     this.win.on("closed", () => {
@@ -712,21 +743,24 @@ export class MoonWindow {
   }
 
   async openOverlay(): Promise<OverlaySnapshot[]> {
-    const shots: OverlaySnapshot[] = [];
-    for (const view of this.shown) {
-      try {
-        const image = await view.webContents.capturePage();
-        if (!image.isEmpty()) {
-          shots.push({
+    // Both halves of a split view at once; a still picture behind a menu
+    // needs no more than a medium JPEG quality.
+    const shots = await Promise.all(
+      [...this.shown].map(async (view): Promise<OverlaySnapshot | null> => {
+        try {
+          const image = await view.webContents.capturePage();
+          if (image.isEmpty()) return null;
+          return {
             rect: view.getBounds(),
-            dataUrl: `data:image/jpeg;base64,${image.toJPEG(90).toString("base64")}`,
-          });
+            dataUrl: `data:image/jpeg;base64,${image.toJPEG(75).toString("base64")}`,
+          };
+        } catch {
+          // No snapshot: the page area just shows the background meanwhile.
+          return null;
         }
-      } catch {
-        // No snapshot: the page area just shows the background meanwhile.
-      }
-    }
-    return shots;
+      }),
+    );
+    return shots.filter((shot) => shot !== null);
   }
 
   overlayReady(): void {
@@ -747,6 +781,9 @@ export class MoonWindow {
     setImmediate(() => {
       this.updateScheduled = false;
       if (this.closed || this.win.isDestroyed()) return;
+      // This state covers whatever an updateSoon() was waiting to send.
+      if (this.softTimer) clearTimeout(this.softTimer);
+      this.softTimer = null;
       this.win.webContents.send(UI_CHANNELS.state, this.state());
       const title = this.activeTab?.info().title;
       this.win.setTitle(
@@ -755,7 +792,7 @@ export class MoonWindow {
     });
   }
 
-  /** For frequent, unimportant changes (blocked-request counters). */
+  /** For frequent, unimportant changes (blocked-request counters, tabs in the background). */
   updateSoon(): void {
     if (this.softTimer) return;
     this.softTimer = setTimeout(() => {
@@ -782,6 +819,7 @@ export class MoonWindow {
 
   private dialogChanged(): void {
     if (this.closed) return;
+    this.paintTitleBar();
     this.update();
     if (!this.dialogs.current()) return;
     // Menus make way, and the keys (Enter, Escape) go to the dialog.
@@ -829,8 +867,12 @@ export class MoonWindow {
       showHomeButton: settings.showHomeButton,
       showBookmarksBar: settings.showBookmarksBar,
       searchEngineName: this.browser.engine().name,
-      fullscreen: this.win.isFullScreen(),
+      // On macOS, tabs and toolbar stay in full screen, as in Chrome there;
+      // only a page's own full screen (a video) hides them.
+      fullscreen: this.win.isFullScreen() && (!MAC || this.htmlFullscreen !== null),
+      trafficLights: MAC && !this.win.isFullScreen(),
       updateReady: this.browser.updater.readyVersion(),
+      updateManual: this.browser.updater.status().manual,
       isDefaultBrowser: this.isPrivate || this.browser.defaultBrowser.isDefault,
       extensionTab:
         !this.isPrivate && this.browser.extensions.count() > 0 ? (active?.wc?.id ?? null) : null,
@@ -856,16 +898,24 @@ export class MoonWindow {
 
   applyTheme(): void {
     const colors = FRAME_COLORS[this.browser.resolvedTheme()];
-    const frame = this.isPrivate ? colors.privateFrame : colors.frame;
-    this.win.setBackgroundColor(frame);
-    if (process.platform !== "darwin") {
-      this.win.setTitleBarOverlay({
-        color: frame,
-        symbolColor: colors.symbols,
-        height: TAB_STRIP_HEIGHT,
-      });
-    }
+    this.win.setBackgroundColor(this.isPrivate ? colors.privateFrame : colors.frame);
+    this.paintTitleBar();
+    for (const tab of this.tabs) tab.paintBackground();
     this.update();
+  }
+
+  /** Behind the window buttons: the frame, dimmed like the rest while a Moon dialog is open. */
+  private paintTitleBar(): void {
+    if (process.platform === "darwin" || this.win.isDestroyed()) return;
+    const theme = this.browser.resolvedTheme();
+    const colors = FRAME_COLORS[theme];
+    const frame = this.isPrivate ? colors.privateFrame : colors.frame;
+    const scrim = DIALOG_SCRIM[theme];
+    this.win.setTitleBarOverlay({
+      color: this.dialogs.current() ? mixColors(frame, scrim.color, scrim.alpha) : frame,
+      symbolColor: colors.symbols,
+      height: TAB_STRIP_HEIGHT,
+    });
   }
 
   saved(): SavedWindow {

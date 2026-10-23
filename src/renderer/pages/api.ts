@@ -104,7 +104,11 @@ export const api = {
   dismissImportHint: () => m().invoke("import.dismissHint") as Promise<void>,
 };
 
-/** Re-runs `load` whenever the main process reports a change of `kind`. */
+/**
+ * Re-runs `load` whenever the main process reports a change of `kind`. A
+ * page out of view (a New Tab page in a background tab) catches up once it
+ * is shown again instead.
+ */
 export function useLive<T>(load: () => Promise<T>, kinds: InternalEvent[]): [T | null, () => void] {
   const [value, setValue] = useState<T | null>(null);
   const [tick, setTick] = useState(0);
@@ -118,13 +122,24 @@ export function useLive<T>(load: () => Promise<T>, kinds: InternalEvent[]): [T |
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
-  useEffect(
-    () =>
-      m().on((event) => {
-        if (kinds.includes(event)) setTick((t) => t + 1);
-      }),
+  useEffect(() => {
+    let missed = false;
+    const off = m().on((event) => {
+      if (!kinds.includes(event)) return;
+      if (document.visibilityState === "hidden") missed = true;
+      else setTick((t) => t + 1);
+    });
+    const shown = () => {
+      if (document.visibilityState === "hidden" || !missed) return;
+      missed = false;
+      setTick((t) => t + 1);
+    };
+    document.addEventListener("visibilitychange", shown);
+    return () => {
+      off();
+      document.removeEventListener("visibilitychange", shown);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  }, []);
   return [value, () => setTick((t) => t + 1)];
 }

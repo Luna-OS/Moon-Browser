@@ -1,5 +1,5 @@
-# Moon Browser packaging: Windows (NSIS installer) and Linux (AppImage, deb,
-# rpm). macOS follows later.
+# Moon Browser packaging: Windows (NSIS installer), Linux (AppImage, deb,
+# rpm) and macOS (dmg, and a zip for updates).
 appId: io.lunaos.moonbrowser
 productName: Moon Browser
 executableName: moon-browser
@@ -26,19 +26,20 @@ electronDownload:
 # Windows: Netflix and others only accept a Widevine module whose browser is
 # signed for Verified Media Path (castLabs EVS, see build/vmp-sign.cjs).
 # After electron-builder has edited and signed the executable: the VMP
-# signature covers it.
+# signature covers it. (On macOS it comes before code signing, in afterPack.)
 afterSign: build/vmp-sign.cjs
 
 # Electron fuses (run as Node.js off, cookie encryption on, only the checked
-# app.asar, …) are flipped by build/fuses.cjs — on Linux only: castLabs' EVS
-# refuses to sign a Windows executable with flipped fuses for Verified Media
-# Path, which Netflix needs.
+# app.asar, …) are flipped by build/fuses.cjs — on Linux and macOS: castLabs'
+# EVS refuses to sign a Windows executable with flipped fuses for Verified
+# Media Path, which Netflix needs. On macOS, the hook then signs for VMP:
+# both must happen before the app is code-signed.
 afterPack: build/fuses.cjs
 
 # Updates come from GitHub Releases: electron-builder writes latest.yml /
-# latest-linux.yml next to the installers, the release workflow uploads
-# them, and the app (electron-updater) installs new versions over the old
-# one — the profile stays untouched.
+# latest-linux.yml / latest-mac.yml next to the installers, the release
+# workflow uploads them, and the app (electron-updater) installs new
+# versions over the old one — the profile stays untouched.
 publish:
   provider: github
   owner: Luna-OS
@@ -109,3 +110,52 @@ linux:
       arch: [x64]
     - target: rpm
       arch: [x64]
+
+mac:
+  # "Moon Browser.app" in Applications, as Mac apps are named.
+  executableName: Moon Browser
+  icon: build/icon.png
+  category: public.app-category.productivity
+  darkModeSupport: true
+  # Apple Silicon only runs signed code. Without an Apple Developer ID the app
+  # is signed ad hoc ("-"): it runs, but isn't notarized, so Gatekeeper asks
+  # once (README). The release workflow signs with a Developer ID instead
+  # when the repository has one (CSC_LINK).
+  identity: "-"
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # Links from other apps, so Moon Browser can be the default browser.
+  protocols:
+    - name: Web site address
+      role: Viewer
+      schemes: [http, https]
+  extendInfo:
+    # macOS stops an app that uses these without saying why; sites only get
+    # them after Moon Browser has asked (src/main/permissions.ts).
+    NSCameraUsageDescription: A website you visit can ask to use your camera.
+    NSMicrophoneUsageDescription: A website you visit can ask to use your microphone.
+    NSLocationWhenInUseUsageDescription: A website you visit can ask for your location.
+    NSLocationUsageDescription: A website you visit can ask for your location.
+    NSBluetoothAlwaysUsageDescription: A website you visit can ask for a Bluetooth device, such as a security key.
+    # Web pages opened from the Finder, and a place in the default-browser list.
+    CFBundleDocumentTypes:
+      - CFBundleTypeName: HTML document
+        CFBundleTypeRole: Viewer
+        LSItemContentTypes: [public.html]
+      - CFBundleTypeName: XHTML document
+        CFBundleTypeRole: Viewer
+        LSItemContentTypes: [public.xhtml]
+      - CFBundleTypeName: SVG image
+        CFBundleTypeRole: Viewer
+        LSItemContentTypes: [public.svg-image]
+  # One download per architecture, each with its own update zip; the zip is
+  # what installed copies update from (latest-mac.yml names both).
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+
+dmg:
+  title: Moon Browser

@@ -29,12 +29,41 @@ import {
   WindowIcon,
 } from "@theme/icons";
 import type { UiCommand } from "@shared/ipc";
-import { ui } from "./store";
+import { keys, ui } from "./store";
 
 export type PopoverKind =
   "menu" | "shield" | "downloads" | "extensions" | "group" | "bookmarkFolder" | "bookmark";
 
 const run = (cmd: UiCommand) => void ui.command(cmd);
+
+/** Up, Down, Home and End move between a menu's items, as in any menu. */
+function moveInMenu(event: KeyboardEvent) {
+  const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
+  const from = event.target as HTMLElement;
+  if (!keys.includes(event.key) || from.matches("input, select, textarea")) return;
+  const menu = from.closest('[role="menu"]');
+  if (!menu) return;
+  const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].filter(
+    (el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+  );
+  if (!items.length) return;
+  event.preventDefault();
+  const down = event.key === "ArrowDown";
+  const at = items.indexOf(from);
+  let next: number;
+  if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = items.length - 1;
+  else if (at >= 0) next = (at + (down ? 1 : -1) + items.length) % items.length;
+  else {
+    // From a control between the items (the zoom buttons): the nearest item that way.
+    const after = items.findIndex(
+      (el) => !!(from.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING),
+    );
+    const below = after < 0 ? items.length : after;
+    next = down ? below % items.length : (below - 1 + items.length) % items.length;
+  }
+  items[next].focus();
+}
 
 /** A popover anchored below a toolbar button, closed by Escape or a click outside. */
 export function Popover({
@@ -53,13 +82,33 @@ export function Popover({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Closing gives the focus back to where it was (the button that opened
+  // it), unless something else has taken it meanwhile.
+  useEffect(() => {
+    const el = ref.current;
+    const opener = document.activeElement;
+    el?.querySelector<HTMLElement>("button, input")?.focus();
+    el?.addEventListener("keydown", moveInMenu);
+    return () => {
+      el?.removeEventListener("keydown", moveInMenu);
+      const now = document.activeElement;
+      if (now && now !== document.body) return;
+      if (opener instanceof HTMLElement && opener !== document.body && opener.isConnected)
+        opener.focus();
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    ref.current?.querySelector<HTMLElement>("button, input")?.focus();
-    return () => window.removeEventListener("keydown", onKey);
+    // Like Chrome's menus, it closes when the window is resized: its button
+    // moves away, and the pages' snapshots behind it no longer fit.
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onClose);
+    };
   }, [onClose]);
 
   const left =
@@ -114,7 +163,6 @@ const Sep = () => <div className="mb-menu-sep" role="separator" />;
 
 export function MainMenu({ state, onClose }: { state: WindowState; onClose: () => void }) {
   const tab = state.tabs.find((t) => t.id === state.activeId);
-  const mod = state.platform === "darwin" ? "⌘" : "Ctrl+";
   const act = (cmd: UiCommand) => () => {
     onClose();
     run(cmd);
@@ -126,42 +174,51 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
           <Item
             accent
             icon={<UpdateIcon size={16} />}
-            label={`Restart to update to ${state.updateReady}`}
+            label={
+              state.updateManual
+                ? `Download version ${state.updateReady}`
+                : `Restart to update to ${state.updateReady}`
+            }
             onClick={act({ type: "installUpdate" })}
           />
           <Sep />
         </>
       )}
-      <Item icon={<TabIcon />} label="New tab" keys={`${mod}T`} onClick={act({ type: "newTab" })} />
+      <Item
+        icon={<TabIcon />}
+        label="New tab"
+        keys={keys("newTab")}
+        onClick={act({ type: "newTab" })}
+      />
       <Item
         icon={<WindowIcon />}
         label="New window"
-        keys={`${mod}N`}
+        keys={keys("newWindow")}
         onClick={act({ type: "newWindow" })}
       />
       <Item
         icon={<MaskIcon />}
         label="New private window"
-        keys={`${mod}Shift+N`}
+        keys={keys("newPrivateWindow")}
         onClick={act({ type: "newPrivateWindow" })}
       />
       <Sep />
       <Item
         icon={<HistoryIcon />}
         label="History"
-        keys={`${mod}H`}
+        keys={keys("history")}
         onClick={act({ type: "openPage", page: "history" })}
       />
       <Item
         icon={<DownloadIcon />}
         label="Downloads"
-        keys={`${mod}J`}
+        keys={keys("downloads")}
         onClick={act({ type: "openPage", page: "downloads" })}
       />
       <Item
         icon={<BookmarksIcon />}
         label="Bookmarks"
-        keys={`${mod}Shift+O`}
+        keys={keys("bookmarks")}
         onClick={act({ type: "openPage", page: "bookmarks" })}
       />
       <button
@@ -173,7 +230,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       >
         <StarIcon />
         <span className="flex-1">Show bookmarks bar</span>
-        <span className="text-xs text-(--mb-text-faint)">{mod}Shift+B</span>
+        <span className="text-xs text-(--mb-text-faint)">{keys("bookmarksBar")}</span>
         <span
           className="mb-switch mb-switch-sm"
           data-on={state.showBookmarksBar}
@@ -216,7 +273,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
           type="button"
           className="mb-icon-btn h-7! w-7!"
           aria-label="Full screen"
-          title="Full screen (F11)"
+          title={`Full screen (${keys("fullscreen")})`}
           onClick={act({ type: "fullscreen" })}
         >
           <ExpandIcon size={14} />
@@ -226,10 +283,15 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       <Item
         icon={<FindIcon />}
         label="Find in page…"
-        keys={`${mod}F`}
+        keys={keys("find")}
         onClick={act({ type: "find" })}
       />
-      <Item icon={<PrintIcon />} label="Print…" keys={`${mod}P`} onClick={act({ type: "print" })} />
+      <Item
+        icon={<PrintIcon />}
+        label="Print…"
+        keys={keys("print")}
+        onClick={act({ type: "print" })}
+      />
       <Item
         icon={<SplitIcon />}
         label={state.split ? "Close split view" : "Split view"}
@@ -238,14 +300,14 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       <Item
         icon={<CodeIcon />}
         label="Developer tools"
-        keys="F12"
+        keys={keys("devtools")}
         onClick={act({ type: "devtools" })}
       />
       <Sep />
       <Item
         icon={<SettingsIcon />}
         label="Settings"
-        keys={`${mod},`}
+        keys={keys("settings")}
         onClick={act({ type: "openPage", page: "settings" })}
       />
       {!state.isDefaultBrowser && (
@@ -263,7 +325,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       <Item
         icon={<CloseIcon size={16} />}
         label="Quit"
-        keys={`${mod}Shift+Q`}
+        keys={keys("quit")}
         onClick={act({ type: "quit" })}
       />
     </div>

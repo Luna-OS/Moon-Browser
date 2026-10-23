@@ -12,6 +12,8 @@ function describe(s: UpdateStatus, autoCheck: boolean): string {
     case "downloading":
       return `Downloading version ${s.version ?? ""}… ${s.percent}%`;
     case "ready":
+      if (s.manual)
+        return `Version ${s.version ?? ""} is out. Download it and drag it into Applications over this one — your profile stays as it is.`;
       return `Version ${s.version ?? ""} is ready. Restart Moon Browser to install it — your tabs come back.${s.needsAdmin ? " Installing asks for your password." : ""}`;
     case "error":
       return `Couldn't look for updates: ${s.error ?? "unknown error"}`;
@@ -37,7 +39,7 @@ export function UpdateRow({ autoCheck = true }: { autoCheck?: boolean }) {
           className="mb-btn mb-btn-primary"
           onClick={() => void api.installUpdate()}
         >
-          Restart to update
+          {status.manual ? "Download" : "Restart to update"}
         </button>
       ) : (
         status.state !== "unsupported" && (

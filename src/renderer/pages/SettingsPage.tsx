@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { formatNumber, timeAgo } from "@shared/format";
 import { SLEEP_CHOICES } from "@shared/settings";
+import { shortcutHint } from "@shared/shortcuts";
 import type {
   AdblockStatus,
   ImportableProfile,
@@ -130,6 +131,29 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col gap-6">
+        {/* Narrow windows have no sidebar: the title, and the sections as chips. */}
+        <header className="flex flex-col gap-3 md:hidden">
+          <div className="flex items-center gap-3">
+            <img src="/moon.svg" width={32} height={32} alt="" />
+            <h1 className="mb-title m-0 text-2xl font-semibold">Settings</h1>
+          </div>
+          <nav className="flex flex-wrap gap-1.5" aria-label="Settings sections">
+            {SECTIONS.map((section) => (
+              <a
+                key={section.id}
+                href={`#${section.id}`}
+                aria-current={active === section.id ? "true" : undefined}
+                className={`rounded-full border px-3 py-1 text-xs no-underline transition-colors ${
+                  active === section.id
+                    ? "border-transparent bg-(--mb-selected) text-(--mb-accent)"
+                    : "border-(--mb-border) text-(--mb-text-muted) hover:bg-(--mb-hover) hover:text-(--mb-text)"
+                }`}
+              >
+                {section.label}
+              </a>
+            ))}
+          </nav>
+        </header>
         <Card id="appearance" title="Appearance">
           <Row
             label="Theme"
@@ -153,7 +177,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           />
           <Toggle
             label="Show bookmarks bar"
-            hint="Ctrl+Shift+B"
+            hint={shortcutHint("bookmarksBar", info.platform)}
             checked={s.showBookmarksBar}
             onChange={(v) => set({ showBookmarksBar: v })}
           />
@@ -163,11 +187,18 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             checked={s.newTabShortcuts}
             onChange={(v) => set({ newTabShortcuts: v })}
           />
+          {/* Sites in Moon's look, side by side. */}
           <Toggle
             label="YouTube in Moon's look"
             hint="YouTube wears the night sky: a moonlit progress bar and a starry volume slider. Applies from the next page load."
             checked={s.youtubeLook}
             onChange={(v) => set({ youtubeLook: v })}
+          />
+          <Toggle
+            label="Perplexity in Moon's look, with Axo"
+            hint="Perplexity wears the night sky, and Axo, the pixel axolotl from Moon Code, sits on its search box — click it for a tour of the search or a tip."
+            checked={s.perplexityLook}
+            onChange={(v) => set({ perplexityLook: v })}
           />
         </Card>
 
@@ -224,12 +255,6 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
               </button>
             </form>
           </Row>
-          <Toggle
-            label="Perplexity in Moon's look, with Axo"
-            hint="Perplexity wears the night sky, and Axo, the pixel axolotl from Moon Code, sits on its search box — click it for a tour of the search or a tip."
-            checked={s.perplexityLook}
-            onChange={(v) => set({ perplexityLook: v })}
-          />
           <Toggle
             label="Bangs"
             hint={

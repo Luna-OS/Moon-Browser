@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
+/** The longest a change waits for its write while more changes keep coming. */
+const MAX_WAIT = 10_000;
+
 /**
  * A value kept in a JSON file. Reads happen once at start-up; writes are
  * debounced and atomic (a temporary file renamed over the old one), so a
@@ -9,6 +12,8 @@ import { dirname } from "node:path";
  */
 export class JsonStore<T> {
   private timer: NodeJS.Timeout | null = null;
+  /** When the oldest change not yet written was made. */
+  private pendingSince = 0;
   private writing: Promise<void> = Promise.resolve();
 
   private constructor(
@@ -43,7 +48,12 @@ export class JsonStore<T> {
 
   /** Call after mutating the value in place. */
   changed(): void {
+    const now = Date.now();
     if (this.timer) clearTimeout(this.timer);
+    else this.pendingSince = now;
+    // Debounced, but a value that never stops changing (a page whose title
+    // ticks) is still written at least every ten seconds.
+    const wait = Math.max(0, Math.min(this.delay, this.pendingSince + MAX_WAIT - now));
     this.timer = setTimeout(() => {
       this.timer = null;
       this.writing = this.writing
@@ -51,7 +61,7 @@ export class JsonStore<T> {
         .catch((err: unknown) => {
           console.warn(`[store] could not save ${this.file}:`, err);
         });
-    }, this.delay);
+    }, wait);
   }
 
   /** Writes pending changes right away (used when quitting). */

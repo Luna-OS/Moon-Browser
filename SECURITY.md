@@ -36,7 +36,7 @@ Fixes for Chromium itself arrive with Electron updates; Moon Browser follows the
 
 ### The shipped binary
 
-Electron fuses are flipped at package time (`build/fuses.cjs`) — in the Linux builds. The
+Electron fuses are flipped at package time (`build/fuses.cjs`) — in the Linux and macOS builds. The
 Windows build keeps Electron's defaults: castLabs' EVS refuses to sign an executable with
 flipped fuses for Verified Media Path, without which Netflix and other streaming services don't
 play on Windows. There, Moon Browser can be started as a Node.js runtime
@@ -53,11 +53,20 @@ without encryption it is put aside (`Network/Cookies.encrypted-…`) and a new o
 | EnableNodeCliInspectArguments          | off     | no `--inspect` debugging of the main process    |
 | EnableCookieEncryption                 | on      | cookies are encrypted with the OS key store     |
 | OnlyLoadAppFromAsar                    | on      | only the packaged `app.asar` is loaded          |
-| EnableEmbeddedAsarIntegrityValidation  | on      | … and it must match its embedded hash (Windows) |
+| EnableEmbeddedAsarIntegrityValidation  | on      | … and it must match its embedded hash (macOS)   |
 | GrantFileProtocolExtraPrivileges       | off     | `file://` has no more rights than in Chrome     |
 
 On Windows, the installer registers links as `moon-browser.exe -- "%1"`: after `--`, an address
-can never be read as a command-line switch.
+can never be read as a command-line switch. macOS hands links and files over as events, never
+on the command line; only `http`, `https` and `file` addresses open (`src/shared/launch.ts`).
+
+The Mac app runs under macOS' **hardened runtime**. Its entitlements
+(`build/entitlements.mac.plist`) allow what Chromium needs — compiling JavaScript at run time
+(JIT) — and loading libraries signed by someone else, which Google's Widevine module is (and,
+in a build signed ad hoc, Electron's own frameworks). Camera, microphone and location are
+allowed for the app so that it can ask the user for sites; macOS asks too, the first time.
+Without an Apple Developer ID the app is signed ad hoc: it isn't notarized, and Gatekeeper asks
+before its first start. Cookies are encrypted with a key kept in the macOS Keychain.
 
 ### Network
 
@@ -99,12 +108,19 @@ can never be read as a command-line switch.
 ### Updates
 
 Installed copies look for a newer release of `Luna-OS/Moon-Browser` on GitHub (`latest.yml`,
-`latest-linux.yml`), download it over HTTPS and check it against the SHA-512 hash in that file
-before installing. Downgrades and pre-releases are never installed. On Windows the new
-installer runs over the installed version (per user, no administrator rights); an AppImage is
-replaced; `.deb` and `.rpm` packages are installed through `pkexec`/`sudo`, which asks for the
-administrator password, and only when the user clicks *Update*. Because the builds aren't
-code-signed yet, an update is as trustworthy as the GitHub release it comes from.
+`latest-linux.yml`, `latest-mac.yml`), download it over HTTPS and check it against the SHA-512
+hash in that file before installing. Downgrades and pre-releases are never installed. On
+Windows the new installer runs over the installed version (per user, no administrator rights);
+an AppImage is replaced; `.deb` and `.rpm` packages are installed through `pkexec`/`sudo`,
+which asks for the administrator password, and only when the user clicks *Update*. Because the
+builds aren't code-signed yet, an update is as trustworthy as the GitHub release it comes from.
+
+On macOS, the system installs an update (Squirrel.Mac) only over an app signed with an Apple
+Developer ID, and checks that the update carries the same signature. The Mac builds are signed
+ad hoc for now, so Moon Browser only looks for a new version there and *Update* opens its
+download page on GitHub; nothing is downloaded or installed by itself. A build signed with a
+Developer ID (the release workflow does that when the repository has one) updates itself like
+the others.
 
 The Windows installer only removes the browser registration when Moon Browser is really
 uninstalled, not while an update replaces it; the profile is never deleted by the installer.
@@ -118,8 +134,8 @@ Electron's patch releases, which carry them to Electron's supported major versio
 three), usually within days, and then through castLabs' release of them. The *Security
 updates* workflow (`.github/workflows/security-updates.yml`, `scripts/security-update.mjs`)
 looks for a newer castLabs release of Moon Browser's Electron major version every six hours. It installs
-it, runs all of CI with it (unit tests, the end-to-end test on Linux and Windows, packaging, the
-installer test) and, only if everything passes, puts it on `main` and releases the next patch
+it, runs all of CI with it (unit tests, the end-to-end test on Linux and Windows, packaging for
+Windows, Linux and macOS, the installer test) and, only if everything passes, puts it on `main` and releases the next patch
 version; installed copies then update themselves. A failed test or a new Electron major version
 (which can change APIs) becomes an issue for a person instead. Each run's summary compares
 Moon Browser's Electron with the Chromium version Helium builds on.
@@ -187,7 +203,9 @@ Files that run code (`.exe`, `.msi`, `.bat`, `.ps1`, `.js`, `.jar`, `.sh`, `.App
 and only get their own name once the user chooses *Keep anyway*; *Discard* deletes them, even
 if they had already finished (up to 0.1.10, a small file could be complete before the question
 was answered). On Windows, every download gets the **Mark of the Web** (`Zone.Identifier`), so
-SmartScreen and Office treat it as coming from the internet.
+SmartScreen and Office treat it as coming from the internet. On macOS, every download gets the
+**quarantine** mark (`com.apple.quarantine`; Electron doesn't set it itself), so Gatekeeper
+checks an app or disk image from it before it first opens.
 
 ### Data at rest
 
@@ -226,10 +244,13 @@ never imported.
   signature isn't verified beyond that the way Chrome does.
 - Chromium's Safe Browsing service isn't part of Electron; the Moon Shield lists (including
   uBlock Origin's *Badware risks* list) and, optionally, Quad9 DNS cover part of it.
-- The builds are not code-signed yet.
+- The builds are not code-signed yet. The Mac app is signed ad hoc and not notarized (see *The
+  shipped binary*), so it doesn't update itself.
 - On Windows, Netflix and other streaming services only accept Widevine in a browser signed for
   Verified Media Path. The release workflow signs it with castLabs' EVS service when the
   repository has an EVS account (`EVS_ACCOUNT_NAME` and `EVS_PASSWD` secrets); without one,
   those services refuse to play there. For that signature, the Windows build has no Electron
   fuses (see *The shipped binary*). Linux has no Verified Media Path; Netflix plays there in
-  lower resolution, as in Chrome on Linux.
+  lower resolution, as in Chrome on Linux. On macOS the same EVS account signs the app, after
+  its fuses are flipped and before it is code-signed; without one, Netflix plays there in lower
+  resolution or not at all.

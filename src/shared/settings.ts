@@ -37,10 +37,10 @@ export function defaultSettings(platform: string): Settings {
     openTabsNextToActive: true,
     askDownloadLocation: false,
     downloadDir: "",
-    // On Windows, spell checking uses the system's dictionaries. On Linux,
+    // On Windows and macOS, spell checking uses the system's dictionaries. On Linux,
     // Chromium would download them from Google's servers, so it stays
     // opt-in there.
-    spellcheck: platform === "win32",
+    spellcheck: platform !== "linux",
     newTabShortcuts: true,
     autoUpdate: true,
     protectedContent: true,

@@ -83,6 +83,8 @@ export class Permissions {
   private readonly privateDecisions = new Map<string, Decision>();
   /** Answers not remembered, until the app quits ("n …" normal, "p …" private windows). */
   private readonly sessionDecisions = new Map<string, Decision>();
+  /** Tabs given the camera or microphone since their last navigation: maybe in a call. */
+  private readonly mediaTabs = new Set<number>();
 
   constructor(private readonly browser: Browser) {}
 
@@ -157,6 +159,7 @@ export class Permissions {
 
   /** Drops the questions of a tab that navigated away or closed. */
   cancelTab(tabId: number): void {
+    this.mediaTabs.delete(tabId);
     let changed = false;
     for (const [id, entry] of this.pending) {
       if (entry.prompt.tabId !== tabId) continue;
@@ -165,6 +168,13 @@ export class Permissions {
       changed = true;
     }
     if (changed) this.browser.tabById(tabId)?.window.update();
+  }
+
+  /** Whether a tab may be in a call, or has a question waiting: not one to put to sleep. */
+  inUse(tabId: number): boolean {
+    if (this.mediaTabs.has(tabId)) return true;
+    for (const p of this.pending.values()) if (p.prompt.tabId === tabId) return true;
+    return false;
   }
 
   popupsAllowed(tab: Tab, origin: string): boolean {
@@ -269,11 +279,13 @@ export class Permissions {
         const video = types.includes("video");
         const audio = types.includes("audio");
         if (!video && !audio) return false;
-        return this.ask(
+        const allowed = await this.ask(
           tab,
           video && audio ? "camera-microphone" : video ? "camera" : "microphone",
           origin,
         );
+        if (allowed) this.mediaTabs.add(tab.id);
+        return allowed;
       }
       case "geolocation":
         return this.ask(tab, "geolocation", origin);

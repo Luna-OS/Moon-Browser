@@ -84,12 +84,23 @@ await cp(
 );
 
 // A fake Comet profile to import from, where Comet keeps it: under
-// %LOCALAPPDATA% on Windows, under $XDG_CONFIG_HOME on Linux.
+// %LOCALAPPDATA% on Windows, under $XDG_CONFIG_HOME on Linux, under
+// ~/Library/Application Support on macOS (with $HOME pointing here).
 const config = await mkdtemp(join(tmpdir(), "moon-e2e-config-"));
 const cometUserData =
   process.platform === "win32"
     ? join(config, "Perplexity", "Comet", "User Data")
-    : join(config, "Comet");
+    : process.platform === "darwin"
+      ? join(config, "Library", "Application Support", "Comet")
+      : join(config, "Comet");
+const configEnv =
+  process.platform === "win32"
+    ? { LOCALAPPDATA: config }
+    : process.platform === "darwin"
+      ? { HOME: config }
+      : { XDG_CONFIG_HOME: config };
+/** The modifier of browser shortcuts: Cmd on macOS, Ctrl elsewhere. */
+const MOD = process.platform === "darwin" ? "meta" : "control";
 const comet = join(cometUserData, "Default");
 await mkdir(comet, { recursive: true });
 await writeFile(
@@ -251,7 +262,7 @@ const app = await electron.launch({
     ...process.env,
     ...(webauthnMock ? { MOON_WEBAUTHN_LIBRARY: webauthnMock } : {}),
     MOON_BROWSER_PROFILE: profile,
-    ...(process.platform === "win32" ? { LOCALAPPDATA: config } : { XDG_CONFIG_HOME: config }),
+    ...configEnv,
   },
 });
 
@@ -834,7 +845,7 @@ try {
   });
 
   await check("notifications, camera and microphone are asked for, not 'blocked'", async () => {
-    await press("T", ["control"]);
+    await press("T", [MOD]);
     await goTo(`${base}/permissions`);
     await waitFor(
       async () => (await tabs()).some((t) => t.title === "Permissions page"),
@@ -874,12 +885,12 @@ try {
 
   await check("Ctrl+T opens a new tab and Ctrl+W closes it", async () => {
     const before = await ui.locator('[role="tab"]').count();
-    await press("T", ["control"]);
+    await press("T", [MOD]);
     await waitFor(
       async () => (await ui.locator('[role="tab"]').count()) === before + 1,
       "one more tab",
     );
-    await press("W", ["control"]);
+    await press("W", [MOD]);
     await waitFor(
       async () => (await ui.locator('[role="tab"]').count()) === before,
       "the tab closed",
@@ -915,7 +926,7 @@ try {
   });
 
   await check("settings open and save through the internal API", async () => {
-    await press(",", ["control"]);
+    await press(",", [MOD]);
     await waitFor(
       async () => (await tabs()).some((t) => t.url.startsWith("moon://settings")),
       "moon://settings",
@@ -1011,8 +1022,10 @@ try {
     await waitFor(() => inner.getByText("From a folder").isVisible(), "the folder in it");
     await new Promise((r) => setTimeout(r, 300));
     await shot("08a-bookmark-folder");
-    // Ctrl+click: in a background tab.
-    await inner.getByRole("menuitem", { name: "From a folder" }).click({ modifiers: ["Control"] });
+    // Ctrl+click (Cmd+click on macOS): in a background tab.
+    await inner
+      .getByRole("menuitem", { name: "From a folder" })
+      .click({ modifiers: [MOD === "meta" ? "Meta" : "Control"] });
     await waitFor(
       async () => (await tabs()).some((t) => t.title === "From a folder"),
       "the bookmark to open",
@@ -1106,7 +1119,7 @@ try {
       );
     }, "the folder in Anime");
     // The star's editor makes one in the chosen folder, and the bookmark goes in.
-    await press("T", ["control"]);
+    await press("T", [MOD]);
     await goTo(`${base}/folder-page`);
     const star = ui.getByRole("button", { name: "Edit bookmark" });
     await waitFor(() => star.isVisible(), "the star of the bookmarked page");
@@ -1387,7 +1400,7 @@ try {
         code,
       );
     try {
-      await press(",", ["control"]);
+      await press(",", [MOD]);
       await waitFor(
         async () => (await tabs()).some((t) => t.url.startsWith("moon://settings")),
         "moon://settings",
@@ -1435,7 +1448,7 @@ try {
       await shot("10-own-dns-server");
 
       // A name only this DNS server knows opens.
-      await press("T", ["control"]);
+      await press("T", [MOD]);
       await goTo(`http://moon-dns.test:${webPort}/`);
       await waitFor(
         async () =>
@@ -1587,7 +1600,7 @@ try {
       env: {
         ...process.env,
         MOON_BROWSER_PROFILE: profile,
-        ...(process.platform === "win32" ? { LOCALAPPDATA: config } : { XDG_CONFIG_HOME: config }),
+        ...configEnv,
       },
     });
     try {

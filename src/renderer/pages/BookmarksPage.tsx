@@ -13,8 +13,11 @@ import {
   TrashIcon,
 } from "@theme/icons";
 import { shortHost } from "@shared/display";
+import { shortcutHint } from "@shared/shortcuts";
 import { api, useLive } from "./api";
 import { Card, EmptyState, PageShell } from "./ui";
+
+const MAC = navigator.userAgent.includes("Macintosh");
 
 export function BookmarksPage() {
   const [bookmarks] = useLive(api.bookmarks, ["bookmarks"]);
@@ -56,7 +59,7 @@ export function BookmarksPage() {
   return (
     <PageShell
       title="Bookmarks"
-      subtitle="Add one with the star in the address bar or Ctrl+D."
+      subtitle={`Add one with the star in the address bar or ${shortcutHint("bookmark", MAC ? "darwin" : "")}.`}
       actions={
         <>
           {settings && (

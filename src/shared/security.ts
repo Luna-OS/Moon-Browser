@@ -136,12 +136,17 @@ const DANGEROUS_EXTENSIONS = new Set([
   "rpm",
   "desktop",
   "flatpakref",
-  // Android / macOS (for completeness)
-  "apk",
+  // macOS
   "app",
   "pkg",
+  "mpkg",
   "dmg",
   "command",
+  "terminal",
+  "scpt",
+  "workflow",
+  // Android
+  "apk",
 ]);
 
 export function isDangerousFile(filename: string): boolean {
@@ -176,6 +181,15 @@ export function zoneIdentifier(options: { url?: string; referrer?: string }): st
   if (safe(options.referrer)) lines.push(`ReferrerUrl=${safe(options.referrer)}`);
   if (safe(options.url)) lines.push(`HostUrl=${safe(options.url)}`);
   return `${lines.join("\r\n")}\r\n`;
+}
+
+/**
+ * The macOS quarantine mark for a downloaded file (the com.apple.quarantine
+ * attribute, written as Chrome writes it): Gatekeeper then checks apps and
+ * disk images from it before they first open.
+ */
+export function quarantineMark(now: number, id: string): string {
+  return `0081;${Math.floor(now / 1000).toString(16)};Moon Browser;${id}`;
 }
 
 /**

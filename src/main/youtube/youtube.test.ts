@@ -29,6 +29,17 @@ describe("YouTube in Moon's look", () => {
     expect(YOUTUBE_CSS).toContain(".html5-video-player:not(.ad-interrupting)");
   });
 
+  it("puts MoonTube's logo in place of YouTube's and YouTube Premium's", () => {
+    expect(YOUTUBE_CSS).toContain("ytd-topbar-logo-renderer #logo-icon > *");
+    expect(YOUTUBE_CSS).toContain('content: "MoonTube"');
+    expect(YOUTUBE_CSS).toContain('a[title*="Premium" i]');
+  });
+
+  it("paints one night colour, not a sky that shows through in patches", () => {
+    expect(YOUTUBE_CSS).not.toContain("background-attachment: fixed");
+    expect(YOUTUBE_CSS).toContain("html:root[dark] ytd-app");
+  });
+
   it("recolours YouTube's dark palette only in dark mode", () => {
     expect(YOUTUBE_CSS).toContain("html:root[dark] [dark]");
     expect(YOUTUBE_CSS).toContain("--yt-sys-color-baseline--base-background: #0d0a23 !important");

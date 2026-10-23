@@ -47,7 +47,7 @@ export function applySpellcheck(ses: Session, enabled: boolean): void {
 }
 
 export function configureBrowsingSession(browser: Browser, ses: Session, isPrivate: boolean): void {
-  handleInternalProtocol(ses, { ui: false });
+  handleInternalProtocol(ses, { ui: false, theme: () => browser.resolvedTheme() });
   browser.permissions.install(ses, isPrivate);
   browser.downloads.install(ses, isPrivate);
   ses.registerPreloadScript({ type: "frame", filePath: adblockPreload });

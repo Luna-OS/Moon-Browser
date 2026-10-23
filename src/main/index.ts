@@ -8,6 +8,8 @@ import { app, Menu } from "electron";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { LaunchQueue } from "@shared/launch";
+import { installAppMenu } from "./app-menu";
 import { Browser } from "./browser";
 import { cookiesEncrypted, moveCookieStore } from "./cookie-store";
 import { applyEngineSettings, prepareProtectedContent } from "./engine-settings";
@@ -27,7 +29,8 @@ registerSchemes();
 // --no-sandbox, as containers and CI machines running as root need it,
 // turns the app-wide switch off.
 if (!app.commandLine.hasSwitch("no-sandbox")) app.enableSandbox();
-Menu.setApplicationMenu(null);
+// No menu bar on Windows and Linux; macOS gets its own (app-menu.ts).
+if (process.platform !== "darwin") Menu.setApplicationMenu(null);
 
 // FedCM ("Sign in with Google" and others through the browser's own account
 // chooser): Chromium offers the API, but Electron has no account chooser
@@ -76,6 +79,19 @@ if (!app.requestSingleInstanceLock()) {
   // Hardware acceleration and protected content, as set in Settings → System.
   applyEngineSettings(browser.startedWith);
 
+  // macOS hands over links (Moon Browser as the default browser) and files
+  // as events, not on the command line — the first ones before the browser
+  // is ready, so they wait for it.
+  const launched = new LaunchQueue();
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    launched.add(url);
+  });
+  app.on("open-file", (event, path) => {
+    event.preventDefault();
+    if (existsSync(path)) launched.add(pathToFileURL(resolve(path)).href);
+  });
+
   app.on("second-instance", (_event, argv) => {
     const urls = urlsFromArgv(argv);
     if (urls.length) browser.openExternalUrls(urls);
@@ -104,8 +120,11 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform !== "darwin") app.quit();
   });
 
+  // macOS: a click on the Dock icon with every window closed opens a new
+  // one — once the browser has started, which opens its own.
+  let started = false;
   app.on("activate", () => {
-    if (browser.windows.size === 0) browser.createWindow({});
+    if (started && browser.windows.size === 0) browser.createWindow({});
   });
 
   let siteDataCleared = false;
@@ -123,8 +142,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(async () => {
-    await Promise.all([browser.init(), prepareProtectedContent(browser.startedWith)]);
+    // The Widevine module installs in the background: a first start behind a
+    // slow connection doesn't wait for it with an empty screen.
+    prepareProtectedContent(browser.startedWith);
+    await browser.init();
     registerIpc(browser);
-    browser.restoreOrOpen(urlsFromArgv(process.argv));
+    installAppMenu(browser);
+    const early = launched.ready((urls) => browser.openExternalUrls(urls));
+    browser.restoreOrOpen([...urlsFromArgv(process.argv), ...early]);
+    started = true;
   });
 }

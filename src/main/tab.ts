@@ -2,7 +2,8 @@
  * One tab: a page in a WebContentsView, or — while asleep — just its
  * address, title and back/forward history, ready to wake up.
  */
-import { WebContentsView, type NavigationEntry, type WebContents } from "electron";
+import { nativeImage, WebContentsView, type NavigationEntry, type WebContents } from "electron";
+import { PAGE_BACKGROUND } from "@shared/chrome-colors";
 import { shouldFallBackToHttp } from "@shared/https";
 import { isInternalUrl, isNewTabUrl, NEWTAB_URL } from "@shared/internal";
 import { displayUrl } from "@shared/display";
@@ -12,7 +13,7 @@ import type { SecurityState, TabError, TabInfo } from "@shared/types";
 import { showPageMenu } from "./context-menu";
 import { axoScript } from "./perplexity/axo";
 import { isPerplexity, PERPLEXITY_CSS } from "./perplexity/theme";
-import type { SavedTab } from "./profile";
+import { MAX_FAVICON_LENGTH, type SavedTab } from "./profile";
 import type { MoonWindow } from "./window";
 import { isYouTube, YOUTUBE_CSS } from "./youtube/theme";
 
@@ -45,6 +46,24 @@ function hostOf(url: string): string {
 /** Chromium lists candidate icons; prefer real image URLs. */
 function pickFavicon(favicons: string[]): string | null {
   return favicons.find((f) => /^(https?:|data:image\/)/i.test(f)) ?? null;
+}
+
+/**
+ * The icon as the tab keeps it. It goes into every state message for the
+ * window and into the history, so a big data: image is scaled down to 32
+ * pixels, and left out if it's still too big (or can't be read).
+ */
+function fitFavicon(icon: string): string | null {
+  if (icon.length <= MAX_FAVICON_LENGTH) return icon;
+  if (!/^data:image\//i.test(icon)) return null;
+  try {
+    const image = nativeImage.createFromDataURL(icon);
+    if (image.isEmpty()) return null;
+    const small = image.resize({ width: 32, quality: "good" }).toDataURL();
+    return small.length <= MAX_FAVICON_LENGTH ? small : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Addresses a page may open or navigate to by itself. */
@@ -96,6 +115,12 @@ export class Tab {
   private typed = false;
   private closing = false;
   private dialogOpen = false;
+  /** The page's own alert(), confirm() or prompt() questions waiting for an answer. */
+  pageDialogs = 0;
+  /** The page shows something in full screen. */
+  private fullscreen = false;
+  /** The icon the page offered last, before fitFavicon. */
+  private faviconSource: string | null = null;
   /** Set by the request pipeline when it stops a page on purpose. */
   private pendingError: TabError | null = null;
   private history: { entries: NavigationEntry[]; index: number } | null;
@@ -138,7 +163,7 @@ export class Tab {
       ? new WebContentsView({ webContents: existing })
       : new WebContentsView({ webPreferences: this.window.tabPreferences() });
     this.view = view;
-    view.setBackgroundColor("#ffffff");
+    this.paintBackground(this.url);
     const wc = view.webContents;
     this.contents = wc;
     this.contentsId = wc.id;
@@ -149,6 +174,16 @@ export class Tab {
       this.browser.settings.webrtcProtection ? "default_public_interface_only" : "default",
     );
     this.wire(wc);
+  }
+
+  /**
+   * What shows before a page paints: white for the web, like other
+   * browsers, and the theme's background for Moon's own pages.
+   */
+  paintBackground(url = this.url): void {
+    this.view?.setBackgroundColor(
+      isInternalUrl(url) ? PAGE_BACKGROUND[this.browser.resolvedTheme()] : "#ffffff",
+    );
   }
 
   private startLoad(referrer?: string): void {
@@ -216,6 +251,7 @@ export class Tab {
   }
 
   private finishClose(): void {
+    this.browser.upgraded.delete(this.id);
     this.window.removeTab(this);
     this.destroyView();
   }
@@ -332,6 +368,20 @@ export class Tab {
     return Date.now() - this.lastGesture < GESTURE_WINDOW;
   }
 
+  /**
+   * Whether sleeping now would cost the user something besides a reload: a
+   * call with camera or microphone, a video in full screen, a question the
+   * page or the browser is asking.
+   */
+  mustStayAwake(): boolean {
+    return (
+      this.fullscreen ||
+      this.dialogOpen ||
+      this.pageDialogs > 0 ||
+      this.browser.permissions.inUse(this.id)
+    );
+  }
+
   private security(): SecurityState {
     if (this.error) return "error";
     if (isInternalUrl(this.url)) return "internal";
@@ -402,6 +452,16 @@ export class Tab {
     this.window.updateSoon();
   }
 
+  /**
+   * For a title, icon, loading or sound change: shown at once on a tab in
+   * view, a moment later on one in the background, so a busy page there
+   * (a ticking title, an app changing its address) can't flood the UI.
+   */
+  private changedQuietly(): void {
+    if (this.window.visibleTabs().includes(this)) this.changed();
+    else this.changedSoon();
+  }
+
   // ---- Events of the page ----
 
   private wire(wc: WebContents): void {
@@ -409,14 +469,15 @@ export class Tab {
 
     wc.on("did-start-loading", () => {
       this.loading = true;
-      this.changed();
+      this.changedQuietly();
     });
     wc.on("did-stop-loading", () => {
       this.loading = false;
-      this.changed();
+      this.changedQuietly();
     });
     wc.on("did-start-navigation", (details) => {
       if (!details.isMainFrame || details.isSameDocument) return;
+      this.paintBackground(details.url);
       if (this.error || this.crashed) {
         this.error = null;
         this.crashed = false;
@@ -452,20 +513,24 @@ export class Tab {
       if (!isMainFrame) return;
       this.url = url;
       this.recordVisit();
-      this.changed();
+      this.changedQuietly();
     });
     wc.on("page-title-updated", (_event, title) => {
+      if (title === this.title) return;
       this.title = title;
       if (!this.window.isPrivate) browser.profile.updateHistory(this.url, { title });
-      this.changed();
+      this.changedQuietly();
     });
     wc.on("page-favicon-updated", (_event, favicons) => {
-      const icon = pickFavicon(favicons);
+      const source = pickFavicon(favicons);
+      if (source === this.faviconSource) return;
+      this.faviconSource = source;
+      const icon = source && fitFavicon(source);
       if (icon === this.favicon) return;
       this.favicon = icon;
       if (!this.window.isPrivate && icon)
         browser.profile.updateHistory(this.url, { favicon: icon });
-      this.changed();
+      this.changedQuietly();
     });
     wc.on("did-fail-load", (_event, code, description, validatedURL, isMainFrame) => {
       if (!isMainFrame) return;
@@ -503,6 +568,7 @@ export class Tab {
     wc.on("render-process-gone", (_event, details) => {
       if (details.reason === "clean-exit") return;
       this.crashed = true;
+      this.fullscreen = false;
       this.loading = false;
       this.audible = false;
       this.window.layout();
@@ -510,7 +576,7 @@ export class Tab {
     });
     wc.on("audio-state-changed", (event) => {
       this.audible = event.audible;
-      this.changed();
+      this.changedQuietly();
     });
     wc.on("found-in-page", (_event, result) => this.window.onFound(this, result));
     wc.on("context-menu", (_event, params) => showPageMenu(this, params));
@@ -532,8 +598,14 @@ export class Tab {
       }
     });
     wc.on("focus", () => this.window.onTabFocused(this));
-    wc.on("enter-html-full-screen", () => this.window.setHtmlFullscreen(this, true));
-    wc.on("leave-html-full-screen", () => this.window.setHtmlFullscreen(this, false));
+    wc.on("enter-html-full-screen", () => {
+      this.fullscreen = true;
+      this.window.setHtmlFullscreen(this, true);
+    });
+    wc.on("leave-html-full-screen", () => {
+      this.fullscreen = false;
+      this.window.setHtmlFullscreen(this, false);
+    });
     wc.on("zoom-changed", (_event, direction) => this.zoomBy(direction === "in" ? 1 : -1));
     // The page asks to confirm leaving. The close is held back (no
     // preventDefault) and asked about without blocking the whole browser;
@@ -572,6 +644,7 @@ export class Tab {
       this.view = null;
       this.contents = null;
       this.browser.unregisterTab(this.contentsId);
+      this.browser.upgraded.delete(this.id);
       if (view) this.window.detach(view);
       this.window.removeTab(this);
     });
