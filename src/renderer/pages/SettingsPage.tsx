@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { formatNumber, timeAgo } from "@shared/format";
 import { SLEEP_CHOICES } from "@shared/settings";
+import { shortcutHint } from "@shared/shortcuts";
 import type {
   AdblockStatus,
   ImportableProfile,
@@ -153,7 +154,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           />
           <Toggle
             label="Show bookmarks bar"
-            hint="Ctrl+Shift+B"
+            hint={shortcutHint("bookmarksBar", info.platform)}
             checked={s.showBookmarksBar}
             onChange={(v) => set({ showBookmarksBar: v })}
           />

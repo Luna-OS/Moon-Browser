@@ -21,6 +21,11 @@ body {
   -webkit-app-region: drag;
 }
 
+/* macOS: the traffic lights sit on the left (src/main/window.ts). */
+.mb-tabstrip[data-traffic-lights] {
+  padding-left: 78px;
+}
+
 .mb-tabs {
   display: flex;
   flex: 1;

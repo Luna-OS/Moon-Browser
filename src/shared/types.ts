@@ -272,9 +272,14 @@ export interface WindowState {
   showHomeButton: boolean;
   showBookmarksBar: boolean;
   searchEngineName: string;
+  /** Tabs and toolbar are hidden (full screen, or a page's own full screen on macOS). */
   fullscreen: boolean;
+  /** macOS: the window buttons are on the left of the tab strip, which leaves room for them. */
+  trafficLights: boolean;
   /** A downloaded update waiting for a restart: its version. */
   updateReady: string | null;
+  /** The update is downloaded by hand (see UpdateStatus.manual). */
+  updateManual: boolean;
   /** False when another browser opens links (true while unknown). */
   isDefaultBrowser: boolean;
   /**
@@ -359,6 +364,12 @@ export interface UpdateStatus {
   error: string | null;
   /** Installing asks for the administrator password (.deb and .rpm installs). */
   needsAdmin: boolean;
+  /**
+   * The update is downloaded and installed by hand (macOS builds without an
+   * Apple Developer ID signature): "ready" means a new version is out, and
+   * installing opens its download page.
+   */
+  manual: boolean;
 }
 
 export interface ExtensionInfo {

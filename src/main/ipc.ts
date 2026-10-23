@@ -324,6 +324,12 @@ export function registerIpc(browser: Browser): void {
 
 type Handler = (tab: Tab, ...args: unknown[]) => unknown;
 
+const SYSTEM_NAMES: Partial<Record<NodeJS.Platform, string>> = {
+  win32: "Windows",
+  darwin: "macOS",
+  linux: "Linux",
+};
+
 function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
   const profile = browser.profile;
   return {
@@ -526,7 +532,7 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       chromium: process.versions.chrome,
       node: process.versions.node,
       v8: process.versions.v8,
-      platform: `${process.platform === "win32" ? "Windows" : process.platform === "linux" ? "Linux" : process.platform} ${process.getSystemVersion()}`,
+      platform: `${SYSTEM_NAMES[process.platform] ?? process.platform} ${process.getSystemVersion()}`,
       arch: process.arch,
       userData: app.getPath("userData"),
     }),

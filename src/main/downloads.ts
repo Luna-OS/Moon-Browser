@@ -3,12 +3,13 @@
  * chosen in Settings), listed on moon://downloads and in the toolbar.
  */
 import { app, dialog, shell, type DownloadItem, type Session, type WebContents } from "electron";
+import { execFile } from "node:child_process";
 import { randomInt, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { copyFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import type { DownloadAction } from "@shared/ipc";
-import { isDangerousFile, zoneIdentifier } from "@shared/security";
+import { isDangerousFile, quarantineMark, zoneIdentifier } from "@shared/security";
 import type { DownloadInfo } from "@shared/types";
 import type { Browser } from "./browser";
 
@@ -161,6 +162,17 @@ export class Downloads {
         // file as coming from the internet, as with any other browser.
         const mark = zoneIdentifier(isPrivate ? {} : { url: item.getURL(), referrer });
         void writeFile(`${info.path}:Zone.Identifier`, mark).catch(() => undefined);
+      }
+      if (state === "completed" && process.platform === "darwin" && info.path) {
+        // Electron doesn't quarantine downloads itself; Gatekeeper only
+        // checks an app from the internet if its file carries the mark.
+        execFile(
+          "/usr/bin/xattr",
+          ["-w", "com.apple.quarantine", quarantineMark(Date.now(), randomUUID()), info.path],
+          (err) => {
+            if (err) console.warn("[moon] could not quarantine a download:", err.message);
+          },
+        );
       }
       if (isPrivate) this.privateFinished.set(id, { ...info });
       else if (info.path) this.browser.profile.saveDownload({ ...info });

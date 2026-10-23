@@ -29,7 +29,7 @@ import {
   WindowIcon,
 } from "@theme/icons";
 import type { UiCommand } from "@shared/ipc";
-import { ui } from "./store";
+import { keys, ui } from "./store";
 
 export type PopoverKind =
   "menu" | "shield" | "downloads" | "extensions" | "group" | "bookmarkFolder" | "bookmark";
@@ -114,7 +114,6 @@ const Sep = () => <div className="mb-menu-sep" role="separator" />;
 
 export function MainMenu({ state, onClose }: { state: WindowState; onClose: () => void }) {
   const tab = state.tabs.find((t) => t.id === state.activeId);
-  const mod = state.platform === "darwin" ? "⌘" : "Ctrl+";
   const act = (cmd: UiCommand) => () => {
     onClose();
     run(cmd);
@@ -126,42 +125,51 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
           <Item
             accent
             icon={<UpdateIcon size={16} />}
-            label={`Restart to update to ${state.updateReady}`}
+            label={
+              state.updateManual
+                ? `Download version ${state.updateReady}`
+                : `Restart to update to ${state.updateReady}`
+            }
             onClick={act({ type: "installUpdate" })}
           />
           <Sep />
         </>
       )}
-      <Item icon={<TabIcon />} label="New tab" keys={`${mod}T`} onClick={act({ type: "newTab" })} />
+      <Item
+        icon={<TabIcon />}
+        label="New tab"
+        keys={keys("newTab")}
+        onClick={act({ type: "newTab" })}
+      />
       <Item
         icon={<WindowIcon />}
         label="New window"
-        keys={`${mod}N`}
+        keys={keys("newWindow")}
         onClick={act({ type: "newWindow" })}
       />
       <Item
         icon={<MaskIcon />}
         label="New private window"
-        keys={`${mod}Shift+N`}
+        keys={keys("newPrivateWindow")}
         onClick={act({ type: "newPrivateWindow" })}
       />
       <Sep />
       <Item
         icon={<HistoryIcon />}
         label="History"
-        keys={`${mod}H`}
+        keys={keys("history")}
         onClick={act({ type: "openPage", page: "history" })}
       />
       <Item
         icon={<DownloadIcon />}
         label="Downloads"
-        keys={`${mod}J`}
+        keys={keys("downloads")}
         onClick={act({ type: "openPage", page: "downloads" })}
       />
       <Item
         icon={<BookmarksIcon />}
         label="Bookmarks"
-        keys={`${mod}Shift+O`}
+        keys={keys("bookmarks")}
         onClick={act({ type: "openPage", page: "bookmarks" })}
       />
       <button
@@ -173,7 +181,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       >
         <StarIcon />
         <span className="flex-1">Show bookmarks bar</span>
-        <span className="text-xs text-(--mb-text-faint)">{mod}Shift+B</span>
+        <span className="text-xs text-(--mb-text-faint)">{keys("bookmarksBar")}</span>
         <span
           className="mb-switch mb-switch-sm"
           data-on={state.showBookmarksBar}
@@ -216,7 +224,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
           type="button"
           className="mb-icon-btn h-7! w-7!"
           aria-label="Full screen"
-          title="Full screen (F11)"
+          title={`Full screen (${keys("fullscreen")})`}
           onClick={act({ type: "fullscreen" })}
         >
           <ExpandIcon size={14} />
@@ -226,10 +234,15 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       <Item
         icon={<FindIcon />}
         label="Find in page…"
-        keys={`${mod}F`}
+        keys={keys("find")}
         onClick={act({ type: "find" })}
       />
-      <Item icon={<PrintIcon />} label="Print…" keys={`${mod}P`} onClick={act({ type: "print" })} />
+      <Item
+        icon={<PrintIcon />}
+        label="Print…"
+        keys={keys("print")}
+        onClick={act({ type: "print" })}
+      />
       <Item
         icon={<SplitIcon />}
         label={state.split ? "Close split view" : "Split view"}
@@ -238,14 +251,14 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       <Item
         icon={<CodeIcon />}
         label="Developer tools"
-        keys="F12"
+        keys={keys("devtools")}
         onClick={act({ type: "devtools" })}
       />
       <Sep />
       <Item
         icon={<SettingsIcon />}
         label="Settings"
-        keys={`${mod},`}
+        keys={keys("settings")}
         onClick={act({ type: "openPage", page: "settings" })}
       />
       {!state.isDefaultBrowser && (
@@ -263,7 +276,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       <Item
         icon={<CloseIcon size={16} />}
         label="Quit"
-        keys={`${mod}Shift+Q`}
+        keys={keys("quit")}
         onClick={act({ type: "quit" })}
       />
     </div>

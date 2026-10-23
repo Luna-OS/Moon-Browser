@@ -23,7 +23,7 @@ import {
   TabIcon,
   WarningIcon,
 } from "@theme/icons";
-import { onUiEvent, ui } from "./store";
+import { keys, onUiEvent, ui } from "./store";
 
 /** The address as shown while editing: complete, nothing for the new tab page. */
 function editableUrl(tab: TabInfo | undefined): string {
@@ -129,7 +129,8 @@ export function AddressBar({
       case "Enter": {
         event.preventDefault();
         const pick = open && selected > 0 ? (result?.suggestions[selected] ?? null) : null;
-        go(pick, event.altKey);
+        // Alt+Enter opens a new tab, and Cmd+Enter does too on macOS.
+        go(pick, event.altKey || event.metaKey);
         break;
       }
       case "Escape":
@@ -250,7 +251,7 @@ export function AddressBar({
           <button
             type="button"
             className="mb-chip"
-            title="Reset zoom (Ctrl+0)"
+            title={`Reset zoom (${keys("zoomReset")})`}
             onClick={() => void ui.command({ type: "zoomReset" })}
           >
             {tab.zoom}%
@@ -263,7 +264,11 @@ export function AddressBar({
             data-bookmark-star
             aria-pressed={bookmarked}
             aria-label={bookmarked ? "Edit bookmark" : "Bookmark this page"}
-            title={bookmarked ? "Edit bookmark (Ctrl+D)" : "Bookmark this page (Ctrl+D)"}
+            title={
+              bookmarked
+                ? `Edit bookmark (${keys("bookmark")})`
+                : `Bookmark this page (${keys("bookmark")})`
+            }
             onClick={() => void ui.command({ type: "bookmark" })}
           >
             <StarIcon filled={bookmarked} />
@@ -287,7 +292,7 @@ export function AddressBar({
               className="mb-suggestion"
               onMouseDown={(e) => e.preventDefault()}
               onMouseEnter={() => setSelected(i)}
-              onClick={(e) => go(i === 0 ? null : s, e.altKey || e.ctrlKey)}
+              onClick={(e) => go(i === 0 ? null : s, e.altKey || e.ctrlKey || e.metaKey)}
             >
               <SuggestionIcon s={s} />
               <span className="min-w-0 flex-1 truncate">
