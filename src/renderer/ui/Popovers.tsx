@@ -102,7 +102,13 @@ export function Popover({
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // Like Chrome's menus, it closes when the window is resized: its button
+    // moves away, and the pages' snapshots behind it no longer fit.
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onClose);
+    };
   }, [onClose]);
 
   const left =

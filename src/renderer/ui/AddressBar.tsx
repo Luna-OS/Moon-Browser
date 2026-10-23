@@ -91,6 +91,13 @@ export function AddressBar({
 
   const open = focused && edited && !!result && result.suggestions.length > 0 && text.trim() !== "";
   useEffect(() => onDropdownChange(open), [open, onDropdownChange]);
+  // The suggestions follow the address bar when the window is resized.
+  useEffect(() => {
+    if (!open) return;
+    const follow = () => setAnchor(box.current?.getBoundingClientRect() ?? null);
+    window.addEventListener("resize", follow);
+    return () => window.removeEventListener("resize", follow);
+  }, [open]);
 
   const reset = () => {
     setDraft(null);

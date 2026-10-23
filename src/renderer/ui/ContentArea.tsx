@@ -113,6 +113,13 @@ export function ContentArea({
     return () => observer.disconnect();
   }, []);
 
+  // Snapshots belong to the layout they were taken in. When the window gets
+  // narrower or wider meanwhile, they would show the pages at the old size,
+  // so the plain background shows instead; a change in height only crops them.
+  const [taken, setTaken] = useState({ snapshots, origin, width: size.width });
+  if (taken.snapshots !== snapshots) setTaken({ snapshots, origin, width: size.width });
+  const shots = taken.snapshots === snapshots && taken.width === size.width ? snapshots : null;
+
   const active = state.tabs.find((t) => t.id === state.activeId);
   const split = state.split;
   const whole: Rect = { x: 0, y: 0, width: size.width, height: size.height };
@@ -178,19 +185,19 @@ export function ContentArea({
   };
 
   return (
-    <div ref={ref} className="relative min-h-0 flex-1 bg-(--mb-bg)">
+    <div ref={ref} className="relative min-h-0 flex-1 overflow-hidden bg-(--mb-bg)">
       {panes.map(({ tab, rect }) => (
         <PagePanel key={tab.id} tab={tab} rect={rect} />
       ))}
-      {snapshots?.map((s, i) => (
+      {shots?.map((s, i) => (
         <img
           key={i}
           className="mb-snapshot"
           src={s.dataUrl}
           alt=""
           style={{
-            left: s.rect.x - origin.x,
-            top: s.rect.y - origin.y,
+            left: s.rect.x - taken.origin.x,
+            top: s.rect.y - taken.origin.y,
             width: s.rect.width,
             height: s.rect.height,
           }}

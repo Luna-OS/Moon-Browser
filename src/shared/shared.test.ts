@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bangUrl, BANGS, matchBang } from "./bangs";
+import { mixColors } from "./chrome-colors";
 import { DEFAULT_ENGINE, resolveEngine, SEARCH_ENGINES, searchUrl } from "./engines";
 import { dayLabel, formatBytes, groupByDay } from "./format";
 import { httpsUpgrade, isLocalHost, shouldFallBackToHttp } from "./https";
@@ -635,5 +636,14 @@ describe("security helpers", () => {
         text: "||ad.example^/ddm/clk/$domain=x",
       }),
     ).toBe(false);
+  });
+});
+
+describe("window colors", () => {
+  it("lays a color over another", () => {
+    expect(mixColors("#ffffff", "#000000", 0)).toBe("#ffffff");
+    expect(mixColors("#ffffff", "#000000", 1)).toBe("#000000");
+    expect(mixColors("#ffffff", "#000000", 0.5)).toBe("#808080");
+    expect(mixColors("#ece7f7", "#2b2160", 0.28)).toBe("#b6b0cd");
   });
 });
