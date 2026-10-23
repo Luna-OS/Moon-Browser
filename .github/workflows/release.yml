@@ -41,7 +41,7 @@ jobs:
 
       # latest-linux.yml tells installed copies about this release (the
       # AppImage carries its block map inside).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-linux
           path: |
@@ -89,7 +89,7 @@ jobs:
 
       # latest.yml and the block map let installed copies update themselves,
       # downloading only the parts that changed.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-windows
           path: |
@@ -163,7 +163,7 @@ jobs:
         working-directory: release
         run: shasum -a 256 *.dmg *.zip > ../checksums-mac.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-mac
           path: |
