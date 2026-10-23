@@ -53,6 +53,8 @@ export function AddressBar({
   const [tabId, setTabId] = useState(tab?.id);
   const typed = useRef("");
   const pendingSelection = useRef<[number, number] | null>(null);
+  /** Focused by a mouse press: the button's release selects everything, as in Chrome. */
+  const focusingClick = useRef(false);
 
   // A new active tab ends any editing.
   if (tab?.id !== tabId) {
@@ -228,12 +230,28 @@ export function AddressBar({
             role="combobox"
             aria-autocomplete="both"
             placeholder={`Search with ${engineName} or type an address`}
+            aria-activedescendant={open ? `mb-suggestion-${selected}` : undefined}
+            onMouseDown={() => {
+              focusingClick.current = !focused;
+            }}
+            onMouseUp={(e) => {
+              if (!focusingClick.current) return;
+              focusingClick.current = false;
+              // A plain click selects the whole address; a drag keeps its selection.
+              const el = e.currentTarget;
+              if (el.selectionStart === el.selectionEnd) {
+                e.preventDefault();
+                el.select();
+              }
+            }}
             onFocus={() => {
               setFocused(true);
-              requestAnimationFrame(() => input.current?.select());
+              // From the keyboard; a click selects on its release instead.
+              if (!focusingClick.current) requestAnimationFrame(() => input.current?.select());
             }}
             onBlur={() => {
               setFocused(false);
+              focusingClick.current = false;
               reset();
             }}
             onChange={(e) => onChange(e.target.value, (e.nativeEvent as InputEvent).inputType)}
@@ -282,6 +300,7 @@ export function AddressBar({
             <button
               type="button"
               key={`${s.kind}:${s.url}:${i}`}
+              id={`mb-suggestion-${i}`}
               role="option"
               aria-selected={i === selected}
               className="mb-suggestion"
