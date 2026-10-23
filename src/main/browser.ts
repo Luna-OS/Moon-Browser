@@ -111,6 +111,7 @@ export class Browser {
         this.profile.stats.get().restoreAfterUpdate = true;
         this.profile.stats.changed();
       },
+      openPage: (url) => this.openExternalUrls([url]),
     });
   }
 

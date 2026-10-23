@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import type { Bookmark, BookmarkFolderChoice } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
 import { BackIcon, ChevronDownIcon, FolderIcon, PlusIcon, TabIcon } from "@theme/icons";
-import { ui } from "./store";
+import { keys, ui } from "./store";
 
 const open = (url: string, e: React.MouseEvent) =>
   void ui.command({
@@ -45,7 +45,7 @@ export function BookmarksBar({
     >
       {bookmarks.length === 0 && (
         <span className="px-2 text-xs text-(--mb-text-faint)">
-          Bookmark pages with the star or Ctrl+D to see them here.
+          Bookmark pages with the star or {keys("bookmark")} to see them here.
         </span>
       )}
       {bookmarks.map((b) =>

@@ -2,7 +2,7 @@
 
 > The web, calmly under the moon.
 
-Moon Browser is a private, open-source Chromium browser for Windows and Linux — in the spirit of
+Moon Browser is a private, open-source Chromium browser for Windows, macOS and Linux — in the spirit of
 [Helium](https://github.com/imputnet/helium): no bloat, no noise, ad and tracker blocking built in,
 and nothing phoning home. It wears the same night-sky design as
 [MoonDisk](https://github.com/Luna-OS/MoonDisk) and [MoonTask](https://github.com/Luna-OS/Moon-Task).
@@ -36,7 +36,8 @@ and nothing phoning home. It wears the same night-sky design as
 - **Developer mode** on `moon://extensions` — load your own extension from a folder (*Load
   unpacked*), reload it after changes, see its ID and errors
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
-  click on *Update* installs it over the old one and brings your tabs back
+  click on *Update* installs it over the old one and brings your tabs back (on macOS, for now,
+  *Update* opens the download page: see [Updates](#updates))
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
 - **Signing in to Google works** — Google turns away browsers that look like an app with a
   browser built in ("This browser or app may not be secure"). Moon Browser gives pages Chrome's
@@ -104,8 +105,9 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
   yet" (as in Chrome), not "blocked", so they ask. USB, serial, HID and Bluetooth access are
   refused.
 - **Downloads** — programs and scripts are held under a harmless name (`Unconfirmed ….crdownload`)
-  until you choose *Keep anyway*, and on Windows every download gets the Mark of the Web, so
-  SmartScreen checks it.
+  until you choose *Keep anyway*. On Windows every download gets the Mark of the Web, so
+  SmartScreen checks it; on macOS the quarantine mark, so Gatekeeper checks apps before they
+  first open.
 - **Questions in Moon Browser's own dialogs** — adding or removing an extension, its requests
   for more access, program downloads, *Leave site?* and a page's `alert()`, `confirm()` and
   `prompt()` are asked in the night-sky look over the window, not in the system's message box.
@@ -149,22 +151,39 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 | `F11` / `F12`                     | Full screen / developer tools         |
 | `Ctrl Shift Q`                    | Quit                                  |
 
+On a Mac, `⌘` takes the place of `Ctrl`, and Chrome's Mac keys work: `⌘ [` / `⌘ ]` back and
+forward, `⌘ ⇧ [` / `⌘ ⇧ ]` or `⌘ ⌥ ←` / `⌘ ⌥ →` previous and next tab, `⌘ Y` history,
+`⌥ ⌘ B` bookmarks, `⇧ ⌘ J` downloads, `⌃ ⌘ F` full screen, `⌥ ⌘ I` developer tools, `⌘ Q`
+quit. The menu bar has them all; `⌘ H` hides Moon Browser, as in every Mac app.
+
 ## Installation
 
-Installers for **Windows** (`.exe`, x64; runs on ARM64 through Windows' emulation) and **Linux**
-(`.AppImage`, `.deb`, `.rpm`) are published on the
-[Releases](https://github.com/Luna-OS/Moon-Browser/releases) page. macOS follows later.
+Installers for **Windows** (`.exe`, x64; runs on ARM64 through Windows' emulation), **macOS**
+(`.dmg`, for Apple Silicon and for Intel Macs) and **Linux** (`.AppImage`, `.deb`, `.rpm`) are
+published on the [Releases](https://github.com/Luna-OS/Moon-Browser/releases) page.
 
 - **Windows:** run the installer — it installs for your user account, needs no administrator
   rights and lets you choose the folder. Moon Browser registers itself as a web browser; *Make
   default* (new tab page, menu or settings) opens Windows' *Default apps* with Moon Browser
   preselected.
+- **macOS** (13 Ventura or newer): open the `.dmg` for your Mac — `arm64` for Apple Silicon
+  (M1 and later), `x64` for Intel — and drag Moon Browser into *Applications*. *Make default*
+  asks macOS, which then asks you to confirm.
 - **Linux:** install the `.deb` or `.rpm`, or make the `.AppImage` executable and start it.
   On Ubuntu 24.04 and newer, prefer the `.deb`: it sets up Chromium's sandbox helper, which the
   AppImage can't.
 
 The builds are not code-signed yet, so Windows SmartScreen asks once before the first start
-(*More info → Run anyway*).
+(*More info → Run anyway*). The Mac app is signed only "ad hoc", not with an Apple Developer ID,
+and not notarized by Apple, so macOS refuses the first start ("Apple could not verify …"):
+
+- macOS 15 Sequoia and newer: try to open it once, then *System Settings → Privacy & Security →
+  Open Anyway*.
+- macOS 14 and older: right-click Moon Browser in *Applications* → *Open* → *Open*.
+- Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/Moon Browser.app"`
+
+macOS asks only once. Cookies are encrypted with a key in your Keychain; after an update macOS
+may ask once more whether Moon Browser may use it (*Always Allow*).
 
 ### Updates
 
@@ -178,6 +197,9 @@ state and has a *Check now* button.
 - **AppImage:** the AppImage file is replaced.
 - **.deb / .rpm:** the package is installed with your system's package tool, which asks for your
   password — so only when you click *Update*.
+- **macOS:** macOS only lets an app replace itself when it is signed with an Apple Developer ID,
+  which the Mac builds don't have yet. Moon Browser still looks for new versions; *Update* then
+  opens the release's download page: drag the new version into *Applications* over the old one.
 
 Running the installer of a newer version by hand works too: it updates in place.
 
@@ -234,6 +256,7 @@ npm run lint && npm run typecheck && npm run format:check
 npm run test:e2e         # drives the real browser, with a test extension (needs a display)
 npm run dist:linux       # AppImage, .deb, .rpm in release/
 npm run dist:win         # Windows installer in release/
+npm run dist:mac         # .dmg and .zip for Apple Silicon and Intel in release/ (on a Mac)
 ```
 
 Set `MOON_BROWSER_PROFILE=/some/folder` to start with a separate profile.
@@ -251,7 +274,8 @@ src/
   shared/     pure logic, unit-tested: address bar input, bangs, search engines,
               settings, suggestions, sites, HTTPS rules, security helpers, import,
               extension manifests
-build/        icons and the Windows installer (theme, artwork, browser registration)
+build/        icons, the Windows installer (theme, artwork, browser registration), the Mac
+              entitlements and the packaging hooks (fuses, VMP signing)
 scripts/      build, end-to-end test (with a test extension in fixtures/), artwork rendering
 ```
 

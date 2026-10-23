@@ -23,7 +23,7 @@ import { useBrowserActions } from "./extension-actions";
 import { ExtensionButtons, ExtensionsMenu } from "./Extensions";
 import { useOverlay } from "./overlay";
 import { DownloadsPanel, MainMenu, Popover, ShieldPanel, type PopoverKind } from "./Popovers";
-import { onUiEvent, ui, useWindowState } from "./store";
+import { keys, onUiEvent, ui, useWindowState } from "./store";
 import { GroupEditor } from "./TabGroups";
 import { TabStrip } from "./TabStrip";
 
@@ -136,7 +136,7 @@ function Browser({ state }: { state: WindowState }) {
               type="button"
               className="mb-icon-btn"
               aria-label="Back"
-              title="Back (Alt+Left)"
+              title={`Back (${keys("back")})`}
               disabled={!tab?.canGoBack}
               onClick={() => void ui.command({ type: "back" })}
             >
@@ -146,7 +146,7 @@ function Browser({ state }: { state: WindowState }) {
               type="button"
               className="mb-icon-btn"
               aria-label="Forward"
-              title="Forward (Alt+Right)"
+              title={`Forward (${keys("forward")})`}
               disabled={!tab?.canGoForward}
               onClick={() => void ui.command({ type: "forward" })}
             >
@@ -167,7 +167,7 @@ function Browser({ state }: { state: WindowState }) {
                 type="button"
                 className="mb-icon-btn"
                 aria-label="Reload"
-                title="Reload (Ctrl+R)"
+                title={`Reload (${keys("reload")})`}
                 onClick={(e) => void ui.command({ type: e.shiftKey ? "hardReload" : "reload" })}
               >
                 <ReloadIcon />
@@ -178,7 +178,7 @@ function Browser({ state }: { state: WindowState }) {
                 type="button"
                 className="mb-icon-btn"
                 aria-label="Home"
-                title="Home (Alt+Home)"
+                title={`Home (${keys("home")})`}
                 onClick={() => void ui.command({ type: "home" })}
               >
                 <HomeIcon />
@@ -262,7 +262,11 @@ function Browser({ state }: { state: WindowState }) {
               <button
                 type="button"
                 className="mb-update-pill"
-                title={`Restart Moon Browser to install version ${state.updateReady}. Your tabs come back.`}
+                title={
+                  state.updateManual
+                    ? `Version ${state.updateReady} is out: open its download page.`
+                    : `Restart Moon Browser to install version ${state.updateReady}. Your tabs come back.`
+                }
                 onClick={() => void ui.command({ type: "installUpdate" })}
               >
                 <UpdateIcon size={14} /> Update

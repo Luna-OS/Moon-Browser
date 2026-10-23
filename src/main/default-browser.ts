@@ -4,7 +4,7 @@
  * Windows doesn't let apps make themselves the default browser: the
  * installer registers Moon Browser, and "Make default" opens the system
  * settings with Moon Browser preselected. On Linux, xdg-settings sets it
- * directly.
+ * directly. On macOS, the system asks the user to confirm the change.
  */
 import { app, shell } from "electron";
 import { execFile } from "node:child_process";
@@ -75,12 +75,16 @@ export class DefaultBrowser {
       this.lastCheck = 0;
       return this.isDefault;
     }
-    if (process.platform === "linux") {
-      await execText("xdg-settings", ["set", "default-web-browser", linuxDesktopFile()]);
-    } else {
+    if (process.platform === "darwin") {
+      // macOS asks the user itself ("Use Moon Browser" or keep the old
+      // browser), after this returns: the next window focus checks again.
       app.setAsDefaultProtocolClient("http");
       app.setAsDefaultProtocolClient("https");
+      const value = await this.refresh(true);
+      this.lastCheck = 0;
+      return value;
     }
+    await execText("xdg-settings", ["set", "default-web-browser", linuxDesktopFile()]);
     return this.refresh(true);
   }
 }

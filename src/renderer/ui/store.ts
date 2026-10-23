@@ -5,6 +5,7 @@
  */
 import { useSyncExternalStore } from "react";
 import type { UiEvent } from "@shared/ipc";
+import { shortcutHint, type ShortcutHint } from "@shared/shortcuts";
 import type { WindowState } from "@shared/types";
 
 let current: WindowState | null = null;
@@ -45,3 +46,8 @@ export function onUiEvent(listener: (event: UiEvent) => void): () => void {
 }
 
 export const ui = window.moonUI;
+
+/** A shortcut as this platform writes it, for menus and tooltips ("Ctrl+T", "⌘T"). */
+export function keys(hint: ShortcutHint): string {
+  return shortcutHint(hint, current?.platform ?? "");
+}

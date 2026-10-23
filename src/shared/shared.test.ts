@@ -9,10 +9,11 @@ import { moonPhase } from "./moon";
 import { displayUrl, shortHost } from "./display";
 import { resolveInput } from "./omnibox";
 import { defaultSettings, mergeSettings, normalizeSite, sanitizeSettings } from "./settings";
-import { shortcutFor, type KeyInput } from "./shortcuts";
+import { shortcutFor, shortcutHint, type KeyInput } from "./shortcuts";
 import {
   blocksWholePage,
   isDangerousFile,
+  quarantineMark,
   safeFilename,
   stripTrackingParams,
   zoneIdentifier,
@@ -246,6 +247,7 @@ describe("settings", () => {
   it("spell checking is opt-in on Linux only", () => {
     expect(defaultSettings("linux").spellcheck).toBe(false);
     expect(defaultSettings("win32").spellcheck).toBe(true);
+    expect(defaultSettings("darwin").spellcheck).toBe(true);
   });
 
   it("normalizes allowlist sites", () => {
@@ -345,6 +347,68 @@ describe("keyboard shortcuts", () => {
   it("uses Cmd on macOS", () => {
     expect(shortcutFor(key("t", { meta: true }), "darwin")).toEqual({ type: "newTab" });
     expect(shortcutFor(key("t", { control: true }), "darwin")).toBeNull();
+    expect(shortcutFor(key("w", { meta: true }), "darwin")).toEqual({ type: "closeTab" });
+    expect(shortcutFor(key("l", { meta: true }), "darwin")).toEqual({ type: "focusAddressBar" });
+    expect(shortcutFor(key(",", { meta: true }), "darwin")).toEqual({
+      type: "openPage",
+      page: "settings",
+    });
+    expect(shortcutFor(key("y", { meta: true }), "darwin")).toEqual({
+      type: "openPage",
+      page: "history",
+    });
+    expect(shortcutFor(key("1", { meta: true }), "darwin")).toEqual({
+      type: "selectTab",
+      index: 0,
+    });
+    expect(shortcutFor(key("q", { meta: true }), "darwin")).toEqual({ type: "quit" });
+    // Cmd+H, Cmd+M and the editing keys belong to the menu bar.
+    expect(shortcutFor(key("h", { meta: true }), "darwin")).toBeNull();
+    expect(shortcutFor(key("m", { meta: true }), "darwin")).toBeNull();
+    expect(shortcutFor(key("c", { meta: true }), "darwin")).toBeNull();
+    expect(shortcutFor(key("z", { meta: true, shift: true }), "darwin")).toBeNull();
+    // Option+arrows move by word in text fields.
+    expect(shortcutFor(key("ArrowLeft", { alt: true }), "darwin")).toBeNull();
+  });
+
+  it("knows Chrome's own keys on macOS", () => {
+    const mac = (k: string, mods: Partial<KeyInput>) => shortcutFor(key(k, mods), "darwin");
+    expect(mac("[", { meta: true })).toEqual({ type: "back" });
+    expect(mac("]", { meta: true })).toEqual({ type: "forward" });
+    // German keyboards: Option+5 types the bracket.
+    expect(mac("[", { meta: true, alt: true })).toEqual({ type: "back" });
+    expect(mac("{", { meta: true, shift: true })).toEqual({ type: "previousTab" });
+    expect(mac("}", { meta: true, shift: true })).toEqual({ type: "nextTab" });
+    expect(mac("ArrowRight", { meta: true, alt: true })).toEqual({ type: "nextTab" });
+    expect(mac("Tab", { control: true })).toEqual({ type: "nextTab" });
+    expect(mac("Tab", { control: true, shift: true })).toEqual({ type: "previousTab" });
+    // Option turns letters into other characters: the key's place counts.
+    expect(mac("ˆ", { meta: true, alt: true, code: "KeyI" })).toEqual({ type: "devtools" });
+    expect(mac("∫", { meta: true, alt: true, code: "KeyB" })).toEqual({
+      type: "openPage",
+      page: "bookmarks",
+    });
+    expect(mac("f", { meta: true, control: true, code: "KeyF" })).toEqual({ type: "fullscreen" });
+    expect(mac("H", { meta: true, shift: true })).toEqual({ type: "home" });
+    expect(mac("J", { meta: true, shift: true })).toEqual({
+      type: "openPage",
+      page: "downloads",
+    });
+    // Cmd+Option+H is the menu's "Hide Others".
+    expect(mac("˙", { meta: true, alt: true, code: "KeyH" })).toBeNull();
+    // Elsewhere, Ctrl+Shift+J still opens the developer tools.
+    expect(shortcutFor(key("J", { control: true, shift: true }), "linux")).toEqual({
+      type: "devtools",
+    });
+  });
+
+  it("writes shortcuts the platform's way", () => {
+    expect(shortcutHint("newPrivateWindow", "linux")).toBe("Ctrl+Shift+N");
+    expect(shortcutHint("newPrivateWindow", "darwin")).toBe("⇧⌘N");
+    expect(shortcutHint("devtools", "win32")).toBe("F12");
+    expect(shortcutHint("devtools", "darwin")).toBe("⌥⌘I");
+    expect(shortcutHint("quit", "darwin")).toBe("⌘Q");
+    expect(shortcutHint("history", "darwin")).toBe("⌘Y");
   });
 });
 
@@ -514,6 +578,21 @@ describe("user agent", () => {
     );
   });
 
+  it("looks like Chrome on a Mac", () => {
+    const ua =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) MoonBrowser/0.1.30 Chrome/152.0.7977.167 Electron/44.9.3 Safari/537.36";
+    const clean = cleanUserAgent(ua);
+    expect(clean).toBe(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+    );
+    // Apple Silicon Macs say "Intel" too, as Chrome does; the hints say macOS.
+    expect(clientHints(clean, "darwin")).toEqual({
+      "sec-ch-ua": '"Not?A_Brand";v="24", "Chromium";v="152"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"',
+    });
+  });
+
   it("sends pages Chrome's client hints, the same as the renderer's", () => {
     const ua = (major: number) =>
       `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`;
@@ -618,6 +697,14 @@ describe("security helpers", () => {
     expect(zoneIdentifier({ url: "blob:https://x/1\r\nZoneId=0" })).toBe(
       "[ZoneTransfer]\r\nZoneId=3\r\n",
     );
+  });
+
+  it("quarantines downloads on macOS", () => {
+    expect(quarantineMark(Date.UTC(2026, 9, 23), "A1B2")).toBe(
+      `0081;${(Date.UTC(2026, 9, 23) / 1000).toString(16)};Moon Browser;A1B2`,
+    );
+    expect(isDangerousFile("Moon Browser.dmg")).toBe(true);
+    expect(isDangerousFile("install.pkg")).toBe(true);
   });
 
   it("blocks whole pages only for host rules and $document rules", () => {

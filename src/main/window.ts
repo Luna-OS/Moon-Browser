@@ -58,6 +58,10 @@ export interface WindowOptions {
   saved?: SavedWindow;
 }
 
+const MAC = process.platform === "darwin";
+/** Where the traffic lights go: vertically centred on the tabs (src/renderer/ui/ui.css). */
+const TRAFFIC_LIGHTS = { x: 14, y: 15 };
+
 /** Addresses the UI may open directly (bookmarks, suggestions). */
 export function isOpenableUrl(url: string): boolean {
   return /^(https?|file|moon|view-source):/i.test(url) || url === "about:blank";
@@ -112,11 +116,18 @@ export class MoonWindow {
       title: "Moon Browser",
       backgroundColor: this.isPrivate ? colors.privateFrame : colors.frame,
       titleBarStyle: "hidden",
-      titleBarOverlay: {
-        color: this.isPrivate ? colors.privateFrame : colors.frame,
-        symbolColor: colors.symbols,
-        height: TAB_STRIP_HEIGHT,
-      },
+      // The window buttons sit in the tab strip: drawn by the system on the
+      // right (Windows, Linux), or as the traffic lights on the left
+      // (macOS), lined up with the tabs. The tab strip leaves room for them.
+      ...(MAC
+        ? { trafficLightPosition: TRAFFIC_LIGHTS }
+        : {
+            titleBarOverlay: {
+              color: this.isPrivate ? colors.privateFrame : colors.frame,
+              symbolColor: colors.symbols,
+              height: TAB_STRIP_HEIGHT,
+            },
+          }),
       icon: process.platform === "linux" ? windowIcon : undefined,
       autoHideMenuBar: true,
       webPreferences: {
@@ -181,6 +192,11 @@ export class MoonWindow {
     this.win.on("app-command", (_event, cmd) => {
       if (cmd === "browser-backward") this.activeTab?.back();
       if (cmd === "browser-forward") this.activeTab?.forward();
+    });
+    // macOS: swiping between pages with three fingers (if the trackpad is set so).
+    this.win.on("swipe", (_event, direction) => {
+      if (direction === "right") this.activeTab?.back();
+      if (direction === "left") this.activeTab?.forward();
     });
     this.win.on("close", () => browser.windowClosing(this));
     this.win.on("closed", () => {
@@ -847,8 +863,12 @@ export class MoonWindow {
       showHomeButton: settings.showHomeButton,
       showBookmarksBar: settings.showBookmarksBar,
       searchEngineName: this.browser.engine().name,
-      fullscreen: this.win.isFullScreen(),
+      // On macOS, tabs and toolbar stay in full screen, as in Chrome there;
+      // only a page's own full screen (a video) hides them.
+      fullscreen: this.win.isFullScreen() && (!MAC || this.htmlFullscreen !== null),
+      trafficLights: MAC && !this.win.isFullScreen(),
       updateReady: this.browser.updater.readyVersion(),
+      updateManual: this.browser.updater.status().manual,
       isDefaultBrowser: this.isPrivate || this.browser.defaultBrowser.isDefault,
       extensionTab:
         !this.isPrivate && this.browser.extensions.count() > 0 ? (active?.wc?.id ?? null) : null,

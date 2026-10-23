@@ -11,7 +11,7 @@ import type { TabInfo, WindowState } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
 import { CloseIcon, MaskIcon, PlusIcon, SleepIcon, SpeakerIcon } from "@theme/icons";
 import { GROUP_HEX } from "./group-colors";
-import { ui } from "./store";
+import { keys, ui } from "./store";
 import { GroupChip } from "./TabGroups";
 
 /** What is being dragged: a tab, or a whole group by its label. */
@@ -171,7 +171,7 @@ export function TabStrip({
   };
 
   return (
-    <div className="mb-tabstrip">
+    <div className="mb-tabstrip" data-traffic-lights={state.trafficLights || undefined}>
       {state.private && (
         <span
           className="mb-private-badge"
@@ -238,7 +238,7 @@ export function TabStrip({
         <button
           type="button"
           className="mb-icon-btn mb-newtab"
-          title="New tab (Ctrl+T)"
+          title={`New tab (${keys("newTab")})`}
           aria-label="New tab"
           onClick={() => void ui.command({ type: "newTab" })}
         >
@@ -337,7 +337,7 @@ function Tab({
           type="button"
           className="mb-tab-close"
           aria-label={`Close ${tab.title}`}
-          title="Close tab (Ctrl+W)"
+          title={`Close tab (${keys("closeTab")})`}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={close}
         >
