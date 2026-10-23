@@ -90,7 +90,10 @@ export function installPageDialogs(browser: Browser): void {
       };
       contents.once("destroyed", abort);
       contents.on("did-start-navigation", navigated);
+      // A tab waiting for an answer doesn't go to sleep meanwhile.
+      tab.pageDialogs++;
       void tab.window.askFull(spec, gone.signal).then((answer) => {
+        tab.pageDialogs--;
         if (!contents.isDestroyed()) {
           contents.off("destroyed", abort);
           contents.off("did-start-navigation", navigated);

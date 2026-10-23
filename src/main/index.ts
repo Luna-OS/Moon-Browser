@@ -123,7 +123,10 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(async () => {
-    await Promise.all([browser.init(), prepareProtectedContent(browser.startedWith)]);
+    // The Widevine module installs in the background: a first start behind a
+    // slow connection doesn't wait for it with an empty screen.
+    prepareProtectedContent(browser.startedWith);
+    await browser.init();
     registerIpc(browser);
     browser.restoreOrOpen(urlsFromArgv(process.argv));
   });

@@ -96,10 +96,16 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const str = (v: unknown, max = 8192) => (typeof v === "string" ? v.slice(0, max) : "");
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 const httpish = (url: string) => /^(https?|file):/i.test(url);
-const faviconOf = (v: unknown) => {
-  const s = str(v, 2048);
-  return /^(https?:|data:image\/)/i.test(s) ? s : null;
-};
+/**
+ * The longest site icon kept: icons go into the history and into every
+ * state message for the window (src/main/tab.ts scales big ones down).
+ */
+export const MAX_FAVICON_LENGTH = 4096;
+// A longer one is left out: cut short, a data: image would be broken.
+const faviconOf = (v: unknown) =>
+  typeof v === "string" && v.length <= MAX_FAVICON_LENGTH && /^(https?:|data:image\/)/i.test(v)
+    ? v
+    : null;
 
 function parseHistory(raw: unknown): Map<string, HistoryEntry> {
   const map = new Map<string, HistoryEntry>();
@@ -268,6 +274,9 @@ export class Profile {
   readonly extensions: JsonStore<ExtensionPrefs>;
   readonly session: JsonStore<SavedSession>;
   readonly stats: JsonStore<Stats>;
+  /** Counts changes of the history, so the top sites are worked out again only after one. */
+  private historyVersion = 0;
+  private topSitesCache: { key: string; sites: HistoryEntry[] } | null = null;
 
   constructor(readonly platform: string) {
     this.settings = JsonStore.load(profilePath("settings.json"), (raw) =>
@@ -353,15 +362,25 @@ export class Profile {
         map.delete(key);
       }
     }
+    this.historyChanged();
+  }
+
+  private historyChanged(): void {
+    this.historyVersion++;
     this.history.changed();
   }
 
   updateHistory(url: string, patch: { title?: string; favicon?: string | null }): void {
     const entry = this.history.get().get(url);
     if (!entry) return;
-    if (patch.title !== undefined && patch.title) entry.title = patch.title.slice(0, 512);
-    if (patch.favicon !== undefined) entry.favicon = patch.favicon;
-    this.history.changed();
+    // Pages report their title again and again; only real changes are saved.
+    const title = patch.title ? patch.title.slice(0, 512) : entry.title;
+    const favicon = patch.favicon !== undefined ? patch.favicon : entry.favicon;
+    if (title !== entry.title || favicon !== entry.favicon) {
+      entry.title = title;
+      entry.favicon = favicon;
+      this.historyChanged();
+    }
     for (const b of this.bookmarks.get()) {
       if (b.url === url && patch.favicon && b.favicon !== patch.favicon) {
         b.favicon = patch.favicon;
@@ -386,17 +405,26 @@ export class Profile {
   removeHistory(urls: string[]): void {
     const map = this.history.get();
     for (const url of urls) map.delete(url);
-    this.history.changed();
+    this.historyChanged();
   }
 
   clearHistory(sinceMs: number): void {
     const map = this.history.get();
     for (const [url, e] of map) if (e.lastVisit >= sinceMs) map.delete(url);
-    this.history.changed();
+    this.historyChanged();
   }
 
+  /** The most visited sites; kept until the history changes (every New Tab page asks). */
   topSites(limit: number): HistoryEntry[] {
-    const hidden = new Set(this.stats.get().hiddenTopSites);
+    const hiddenList = this.stats.get().hiddenTopSites;
+    const key = `${this.historyVersion}/${limit}/${hiddenList.join(" ")}`;
+    if (this.topSitesCache?.key !== key) {
+      this.topSitesCache = { key, sites: this.computeTopSites(limit, new Set(hiddenList)) };
+    }
+    return this.topSitesCache.sites;
+  }
+
+  private computeTopSites(limit: number, hidden: ReadonlySet<string>): HistoryEntry[] {
     const now = Date.now();
     const byHost = new Map<string, { entry: HistoryEntry; path: number; score: number }>();
     for (const e of this.history.get().values()) {
@@ -472,7 +500,7 @@ export class Profile {
       .slice(-HISTORY_LIMIT);
     map.clear();
     for (const e of sorted) map.set(e.url, e);
-    this.history.changed();
+    this.historyChanged();
     return added;
   }
 

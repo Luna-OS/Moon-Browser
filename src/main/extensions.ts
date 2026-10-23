@@ -373,6 +373,11 @@ export class Extensions {
   addTab(wc: WebContents, win: MoonWindow): void {
     if (!this.api || win.isPrivate || wc.session !== this.session) return;
     this.api.addTab(wc, win.win);
+    // Side panel options set for this page go with it.
+    const id = wc.id;
+    wc.once("destroyed", () => {
+      for (const perTab of this.panelPerTab.values()) perTab.delete(id);
+    });
   }
 
   /** A tab let go of its page (closed, or put to sleep). */
