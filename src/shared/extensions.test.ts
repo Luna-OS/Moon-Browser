@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addError,
   compareVersions,
   describePermissions,
   EXTENSION_ID,
@@ -61,6 +62,71 @@ describe("extension errors", () => {
     expect(listsError(noise, { developerMode: true, unpacked: true })).toBe(true);
     // Real errors always.
     expect(listsError(real, { developerMode: false, unpacked: false })).toBe(true);
+  });
+
+  it("leaves out requests Moon Shield blocked or that failed offline", () => {
+    const web = { developerMode: true, unpacked: true };
+    expect(listsError("Failed to load resource: net::ERR_BLOCKED_BY_CLIENT", web)).toBe(false);
+    expect(listsError("Failed to load resource: net::ERR_INTERNET_DISCONNECTED", web)).toBe(false);
+    // The extension's own server answering with an error is the extension's.
+    expect(
+      listsError("Failed to load resource: the server responded with a status of 500 ()", web),
+    ).toBe(true);
+    // A fetch the extension didn't catch is its error, whatever the cause.
+    expect(listsError("Uncaught (in promise) TypeError: Failed to fetch", web)).toBe(true);
+  });
+
+  it("leaves out files a web page asked the extension for", () => {
+    const store = { developerMode: false, unpacked: false };
+    // A site looking for the extension: not its error.
+    expect(
+      listsError("Failed to load resource: net::ERR_FAILED", { ...store, onWebPage: true }),
+    ).toBe(false);
+    // In the extension's own page it is.
+    expect(listsError("Failed to load resource: net::ERR_FILE_NOT_FOUND", store)).toBe(true);
+    // Its content script's errors on a web page are, too.
+    expect(
+      listsError("Uncaught TypeError: Cannot read properties of null (reading 'x')", {
+        ...store,
+        onWebPage: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("leaves out old content scripts that lost their updated extension", () => {
+    const text = "Uncaught Error: Extension context invalidated.";
+    expect(listsError(text, { developerMode: false, unpacked: false })).toBe(false);
+    expect(listsError(text, { developerMode: true, unpacked: false })).toBe(false);
+    expect(listsError(text, { developerMode: true, unpacked: true })).toBe(true);
+  });
+
+  it("keeps errors about chrome.* APIs Moon Browser lacks", () => {
+    const store = { developerMode: false, unpacked: false };
+    expect(listsError("chrome.readingList isn't available in Moon Browser.", store)).toBe(true);
+    expect(
+      listsError("Uncaught TypeError: Cannot read properties of undefined (reading 'onChanged')", {
+        ...store,
+        onWebPage: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("counts the same error once more instead of listing it again", () => {
+    let list = addError([], { message: "boom", source: "bg.js:1" }, 1000, 3);
+    list = addError(list, { message: "other", source: "bg.js:2" }, 2000, 3);
+    list = addError(list, { message: "boom", source: "bg.js:1" }, 3000, 3);
+    expect(list).toEqual([
+      { message: "other", source: "bg.js:2", count: 1, last: 2000 },
+      { message: "boom", source: "bg.js:1", count: 2, last: 3000 },
+    ]);
+    // The same message from elsewhere is another error.
+    list = addError(list, { message: "boom", source: "popup.js:9" }, 4000, 3);
+    expect(list).toHaveLength(3);
+    // Without a source, none is kept.
+    list = addError(list, { message: "Could not load", source: undefined }, 5000, 3);
+    expect(list).toHaveLength(3);
+    expect(list[2]).toEqual({ message: "Could not load", count: 1, last: 5000 });
+    expect(list[0].message).toBe("boom");
   });
 });
 

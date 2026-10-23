@@ -74,6 +74,8 @@ export interface Settings {
   hardwareAcceleration: boolean;
   /** Perplexity in Moon's night-sky look, with Axo the axolotl on its search box. */
   perplexityLook: boolean;
+  /** YouTube in Moon's night-sky look, with a moon on its progress bar. */
+  youtubeLook: boolean;
 }
 
 export interface TabInfo {
@@ -361,6 +363,17 @@ export interface UpdateStatus {
   needsAdmin: boolean;
 }
 
+/** An error of an extension, for its "issues" on the extensions page. */
+export interface ExtensionError {
+  message: string;
+  /** Where it happened: "js/background.js:12". */
+  source?: string;
+  /** How often it happened (the same message from the same place counts once more). */
+  count: number;
+  /** When it last happened (ms since the epoch). */
+  last: number;
+}
+
 export interface ExtensionInfo {
   id: string;
   name: string;
@@ -375,7 +388,7 @@ export interface ExtensionInfo {
   /** Features Moon Browser can't offer this extension. */
   unsupported: string[];
   /** Recent errors from the extension's pages and service worker, newest last. */
-  errors: string[];
+  errors: ExtensionError[];
   /** Loaded from a folder in developer mode. */
   unpacked: boolean;
   /** An unpacked extension's folder. */

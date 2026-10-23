@@ -28,9 +28,11 @@ and nothing phoning home. It wears the same night-sky design as
 - **Chrome extensions** from the Chrome Web Store — your password manager (NordPass, Bitwarden,
   1Password, …) with its toolbar button and pop-up, and side-panel extensions like Claude. The
   puzzle button lists them like Chrome does (*Full access* / *No access needed* on the current
-  site), pins them to the toolbar and opens their options. Before an extension is added, Moon
+  site), pins them to the toolbar and opens their options. Claude takes screenshots, downloads its
+  GIFs and talks to Claude Desktop and Claude Code (native messaging, through the apps registered
+  for Chrome). Before an extension is added, Moon
   Browser shows what it will be able to do; `moon://extensions` switches them off, removes them
-  and shows their errors, and repairs an extension whose files got damaged.
+  and shows their issues (repeats counted once, noise left out), and repairs an extension whose files got damaged.
 - **Developer mode** on `moon://extensions` — load your own extension from a folder (*Load
   unpacked*), reload it after changes, see its ID and errors
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
@@ -48,7 +50,10 @@ and nothing phoning home. It wears the same night-sky design as
 - **Split view** — two tabs side by side, with a divider to resize
 - **Perplexity in Moon's look** — the night sky and lavender instead of teal, and **Axo**, Moon
   Code's pixel axolotl, sitting on the search box: it introduces itself, shows how the search works and
-  has tips when you click it (*Settings → Search* switches it off)
+  has tips when you click it (*Settings → Search* switches it off). On an answer, Axo sits beside it
+  and says it — the answer becomes its speech bubble — and follows you through the conversation
+- **YouTube in Moon's look** (optional, *Settings → Appearance*) — the night sky on YouTube, a
+  glowing moon on the progress bar and a sparkle on the volume slider
 - **Netflix, Disney+, Prime Video and Spotify** play: protected (DRM) content works with
   Google's Widevine module, through castLabs' Electron for Content Security. *Settings → System*
   switches it off, as well as hardware acceleration

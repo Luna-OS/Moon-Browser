@@ -1155,7 +1155,7 @@ try {
     if (result.names.join() !== "Moon Test Extension" || !result.off || !result.on)
       throw new Error(JSON.stringify(result));
     // The service worker's console.error is listed, like Chrome's "Errors".
-    if (!result.errors.some((e) => e.includes("moon-test: an error")))
+    if (!result.errors.some((e) => e.message.includes("moon-test: an error")))
       throw new Error(`errors: ${JSON.stringify(result.errors)}`);
     // A failed Windows Hello request says why (here: the stand-in's cancelled
     // dialog), and so does one that only worked with the older options.
@@ -1163,10 +1163,12 @@ try {
       webauthnMock &&
       !(
         result.errors.some((e) =>
-          e.includes("Windows Hello (navigator.credentials.create) failed: NotAllowedError"),
+          e.message.includes(
+            "Windows Hello (navigator.credentials.create) failed: NotAllowedError",
+          ),
         ) &&
         result.errors.some(
-          (e) =>
+          ({ message: e }) =>
             /Windows Hello \(navigator\.credentials\.create\) worked on try [23]/.test(e) &&
             e.includes("with the older options") &&
             e.includes("0x80090027"),
@@ -1179,7 +1181,7 @@ try {
     // nobody listened for isn't listed (it's no one's own extension).
     if (
       result.errors.some(
-        (e) =>
+        ({ message: e }) =>
           e.includes("service worker didn't start") ||
           e.includes("Unable to load preload") ||
           e.includes("Receiving end does not exist"),
@@ -1285,7 +1287,7 @@ try {
       "the extension to be found damaged",
       40_000,
     );
-    if (!damaged.errors.some((e) => e.includes("files are damaged")))
+    if (!damaged.errors.some((e) => e.message.includes("files are damaged")))
       throw new Error(JSON.stringify(damaged.errors));
     await extensionsPage("extensions.remove", id);
   });

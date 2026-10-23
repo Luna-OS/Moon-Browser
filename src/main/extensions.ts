@@ -36,6 +36,7 @@ import { mkdir, readdir, readFile, rename, rm } from "node:fs/promises";
 import { basename, join, normalize, sep } from "node:path";
 import { Script } from "node:vm";
 import {
+  addError,
   compareVersions,
   describePermissions,
   EXTENSION_ID,
@@ -52,7 +53,7 @@ import {
 } from "@shared/extensions";
 import { internalUrl, NEWTAB_URL } from "@shared/internal";
 import type { TabGroupInfo } from "@shared/tab-groups";
-import type { ExtensionEntry, ExtensionInfo } from "@shared/types";
+import type { ExtensionEntry, ExtensionError, ExtensionInfo } from "@shared/types";
 import type { Browser } from "./browser";
 import { Dnr } from "./dnr";
 import { ExtensionProxy } from "./extension-proxy";
@@ -86,7 +87,7 @@ interface PopupView {
 /** How long a pop-up may wait for Chromium to report its page's size. */
 const POPUP_SIZE_WAIT = 600;
 
-/** How many errors the extensions page keeps per extension. */
+/** How many different errors the extensions page keeps per extension. */
 const MAX_ERRORS = 30;
 /** How long a new extension's service worker may take to register. */
 const WORKER_REGISTRATION_TIMEOUT = 30_000;
@@ -141,7 +142,8 @@ export class Extensions {
   /** chrome.sidePanel.setOptions: for all tabs, and per tab (webContents id). */
   private readonly panelDefaults = new Map<string, PanelOptions>();
   private readonly panelPerTab = new Map<string, Map<number, PanelOptions>>();
-  private readonly errors = new Map<string, string[]>();
+  private readonly errors = new Map<string, ExtensionError[]>();
+  private errorsTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly icons = new Map<string, string | null>();
   /** The extension whose toolbar pop-up is open. */
   private popupExtension: string | null = null;
@@ -282,6 +284,7 @@ export class Extensions {
     ses.extensions.on("extension-unloaded", (_event, extension) => {
       this.dnr.unload(extension.id);
       this.proxy.unloaded(extension.id);
+      this.apis?.unloaded(extension.id);
       for (const win of browser.windows) win.closeSidePanel(extension.id);
       this.changed();
     });
@@ -291,22 +294,26 @@ export class Extensions {
     ses.serviceWorkers.on("console-message", (_event, details) => {
       const id = extensionIdOf(details.sourceUrl);
       if (details.level < 3 || !id) return;
-      this.recordError(
-        id,
-        `${details.message} (${shortSource(details.sourceUrl)}:${details.lineNumber})`,
-      );
+      this.recordError(id, details.message, {
+        source: `${shortSource(details.sourceUrl)}:${details.lineNumber}`,
+      });
       if (details.message.includes("SyntaxError")) void this.checkFiles(id);
     });
     app.on("web-contents-created", (_event, contents) => {
       if (contents.session !== ses) return;
       contents.on("console-message", (details) => {
         if (details.level !== "error") return;
-        const id = extensionIdOf(details.sourceId) ?? extensionIdOf(contents.getURL());
+        const page = extensionIdOf(contents.getURL());
+        const id = extensionIdOf(details.sourceId) ?? page;
         if (id)
-          this.recordError(
-            id,
-            `${details.message} (${shortSource(details.sourceId)}:${details.lineNumber})`,
-          );
+          this.recordError(id, details.message, {
+            source: details.sourceId
+              ? `${shortSource(details.sourceId)}:${details.lineNumber}`
+              : undefined,
+            // A web page (its content scripts, or a page asking for one of
+            // the extension's files), not one of the extension's own.
+            onWebPage: page === null,
+          });
       });
     });
 
@@ -926,6 +933,11 @@ export class Extensions {
       Record<string, unknown> | undefined;
   }
 
+  /** Loaded from a folder in developer mode. */
+  isUnpacked(id: string): boolean {
+    return !!this.unpackedEntry(id);
+  }
+
   declares(id: string, permission: string): boolean {
     const ext = this.session?.extensions.getExtension(id);
     const permissions = (ext?.manifest as { permissions?: unknown } | undefined)?.permissions;
@@ -1101,16 +1113,30 @@ export class Extensions {
 
   // ---- Errors ----
 
-  recordError(id: string, text: string): void {
-    // Unanswered messages: only for one's own extensions in developer mode.
-    if (
-      !listsError(text, { developerMode: this.developerMode(), unpacked: !!this.unpackedEntry(id) })
-    )
-      return;
-    const list = this.errors.get(id) ?? [];
-    list.push(text.length > 500 ? `${text.slice(0, 499)}…` : text);
-    this.errors.set(id, list.slice(-MAX_ERRORS));
-    this.browser.notifyInternal("extensions");
+  /**
+   * Lists an error on the extensions page, unless it's only noise (see
+   * listsError). The same message from the same place counts once more.
+   */
+  recordError(
+    id: string,
+    text: string,
+    where: { source?: string; onWebPage?: boolean } = {},
+  ): void {
+    const listed = listsError(text, {
+      developerMode: this.developerMode(),
+      unpacked: !!this.unpackedEntry(id),
+      onWebPage: where.onWebPage,
+    });
+    if (!listed) return;
+    const message = text.length > 1000 ? `${text.slice(0, 999)}…` : text;
+    const error = { message, source: where.source || undefined };
+    this.errors.set(id, addError(this.errors.get(id) ?? [], error, Date.now(), MAX_ERRORS));
+    // An error in a loop shouldn't redraw the page for each time.
+    if (this.errorsTimer) return;
+    this.errorsTimer = setTimeout(() => {
+      this.errorsTimer = null;
+      this.browser.notifyInternal("extensions");
+    }, 250);
   }
 
   clearErrors(id: string): void {

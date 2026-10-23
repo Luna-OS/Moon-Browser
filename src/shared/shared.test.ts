@@ -10,7 +10,13 @@ import { displayUrl, shortHost } from "./display";
 import { resolveInput } from "./omnibox";
 import { defaultSettings, mergeSettings, normalizeSite, sanitizeSettings } from "./settings";
 import { shortcutFor, type KeyInput } from "./shortcuts";
-import { blocksWholePage, isDangerousFile, stripTrackingParams, zoneIdentifier } from "./security";
+import {
+  blocksWholePage,
+  isDangerousFile,
+  safeFilename,
+  stripTrackingParams,
+  zoneIdentifier,
+} from "./security";
 import { isThirdParty, protectionSiteOf, siteOf } from "./sites";
 import { inlineCompletion, matchScore, suggest } from "./suggest";
 import type { HistoryEntry } from "./types";
@@ -196,6 +202,13 @@ describe("settings", () => {
     expect(sanitizeSettings({ hardwareAcceleration: "no" }, "linux").hardwareAcceleration).toBe(
       true,
     );
+  });
+
+  it("leaves YouTube as it is unless switched on", () => {
+    expect(defaultSettings("win32").youtubeLook).toBe(false);
+    expect(sanitizeSettings({ theme: "light" }, "linux").youtubeLook).toBe(false);
+    expect(sanitizeSettings({ youtubeLook: true }, "linux").youtubeLook).toBe(true);
+    expect(sanitizeSettings({ youtubeLook: "yes" }, "linux").youtubeLook).toBe(false);
   });
 
   it("keeps valid values", () => {
@@ -562,12 +575,28 @@ describe("security helpers", () => {
       "app.deb",
       "x.jar",
       "a.js",
+      // Windows drops trailing dots and spaces when it saves.
+      "invoice.exe.",
+      "x.lnk. ",
+      "y.bat...",
+      "disk.iso",
+      "help.chm",
     ]) {
       expect(isDangerousFile(f), f).toBe(true);
     }
     for (const f of ["photo.jpg", "notes.pdf", "archive.zip", "README", "movie.mp4", "exe"]) {
       expect(isDangerousFile(f), f).toBe(false);
     }
+  });
+
+  it("makes requested file names safe to save", () => {
+    expect(safeFilename("../../moon.txt")).toBe("moon.txt");
+    expect(safeFilename("C:\\Users\\x\\a.txt")).toBe("a.txt");
+    expect(safeFilename("invoice.exe. ")).toBe("invoice.exe");
+    expect(safeFilename('a<b>:"c"|?*.gif')).toBe("a_b___c____.gif");
+    expect(safeFilename("NUL")).toBe("_NUL");
+    expect(safeFilename("com1.txt")).toBe("_com1.txt");
+    expect(safeFilename("console.log")).toBe("console.log");
   });
 
   it("writes the Windows Mark of the Web", () => {
