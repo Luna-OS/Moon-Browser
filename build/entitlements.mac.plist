@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  What Moon Browser may do under macOS' hardened runtime (electron-builder.yml),
+  for the app and its helper processes alike.
+-->
+<plist version="1.0">
+<dict>
+  <!-- V8 compiles JavaScript to machine code at run time. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <!--
+    Libraries signed by someone else: Google's Widevine module for protected
+    content, and Electron's own frameworks when the app is signed ad hoc.
+  -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <!-- Camera, microphone and location, for sites the user allows (src/main/permissions.ts). -->
+  <key>com.apple.security.device.camera</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.personal-information.location</key>
+  <true/>
+</dict>
+</plist>

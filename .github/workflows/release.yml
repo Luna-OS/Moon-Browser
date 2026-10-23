@@ -99,10 +99,84 @@ jobs:
             checksums-windows.txt
           if-no-files-found: error
 
-  # macOS comes later.
+  # Apple Silicon and Intel, each a .dmg to install and a .zip that installed
+  # copies update from (both named in latest-mac.yml).
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      # Verified Media Path, as on Windows: build/fuses.cjs signs with the
+      # same EVS account, before the app is code-signed.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --upgrade castlabs-evs
+      # Without an Apple Developer ID (secrets CSC_LINK and CSC_KEY_PASSWORD;
+      # notarized with APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and
+      # APPLE_TEAM_ID) the app is signed ad hoc: it runs, but macOS asks
+      # once before the first start, and updates are downloaded by hand.
+      - name: Package
+        env:
+          EVS_ACCOUNT_NAME: ${{ secrets.EVS_ACCOUNT_NAME }}
+          EVS_PASSWD: ${{ secrets.EVS_PASSWD }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$CSC_LINK" ]; then
+            npx electron-builder --mac --publish never -c.mac.identity="Developer ID Application"
+          else
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            npx electron-builder --mac --publish never
+            echo "::warning::macOS build signed ad hoc (no Apple Developer ID): not notarized, updates are downloaded by hand."
+          fi
+          if [ -z "$EVS_ACCOUNT_NAME" ]; then
+            echo "::warning::Not signed for Verified Media Path (no EVS secrets): Netflix plays in lower resolution on macOS."
+          fi
+
+      # The signature must hold, and the Apple Silicon app must start.
+      - name: Check the apps
+        run: |
+          for app in release/mac*/"Moon Browser.app"; do
+            codesign --verify --deep --strict --verbose=2 "$app"
+          done
+          app="release/mac-arm64/Moon Browser.app"
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")"
+          "$exe" > app.log 2>&1 &
+          sleep 20
+          if ! pgrep -f "$exe" > /dev/null; then
+            echo "Moon Browser exited during start-up:"; cat app.log
+            exit 1
+          fi
+          pkill -f "$exe" || true
+
+      - name: Checksums
+        working-directory: release
+        run: shasum -a 256 *.dmg *.zip > ../checksums-mac.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moon-browser-mac
+          path: |
+            release/*.dmg
+            release/*.dmg.blockmap
+            release/*.zip
+            release/*.zip.blockmap
+            release/latest-mac.yml
+            checksums-mac.txt
+          if-no-files-found: error
 
   publish:
-    needs: [build-linux, build-windows]
+    needs: [build-linux, build-windows, build-mac]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -116,6 +190,10 @@ jobs:
         with:
           name: moon-browser-windows
           path: dist/windows
+      - uses: actions/download-artifact@v5
+        with:
+          name: moon-browser-mac
+          path: dist/mac
 
       - name: Determine version
         id: version
@@ -143,3 +221,9 @@ jobs:
             dist/windows/**/*.exe.blockmap
             dist/windows/**/latest.yml
             dist/windows/checksums-windows.txt
+            dist/mac/**/*.dmg
+            dist/mac/**/*.dmg.blockmap
+            dist/mac/**/*.zip
+            dist/mac/**/*.zip.blockmap
+            dist/mac/**/latest-mac.yml
+            dist/mac/checksums-mac.txt

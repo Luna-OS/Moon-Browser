@@ -8,34 +8,33 @@
 // app is built unsigned for VMP: protected content then plays only where a
 // service accepts that (most music, not Netflix on Windows).
 //
-// Linux has no VMP; macOS isn't built yet.
+// Linux has no VMP. On macOS the VMP signature must come before code
+// signing, so build/fuses.cjs (afterPack) calls vmpSign there.
 const { execFileSync } = require("node:child_process");
 
-exports.default = async function vmpSign(context) {
-  if (context.electronPlatformName !== "win32") return;
+/** Signs the app in `dir` for VMP; false when there is no EVS account to sign with. */
+function vmpSign(dir) {
   const { EVS_ACCOUNT_NAME: account, EVS_PASSWD: password } = process.env;
   if (!account || !password) {
     console.warn("  • VMP signing skipped: EVS_ACCOUNT_NAME / EVS_PASSWD not set");
-    return;
+    return false;
   }
   const python = process.env.EVS_PYTHON || (process.platform === "win32" ? "python" : "python3");
-  console.log(`  • VMP signing ${context.appOutDir}`);
+  console.log(`  • VMP signing ${dir}`);
   execFileSync(
     python,
-    [
-      "-m",
-      "castlabs_evs.vmp",
-      "--no-ask",
-      "sign-pkg",
-      "-A",
-      account,
-      "-P",
-      password,
-      context.appOutDir,
-    ],
+    ["-m", "castlabs_evs.vmp", "--no-ask", "sign-pkg", "-A", account, "-P", password, dir],
     { stdio: "inherit" },
   );
-  execFileSync(python, ["-m", "castlabs_evs.vmp", "--no-ask", "verify-pkg", context.appOutDir], {
+  execFileSync(python, ["-m", "castlabs_evs.vmp", "--no-ask", "verify-pkg", dir], {
     stdio: "inherit",
   });
+  return true;
+}
+
+exports.vmpSign = vmpSign;
+
+exports.default = async function vmpSignAfterSign(context) {
+  if (context.electronPlatformName !== "win32") return;
+  vmpSign(context.appOutDir);
 };
