@@ -15,7 +15,7 @@ import {
   WebContentsView,
   type WebPreferences,
 } from "electron";
-import { FRAME_COLORS, TAB_STRIP_HEIGHT } from "@shared/chrome-colors";
+import { DIALOG_SCRIM, FRAME_COLORS, mixColors, TAB_STRIP_HEIGHT } from "@shared/chrome-colors";
 import { internalUrl, isNewTabUrl, NEWTAB_URL, type InternalPage } from "@shared/internal";
 import {
   UI_CHANNELS,
@@ -743,21 +743,24 @@ export class MoonWindow {
   }
 
   async openOverlay(): Promise<OverlaySnapshot[]> {
-    const shots: OverlaySnapshot[] = [];
-    for (const view of this.shown) {
-      try {
-        const image = await view.webContents.capturePage();
-        if (!image.isEmpty()) {
-          shots.push({
+    // Both halves of a split view at once; a still picture behind a menu
+    // needs no more than a medium JPEG quality.
+    const shots = await Promise.all(
+      [...this.shown].map(async (view): Promise<OverlaySnapshot | null> => {
+        try {
+          const image = await view.webContents.capturePage();
+          if (image.isEmpty()) return null;
+          return {
             rect: view.getBounds(),
-            dataUrl: `data:image/jpeg;base64,${image.toJPEG(90).toString("base64")}`,
-          });
+            dataUrl: `data:image/jpeg;base64,${image.toJPEG(75).toString("base64")}`,
+          };
+        } catch {
+          // No snapshot: the page area just shows the background meanwhile.
+          return null;
         }
-      } catch {
-        // No snapshot: the page area just shows the background meanwhile.
-      }
-    }
-    return shots;
+      }),
+    );
+    return shots.filter((shot) => shot !== null);
   }
 
   overlayReady(): void {
@@ -816,6 +819,7 @@ export class MoonWindow {
 
   private dialogChanged(): void {
     if (this.closed) return;
+    this.paintTitleBar();
     this.update();
     if (!this.dialogs.current()) return;
     // Menus make way, and the keys (Enter, Escape) go to the dialog.
@@ -894,16 +898,24 @@ export class MoonWindow {
 
   applyTheme(): void {
     const colors = FRAME_COLORS[this.browser.resolvedTheme()];
-    const frame = this.isPrivate ? colors.privateFrame : colors.frame;
-    this.win.setBackgroundColor(frame);
-    if (process.platform !== "darwin") {
-      this.win.setTitleBarOverlay({
-        color: frame,
-        symbolColor: colors.symbols,
-        height: TAB_STRIP_HEIGHT,
-      });
-    }
+    this.win.setBackgroundColor(this.isPrivate ? colors.privateFrame : colors.frame);
+    this.paintTitleBar();
+    for (const tab of this.tabs) tab.paintBackground();
     this.update();
+  }
+
+  /** Behind the window buttons: the frame, dimmed like the rest while a Moon dialog is open. */
+  private paintTitleBar(): void {
+    if (process.platform === "darwin" || this.win.isDestroyed()) return;
+    const theme = this.browser.resolvedTheme();
+    const colors = FRAME_COLORS[theme];
+    const frame = this.isPrivate ? colors.privateFrame : colors.frame;
+    const scrim = DIALOG_SCRIM[theme];
+    this.win.setTitleBarOverlay({
+      color: this.dialogs.current() ? mixColors(frame, scrim.color, scrim.alpha) : frame,
+      symbolColor: colors.symbols,
+      height: TAB_STRIP_HEIGHT,
+    });
   }
 
   saved(): SavedWindow {

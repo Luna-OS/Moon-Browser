@@ -37,6 +37,11 @@ body {
   overflow-y: hidden;
   scrollbar-width: none;
   padding-top: 6px;
+  /* A tab scrolled into view stays clear of the new tab button (sticky at the end). */
+  scroll-padding-inline: 8px 48px;
+}
+.mb-tabs[data-scrolled] {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
 }
 
 .mb-tab {
@@ -548,8 +553,21 @@ body {
   height: 32px;
   padding: 0 0.5rem;
   overflow: hidden;
+  position: relative;
   background: var(--mb-toolbar);
   border-bottom: 1px solid var(--mb-border);
+}
+/* Past the bar's end: still laid out (to be measured), listed behind ». */
+.mb-bookmark[data-overflow] {
+  visibility: hidden;
+}
+.mb-bookmarks-more {
+  position: absolute;
+  right: 0.5rem;
+  width: 28px;
+  justify-content: center;
+  padding: 0;
+  font-size: 1rem;
 }
 
 .mb-bookmark {
@@ -644,6 +662,8 @@ body {
   color: var(--mb-text);
   font: inherit;
   text-align: left;
+  /* One line per item, however narrow the menu. */
+  white-space: nowrap;
   cursor: pointer;
 }
 .mb-menu-item:hover,

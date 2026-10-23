@@ -8,8 +8,19 @@ function hostOf(url: string): string {
   }
 }
 
-/** Human words for the Chromium network errors people actually meet. */
-export function describeError(error: TabError): { title: string; text: string } {
+function portOf(url: string): string {
+  try {
+    return new URL(url).port;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Human words for the Chromium network errors people actually meet.
+ * `final`: trying again can't help, so the page offers no "Try again".
+ */
+export function describeError(error: TabError): { title: string; text: string; final?: boolean } {
   const host = hostOf(error.url);
   if (error.kind === "https") {
     return {
@@ -80,6 +91,27 @@ export function describeError(error: TabError): { title: string; text: string } 
       };
     case -20:
       return { title: "This page was blocked", text: "Moon Shield blocked this page." };
+    case -312: {
+      const port = portOf(error.url);
+      return {
+        title: "This port is blocked for your safety",
+        text: `${port ? `Port ${port}` : "This port"} is reserved for other kinds of services, such as mail, so browsers don't open web pages on it. Check the address.`,
+        final: true,
+      };
+    }
+    case -300:
+      return {
+        title: "This address isn't valid",
+        text: "Check the address for typos.",
+        final: true,
+      };
+    case -301:
+    case -302:
+      return {
+        title: "This address can't be opened",
+        text: `Moon Browser doesn't open “${error.url.split(":")[0]}:” addresses.`,
+        final: true,
+      };
     default:
       return {
         title: "This page couldn't be loaded",

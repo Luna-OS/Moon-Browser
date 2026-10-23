@@ -36,6 +36,35 @@ export type PopoverKind =
 
 const run = (cmd: UiCommand) => void ui.command(cmd);
 
+/** Up, Down, Home and End move between a menu's items, as in any menu. */
+function moveInMenu(event: KeyboardEvent) {
+  const keys = ["ArrowDown", "ArrowUp", "Home", "End"];
+  const from = event.target as HTMLElement;
+  if (!keys.includes(event.key) || from.matches("input, select, textarea")) return;
+  const menu = from.closest('[role="menu"]');
+  if (!menu) return;
+  const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')].filter(
+    (el) => !(el as HTMLButtonElement).disabled && el.offsetParent !== null,
+  );
+  if (!items.length) return;
+  event.preventDefault();
+  const down = event.key === "ArrowDown";
+  const at = items.indexOf(from);
+  let next: number;
+  if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = items.length - 1;
+  else if (at >= 0) next = (at + (down ? 1 : -1) + items.length) % items.length;
+  else {
+    // From a control between the items (the zoom buttons): the nearest item that way.
+    const after = items.findIndex(
+      (el) => !!(from.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING),
+    );
+    const below = after < 0 ? items.length : after;
+    next = down ? below % items.length : (below - 1 + items.length) % items.length;
+  }
+  items[next].focus();
+}
+
 /** A popover anchored below a toolbar button, closed by Escape or a click outside. */
 export function Popover({
   anchor,
@@ -53,13 +82,33 @@ export function Popover({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Closing gives the focus back to where it was (the button that opened
+  // it), unless something else has taken it meanwhile.
+  useEffect(() => {
+    const el = ref.current;
+    const opener = document.activeElement;
+    el?.querySelector<HTMLElement>("button, input")?.focus();
+    el?.addEventListener("keydown", moveInMenu);
+    return () => {
+      el?.removeEventListener("keydown", moveInMenu);
+      const now = document.activeElement;
+      if (now && now !== document.body) return;
+      if (opener instanceof HTMLElement && opener !== document.body && opener.isConnected)
+        opener.focus();
+    };
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
-    ref.current?.querySelector<HTMLElement>("button, input")?.focus();
-    return () => window.removeEventListener("keydown", onKey);
+    // Like Chrome's menus, it closes when the window is resized: its button
+    // moves away, and the pages' snapshots behind it no longer fit.
+    window.addEventListener("resize", onClose);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onClose);
+    };
   }, [onClose]);
 
   const left =

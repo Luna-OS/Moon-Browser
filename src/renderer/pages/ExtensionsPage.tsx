@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { WEB_STORE_URL, webStoreDetailUrl } from "@shared/extensions";
 import { timeAgo } from "@shared/format";
 import type { ExtensionError, ExtensionInfo } from "@shared/types";
@@ -192,6 +192,8 @@ export function ExtensionsPage() {
 
 function ExtensionCard({ ext, developer }: { ext: ExtensionInfo; developer: boolean }) {
   const [confirming, setConfirming] = useState(false);
+  /** "Keep" gives the focus back to the Remove button it replaced. */
+  const refocusRemove = useRef(false);
   const [repairing, setRepairing] = useState(false);
   const [allPermissions, setAllPermissions] = useState(false);
   const [issuesOpen, setIssuesOpen] = useState(false);
@@ -340,7 +342,16 @@ function ExtensionCard({ ext, developer }: { ext: ExtensionInfo; developer: bool
             >
               Remove
             </button>
-            <button type="button" className="mb-btn mb-btn-sm" onClick={() => setConfirming(false)}>
+            <button
+              type="button"
+              className="mb-btn mb-btn-sm"
+              // The question replaces the focused Remove button; the safe answer takes its focus.
+              autoFocus
+              onClick={() => {
+                refocusRemove.current = true;
+                setConfirming(false);
+              }}
+            >
               Keep
             </button>
           </>
@@ -376,6 +387,12 @@ function ExtensionCard({ ext, developer }: { ext: ExtensionInfo; developer: bool
             <button
               type="button"
               className="mb-btn mb-btn-sm text-(--mb-text-muted) hover:text-(--mb-danger)"
+              ref={(el) => {
+                if (el && refocusRemove.current) {
+                  refocusRemove.current = false;
+                  el.focus();
+                }
+              }}
               onClick={() => setConfirming(true)}
             >
               <TrashIcon size={13} /> Remove

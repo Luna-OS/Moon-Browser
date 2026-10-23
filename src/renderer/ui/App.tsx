@@ -40,6 +40,8 @@ function Browser({ state }: { state: WindowState }) {
     anchor: DOMRect;
     groupId?: number;
     folder?: { id: string; title: string };
+    /** The bookmarks bar's overflow menu: from this bookmark on. */
+    overflowFrom?: number;
     /** The star's editor: the page was just bookmarked. */
     added?: boolean;
   } | null>(null);
@@ -286,12 +288,25 @@ function Browser({ state }: { state: WindowState }) {
           {state.showBookmarksBar && (
             <BookmarksBar
               bookmarks={state.bookmarksBar}
-              openFolder={popover?.kind === "bookmarkFolder" ? (popover.folder?.id ?? null) : null}
+              openFolder={
+                popover?.kind === "bookmarkFolder" && popover.overflowFrom === undefined
+                  ? (popover.folder?.id ?? null)
+                  : null
+              }
+              overflowOpen={popover?.overflowFrom !== undefined}
               onOpenFolder={(folder, anchor) =>
                 setPopover({
                   kind: "bookmarkFolder",
                   anchor,
                   folder: { id: folder.id, title: folder.title },
+                })
+              }
+              onOpenOverflow={(from, anchor) =>
+                setPopover({
+                  kind: "bookmarkFolder",
+                  anchor,
+                  folder: { id: "", title: "More bookmarks" },
+                  overflowFrom: from,
                 })
               }
             />
@@ -333,6 +348,11 @@ function Browser({ state }: { state: WindowState }) {
           <BookmarkFolderMenu
             key={popover.folder.id}
             folder={popover.folder}
+            overflow={
+              popover.overflowFrom !== undefined
+                ? state.bookmarksBar.slice(popover.overflowFrom)
+                : undefined
+            }
             onClose={closePopover}
           />
         </Popover>
@@ -356,7 +376,7 @@ function Browser({ state }: { state: WindowState }) {
             anchor={popover.anchor}
             width={
               popover.kind === "menu"
-                ? 290
+                ? 312
                 : popover.kind === "shield" || popover.kind === "extensions"
                   ? 320
                   : 340

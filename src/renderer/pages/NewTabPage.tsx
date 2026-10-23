@@ -63,12 +63,16 @@ export function NewTabPage({ settings }: { settings: Settings | null }) {
       </form>
 
       {showShortcuts && info && (
+        // Four to a row (two when narrow); a shorter row is centered.
         <nav
           aria-label="Shortcuts"
-          className="mt-10 grid w-full max-w-2xl grid-cols-4 gap-3 max-sm:grid-cols-2"
+          className="mt-10 flex w-full max-w-2xl flex-wrap justify-center gap-3"
         >
           {info.topSites.map((site) => (
-            <div key={site.url} className="group relative">
+            <div
+              key={site.url}
+              className="group relative w-[calc((100%-2.25rem)/4)] max-sm:w-[calc((100%-0.75rem)/2)]"
+            >
               <a
                 href={site.url}
                 className="flex flex-col items-center gap-2 rounded-2xl px-2 py-3.5 text-(--mb-text) no-underline transition-colors hover:bg-(--mb-hover)"

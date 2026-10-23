@@ -3,6 +3,7 @@
  * address, title and back/forward history, ready to wake up.
  */
 import { nativeImage, WebContentsView, type NavigationEntry, type WebContents } from "electron";
+import { PAGE_BACKGROUND } from "@shared/chrome-colors";
 import { shouldFallBackToHttp } from "@shared/https";
 import { isInternalUrl, isNewTabUrl, NEWTAB_URL } from "@shared/internal";
 import { displayUrl } from "@shared/display";
@@ -162,7 +163,7 @@ export class Tab {
       ? new WebContentsView({ webContents: existing })
       : new WebContentsView({ webPreferences: this.window.tabPreferences() });
     this.view = view;
-    view.setBackgroundColor("#ffffff");
+    this.paintBackground(this.url);
     const wc = view.webContents;
     this.contents = wc;
     this.contentsId = wc.id;
@@ -173,6 +174,16 @@ export class Tab {
       this.browser.settings.webrtcProtection ? "default_public_interface_only" : "default",
     );
     this.wire(wc);
+  }
+
+  /**
+   * What shows before a page paints: white for the web, like other
+   * browsers, and the theme's background for Moon's own pages.
+   */
+  paintBackground(url = this.url): void {
+    this.view?.setBackgroundColor(
+      isInternalUrl(url) ? PAGE_BACKGROUND[this.browser.resolvedTheme()] : "#ffffff",
+    );
   }
 
   private startLoad(referrer?: string): void {
@@ -466,6 +477,7 @@ export class Tab {
     });
     wc.on("did-start-navigation", (details) => {
       if (!details.isMainFrame || details.isSameDocument) return;
+      this.paintBackground(details.url);
       if (this.error || this.crashed) {
         this.error = null;
         this.crashed = false;
