@@ -13,5 +13,11 @@ export const FRAME_COLORS: Record<
   light: { frame: "#ece7f7", privateFrame: "#ddd5f5", symbols: "#1c1733" },
 };
 
+/** The background of Moon's own pages (--mb-bg in tokens.css), shown before they paint. */
+export const PAGE_BACKGROUND: Record<ResolvedTheme, string> = {
+  dark: "#0b0920",
+  light: "#f5f2fb",
+};
+
 /** Height of the tab strip, which doubles as the title bar. */
 export const TAB_STRIP_HEIGHT = 40;

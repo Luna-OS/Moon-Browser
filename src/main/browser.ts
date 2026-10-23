@@ -153,7 +153,7 @@ export class Browser {
     // Spell checking would download dictionaries from Google; only the
     // browsing sessions may, and only when switched on in Settings.
     this.uiSession.setSpellCheckerEnabled(false);
-    handleInternalProtocol(this.uiSession, { ui: true });
+    handleInternalProtocol(this.uiSession, { ui: true, theme: () => this.resolvedTheme() });
     this.uiSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     this.uiSession.setPermissionCheckHandler(() => false);
     // The browser UI loads nothing from the web except the sites' icons.

@@ -865,6 +865,7 @@ export class MoonWindow {
         height: TAB_STRIP_HEIGHT,
       });
     }
+    for (const tab of this.tabs) tab.paintBackground();
     this.update();
   }
 

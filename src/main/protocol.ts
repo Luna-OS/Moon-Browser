@@ -8,6 +8,7 @@ import { protocol, type Session } from "electron";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
 import { INTERNAL_PAGES, INTERNAL_SCHEME } from "@shared/internal";
+import type { ResolvedTheme } from "@shared/types";
 import { rendererDir } from "./paths";
 
 const TYPES: Record<string, string> = {
@@ -57,7 +58,10 @@ function inside(root: string, path: string): string | null {
   return full.startsWith(root + sep) ? full : null;
 }
 
-export function handleInternalProtocol(ses: Session, options: { ui: boolean }): void {
+export function handleInternalProtocol(
+  ses: Session,
+  options: { ui: boolean; theme: () => ResolvedTheme },
+): void {
   ses.protocol.handle(INTERNAL_SCHEME, async (request) => {
     const url = new URL(request.url);
     const host = url.hostname;
@@ -78,7 +82,12 @@ export function handleInternalProtocol(ses: Session, options: { ui: boolean }): 
     if (!file) return new Response("Not found", { status: 404 });
 
     try {
-      const body = await readFile(file);
+      const data = await readFile(file);
+      // The page starts in the right theme: set before its first paint, a
+      // day-theme page never flashes the night colors while its script loads.
+      const body = isAsset
+        ? data
+        : data.toString("utf8").replace('data-theme="dark"', `data-theme="${options.theme()}"`);
       return new Response(body, {
         headers: {
           "content-type": TYPES[extname(file)] ?? "application/octet-stream",
