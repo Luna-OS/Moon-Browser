@@ -41,7 +41,7 @@ jobs:
 
       # latest-linux.yml tells installed copies about this release (the
       # AppImage carries its block map inside).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-linux
           path: |
@@ -67,7 +67,7 @@ jobs:
       # browser signed for Verified Media Path: build/vmp-sign.cjs signs it
       # with castLabs EVS when the repository has an EVS account (secrets
       # EVS_ACCOUNT_NAME and EVS_PASSWD).
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install --upgrade castlabs-evs
@@ -89,7 +89,7 @@ jobs:
 
       # latest.yml and the block map let installed copies update themselves,
       # downloading only the parts that changed.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-windows
           path: |
@@ -114,7 +114,7 @@ jobs:
 
       # Verified Media Path, as on Windows: build/fuses.cjs signs with the
       # same EVS account, before the app is code-signed.
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install --upgrade castlabs-evs
@@ -163,7 +163,7 @@ jobs:
         working-directory: release
         run: shasum -a 256 *.dmg *.zip > ../checksums-mac.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moon-browser-mac
           path: |
@@ -182,15 +182,15 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: moon-browser-linux
           path: dist/linux
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: moon-browser-windows
           path: dist/windows
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: moon-browser-mac
           path: dist/mac
