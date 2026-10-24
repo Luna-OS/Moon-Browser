@@ -36,6 +36,7 @@ import {
 import { descendantsOf, folderChoices } from "@shared/bookmarks";
 import { type DialogAnswer, DialogQueue, type DialogSpec } from "@shared/dialogs";
 import { resolveInput } from "@shared/omnibox";
+import { withTimeout } from "@shared/timeout";
 import {
   cleanGroupTitle,
   groupAfterMove,
@@ -59,6 +60,9 @@ export interface WindowOptions {
 }
 
 const MAC = process.platform === "darwin";
+
+/** How long a page may take to give its snapshot before a menu opens without it. */
+const SNAPSHOT_TIMEOUT = 250;
 /** Where the traffic lights go: vertically centred on the tabs (src/renderer/ui/ui.css). */
 const TRAFFIC_LIGHTS = { x: 14, y: 15 };
 
@@ -748,8 +752,11 @@ export class MoonWindow {
     const shots = await Promise.all(
       [...this.shown].map(async (view): Promise<OverlaySnapshot | null> => {
         try {
-          const image = await view.webContents.capturePage();
-          if (image.isEmpty()) return null;
+          // A page that hasn't painted yet (the blank tab a download link
+          // opens) may never answer: then no snapshot, rather than a menu or
+          // a question stuck behind the page.
+          const image = await withTimeout(view.webContents.capturePage(), SNAPSHOT_TIMEOUT, null);
+          if (!image || image.isEmpty()) return null;
           return {
             rect: view.getBounds(),
             dataUrl: `data:image/jpeg;base64,${image.toJPEG(75).toString("base64")}`,

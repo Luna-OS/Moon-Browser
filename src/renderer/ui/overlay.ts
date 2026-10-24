@@ -8,7 +8,15 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { OverlaySnapshot } from "@shared/ipc";
+import { withTimeout } from "@shared/timeout";
 import { ui } from "./store";
+
+/**
+ * The longest a menu or question waits for the snapshot. Should the main
+ * process never answer, the pages still step aside: a menu without the
+ * picture behind it beats one nobody can click.
+ */
+const OVERLAY_TIMEOUT = 600;
 
 export function useOverlay(active: boolean): OverlaySnapshot[] | null {
   const [snapshots, setSnapshots] = useState<OverlaySnapshot[] | null>(null);
@@ -17,7 +25,7 @@ export function useOverlay(active: boolean): OverlaySnapshot[] | null {
   useEffect(() => {
     const gen = ++generation.current;
     if (active) {
-      void ui.openOverlay().then((shots) => {
+      void withTimeout(ui.openOverlay(), OVERLAY_TIMEOUT, []).then((shots) => {
         if (gen !== generation.current) return;
         flushSync(() => setSnapshots(shots));
         // Two frames: the snapshot is painted before the pages step aside.
