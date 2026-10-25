@@ -115,12 +115,21 @@ an AppImage is replaced; `.deb` and `.rpm` packages are installed through `pkexe
 which asks for the administrator password, and only when the user clicks *Update*. Because the
 builds aren't code-signed yet, an update is as trustworthy as the GitHub release it comes from.
 
-On macOS, the system installs an update (Squirrel.Mac) only over an app signed with an Apple
-Developer ID, and checks that the update carries the same signature. The Mac builds are signed
-ad hoc for now, so Moon Browser only looks for a new version there and *Update* opens its
-download page on GitHub; nothing is downloaded or installed by itself. A build signed with a
-Developer ID (the release workflow does that when the repository has one) updates itself like
-the others.
+On macOS, the system's updater (Squirrel.Mac) only installs over an app signed with an Apple
+Developer ID. A build signed with one (the release workflow does that when the repository has
+one) uses it. The Mac builds are signed ad hoc for now, so Moon Browser updates itself
+(`src/main/mac-update.ts`):
+- it downloads the zip for the Mac's architecture named in `latest-mac.yml` (only a plain file
+  name in the release, never a path) and checks its SHA-512;
+- it unpacks it with `ditto` into its temporary folder, then checks that the new app has a
+  valid signature (`codesign --verify --deep --strict`), Moon Browser's bundle ID and exactly
+  the announced version;
+- once Moon Browser has quit, a script moves the old app aside, moves the new one into its
+  place, and deletes the old one only after that has worked (otherwise it is put back).
+
+It only does this when the app is in a folder the user may write to; started from the disk
+image or a translocated path, *Update* opens the download page instead. As on Windows and
+Linux, an update is as trustworthy as the GitHub release it comes from.
 
 The Windows installer only removes the browser registration when Moon Browser is really
 uninstalled, not while an update replaces it; the profile is never deleted by the installer.

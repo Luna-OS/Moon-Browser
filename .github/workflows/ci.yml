@@ -157,6 +157,15 @@ jobs:
             done
           done
           grep -q "mac-arm64.zip" release/latest-mac.yml && grep -q "mac-x64.zip" release/latest-mac.yml
+          # What the built-in updater checks before it swaps in a new version
+          # (src/main/mac-update.ts): the zip unpacks to a correctly signed
+          # Moon Browser of the version latest-mac.yml names.
+          version="$(node -p "require('./package.json').version")"
+          ditto -x -k release/*-mac-arm64.zip update-check
+          codesign --verify --deep --strict "update-check/Moon Browser.app"
+          [ "$(plutil -extract CFBundleIdentifier raw -o - "update-check/Moon Browser.app/Contents/Info.plist")" = io.lunaos.moonbrowser ]
+          [ "$(plutil -extract CFBundleShortVersionString raw -o - "update-check/Moon Browser.app/Contents/Info.plist")" = "$version" ]
+          grep -q "^version: $version" release/latest-mac.yml
 
           app="release/mac-arm64/Moon Browser.app"
           exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")"
