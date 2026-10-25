@@ -1,4 +1,4 @@
-// End-to-end smoke test: starts the built Moon Browser (npm run build first)
+// End-to-end smoke test: starts the built Luma (npm run build first)
 // with a fresh profile, drives it like a user and checks the results in the
 // main process. Needs a display (xvfb-run on Linux CI).
 //
@@ -306,7 +306,7 @@ async function shot(name) {
   }
 }
 
-console.log("Moon Browser end-to-end test");
+console.log("Luma end-to-end test");
 try {
   // Tabs are pages too; the browser UI is the one on moon://ui.
   const ui = await waitFor(
@@ -534,7 +534,7 @@ try {
     })`);
     if (heard !== true) throw new Error("the pop-up didn't hear its service worker");
     await inPopup(`chrome.runtime.sendMessage("unheard").catch(() => null).then(() => true)`);
-    // chrome.identity, which Moon Browser adds itself.
+    // chrome.identity, which Luma adds itself.
     const redirect = await inPopup("chrome.identity.getRedirectURL('done')");
     if (redirect !== `https://${EXTENSION_ID}.chromiumapp.org/done`)
       throw new Error(`identity.getRedirectURL gave ${redirect}`);
@@ -1100,7 +1100,7 @@ try {
           .executeJavaScript(`window.moon.invoke("bookmarks.list")`),
       );
     const bar = ui.getByRole("navigation", { name: "Bookmarks bar" });
-    // From the Anime folder's menu, named in Moon Browser's dialog.
+    // From the Anime folder's menu, named in Luma's dialog.
     await bar.getByRole("button", { name: "Anime" }).click();
     const anime = ui.getByRole("menu", { name: "Anime" });
     await waitFor(() => anime.isVisible(), "the Anime folder");
@@ -1232,7 +1232,7 @@ try {
     // Only in developer mode.
     if ((await extensionsPage("extensions.loadUnpacked")) !== null) throw new Error("loaded");
     await extensionsPage("extensions.setDeveloperMode", true);
-    // The folder picker answered; the confirmation is Moon Browser's own dialog.
+    // The folder picker answered; the confirmation is Luma's own dialog.
     await app.evaluate(({ dialog }, dir) => {
       globalThis.__dialogs = [dialog.showOpenDialog, dialog.showMessageBox];
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [dir] });
@@ -1244,8 +1244,7 @@ try {
     const add = ui.getByRole("alertdialog");
     await waitFor(() => add.isVisible(), "the Add extension dialog");
     const addText = await add.textContent();
-    if (!addText.includes("Add “My Own Extension” to Moon Browser?"))
-      throw new Error(`dialog: ${addText}`);
+    if (!addText.includes("Add “My Own Extension” to Luma?")) throw new Error(`dialog: ${addText}`);
     await new Promise((r) => setTimeout(r, 400));
     await shot("09a-dialog-add-extension");
     await add.getByRole("button", { name: "Add extension" }).click();
@@ -1312,7 +1311,7 @@ try {
       return wc.executeJavaScript(js, true);
     }, code);
 
-  await check("pages ask in Moon Browser's own dialogs, not the system's", async () => {
+  await check("pages ask in Luma's own dialogs, not the system's", async () => {
     const box = ui.getByRole("combobox", { name: "Address and search bar" });
     await box.click();
     await box.fill(`${base}/dialogs`);
@@ -1499,10 +1498,7 @@ try {
 
   await check("the menu opens above the page", async () => {
     await ui.getByRole("button", { name: "Menu" }).click();
-    await waitFor(
-      () => ui.getByRole("menu", { name: "Moon Browser menu" }).isVisible(),
-      "the menu",
-    );
+    await waitFor(() => ui.getByRole("menu", { name: "Luma menu" }).isVisible(), "the menu");
     await new Promise((r) => setTimeout(r, 500));
     await shot("10-menu");
     await ui.keyboard.press("Escape");

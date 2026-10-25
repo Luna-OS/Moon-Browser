@@ -1,5 +1,5 @@
 /**
- * The filter lists and engine settings of Moon Browser's built-in blocker.
+ * The filter lists and engine settings of Luma's built-in blocker.
  *
  * The lists are uBlock Origin's own lists plus EasyList, EasyPrivacy and
  * Peter Lowe's list — "unbiased" in Helium's words: no "acceptable ads"
@@ -44,14 +44,14 @@ export const FILTER_LISTS: readonly FilterList[] = [
 ];
 
 /**
- * Moon Browser's own fixes, after the lists. Bump the version when they
+ * Luma's own fixes, after the lists. Bump the version when they
  * change: cached engines without them are then rebuilt at once.
  */
 export const MOON_FIXES_ID = "moon-fixes:1";
 export const MOON_FIXES = [
   // Netflix's player stops with error NSES-UHX when its own logging requests
   // fail. uBlock Origin blocks them but fakes their success with a scriptlet
-  // (no-fetch-if), which in Moon Browser can come too late; let them through.
+  // (no-fetch-if), which in Luma can come too late; let them through.
   "@@||netflix.com/log/$xhr,ping,other",
   "@@||logs.netflix.com^$xhr,ping,other",
   "@@||netflix.com/ichnaea/log$xhr,ping,other",

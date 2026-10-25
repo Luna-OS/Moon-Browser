@@ -1,5 +1,5 @@
 /**
- * Preload of every tab. On Moon Browser's own pages (moon://settings, …) it
+ * Preload of every tab. On Luma's own pages (moon://settings, …) it
  * exposes `window.moon`; on web pages it does nothing at all. The main
  * process checks each call again, so this is not the only line of defense.
  */

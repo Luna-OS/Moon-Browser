@@ -3,7 +3,7 @@
  * a restart: hardware acceleration and protected content.
  *
  * Protected content is DRM (Encrypted Media Extensions with Widevine), which
- * Netflix, Disney+, Prime Video and Spotify need. Moon Browser is built on
+ * Netflix, Disney+, Prime Video and Spotify need. Luma is built on
  * castLabs' Electron for Content Security, which installs Google's Widevine
  * module through Chromium's component updater and keeps it up to date. With
  * the setting off, the component updater never runs (nothing is downloaded

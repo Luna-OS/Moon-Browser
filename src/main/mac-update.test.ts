@@ -51,17 +51,15 @@ describe("Mac updates without a Developer ID", () => {
   });
 
   it("knows where it runs from and whether it may replace itself", () => {
-    expect(appBundleOf("/Applications/Moon Browser.app/Contents/MacOS/Moon Browser")).toBe(
-      "/Applications/Moon Browser.app",
+    expect(appBundleOf("/Applications/Luma.app/Contents/MacOS/Luma")).toBe(
+      "/Applications/Luma.app",
     );
     expect(appBundleOf("/usr/bin/node")).toBeNull();
-    expect(canReplace("/Volumes/Moon Browser/Moon Browser.app")).toBe(false);
-    expect(canReplace("/private/var/folders/x/AppTranslocation/ABC/d/Moon Browser.app")).toBe(
-      false,
-    );
+    expect(canReplace("/Volumes/Luma/Luma.app")).toBe(false);
+    expect(canReplace("/private/var/folders/x/AppTranslocation/ABC/d/Luma.app")).toBe(false);
     const dir = mkdtempSync(join(tmpdir(), "moon-mac-"));
-    mkdirSync(join(dir, "Moon Browser.app"));
-    expect(canReplace(join(dir, "Moon Browser.app"))).toBe(true);
+    mkdirSync(join(dir, "Luma.app"));
+    expect(canReplace(join(dir, "Luma.app"))).toBe(true);
   });
 
   it("checks downloads with the SHA-512 latest-mac.yml gives", async () => {
@@ -76,21 +74,31 @@ describe("Mac updates without a Developer ID", () => {
     "puts the new app in place once the old one has quit, or keeps the old one",
     () => {
       const dir = mkdtempSync(join(tmpdir(), "moon-mac-"));
-      const old = join(dir, "Moon Browser.app");
-      const fresh = join(dir, "staged", "Moon Browser.app");
-      mkdirSync(old);
-      writeFileSync(join(old, "v"), "old");
-      mkdirSync(fresh, { recursive: true });
-      writeFileSync(join(fresh, "v"), "new");
       const gone = spawnSync("true").pid ?? 999999;
-      const swap = (from: string) =>
+      const swap = (old: string, from: string) =>
         execFileSync("/bin/sh", ["-c", SWAP_SCRIPT, "t", String(gone), old, from, "0"]);
-      swap(fresh);
-      expect(readFileSync(join(old, "v"), "utf8")).toBe("new");
-      expect(existsSync(`${old}.moon-previous`)).toBe(false);
+      const make = (path: string, text: string) => {
+        mkdirSync(path, { recursive: true });
+        writeFileSync(join(path, "v"), text);
+      };
+      // Same name: replaced in place.
+      const luma = join(dir, "Luma.app");
+      make(luma, "old");
+      make(join(dir, "a", "Luma.app"), "new");
+      swap(luma, join(dir, "a", "Luma.app"));
+      expect(readFileSync(join(luma, "v"), "utf8")).toBe("new");
+      expect(existsSync(`${luma}.moon-previous`)).toBe(false);
       // A new app that isn't there: the old one stays.
-      swap(join(dir, "missing.app"));
-      expect(readFileSync(join(old, "v"), "utf8")).toBe("new");
+      swap(luma, join(dir, "missing.app"));
+      expect(readFileSync(join(luma, "v"), "utf8")).toBe("new");
+      // The renamed browser: "Moon Browser.app" becomes "Luma.app".
+      const renamed = mkdtempSync(join(tmpdir(), "moon-mac-"));
+      const moon = join(renamed, "Moon Browser.app");
+      make(moon, "old");
+      make(join(renamed, "b", "Luma.app"), "new");
+      swap(moon, join(renamed, "b", "Luma.app"));
+      expect(existsSync(moon)).toBe(false);
+      expect(readFileSync(join(renamed, "Luma.app", "v"), "utf8")).toBe("new");
     },
   );
 
@@ -98,9 +106,9 @@ describe("Mac updates without a Developer ID", () => {
     "unpacks the update and checks its signature, bundle ID and version",
     async () => {
       const dir = mkdtempSync(join(tmpdir(), "moon-mac-"));
-      const app = join(dir, "src", "Moon Browser.app");
+      const app = join(dir, "src", "Luma.app");
       mkdirSync(join(app, "Contents", "MacOS"), { recursive: true });
-      execFileSync("cp", ["/usr/bin/true", join(app, "Contents", "MacOS", "Moon Browser")]);
+      execFileSync("cp", ["/usr/bin/true", join(app, "Contents", "MacOS", "Luma")]);
       const plist = (id: string) =>
         writeFileSync(
           join(app, "Contents", "Info.plist"),
@@ -109,7 +117,7 @@ describe("Mac updates without a Developer ID", () => {
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>${id}</string>
 <key>CFBundleShortVersionString</key><string>9.9.9</string>
-<key>CFBundleExecutable</key><string>Moon Browser</string>
+<key>CFBundleExecutable</key><string>Luma</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 </dict></plist>`,
         );
@@ -122,14 +130,12 @@ describe("Mac updates without a Developer ID", () => {
       plist(BUNDLE_ID);
       const good = zipUp("good.zip");
       expect(await unpackAndCheck(good, join(dir, "out"), "9.9.9")).toBe(
-        join(dir, "out", "Moon Browser.app"),
+        join(dir, "out", "Luma.app"),
       );
       await expect(unpackAndCheck(good, join(dir, "out"), "1.0.0")).rejects.toThrow(/version/);
       plist("com.example.other");
       const other = zipUp("other.zip");
-      await expect(unpackAndCheck(other, join(dir, "out"), "9.9.9")).rejects.toThrow(
-        /not Moon Browser/,
-      );
+      await expect(unpackAndCheck(other, join(dir, "out"), "9.9.9")).rejects.toThrow(/not Luma/);
     },
   );
 });

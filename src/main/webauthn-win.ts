@@ -175,7 +175,7 @@ const ASSERTION_V1 = koffi.struct("MOON_WEBAUTHN_ASSERTION_1", {
 
 /**
  * How the options are laid out: "chrome" as Chrome sends them (version 8,
- * Chrome's time limit), "legacy" as Moon Browser 0.1.10 did (the newest
+ * Chrome's time limit), "legacy" as version 0.1.10 did (the newest
  * version the system names, the page's time limit).
  */
 export type OptionsLayout = "chrome" | "legacy";

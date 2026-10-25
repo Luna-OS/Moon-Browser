@@ -210,9 +210,9 @@ function Browser({ state }: { state: WindowState }) {
             <button
               type="button"
               className="mb-icon-btn relative"
-              aria-label="Moon Shield"
+              aria-label="Luma Shield"
               title={
-                shieldOn ? `Moon Shield: ${tab?.blocked ?? 0} blocked` : "Moon Shield is off here"
+                shieldOn ? `Luma Shield: ${tab?.blocked ?? 0} blocked` : "Luma Shield is off here"
               }
               aria-pressed={shieldOn}
               aria-expanded={popover?.kind === "shield"}
@@ -267,7 +267,7 @@ function Browser({ state }: { state: WindowState }) {
                 title={
                   state.updateManual
                     ? `Version ${state.updateReady} is out: open its download page.`
-                    : `Restart Moon Browser to install version ${state.updateReady}. Your tabs come back.`
+                    : `Restart Luma to install version ${state.updateReady}. Your tabs come back.`
                 }
                 onClick={() => void ui.command({ type: "installUpdate" })}
               >
@@ -385,7 +385,7 @@ function Browser({ state }: { state: WindowState }) {
               popover.kind === "menu"
                 ? "Menu"
                 : popover.kind === "shield"
-                  ? "Moon Shield"
+                  ? "Luma Shield"
                   : popover.kind === "extensions"
                     ? "Extensions"
                     : "Downloads"

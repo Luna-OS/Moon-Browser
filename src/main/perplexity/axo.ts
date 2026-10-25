@@ -585,8 +585,8 @@ function axoPage(sprite: Sprite): void {
         setMood("done");
         say(
           t(
-            "Das war's! 🌙 Tipp: In Moon Browser kannst du auch direkt in der <b>Adressleiste</b> suchen. Klick mich an, wenn du mich wieder brauchst.",
-            "That's it! 🌙 Tip: in Moon Browser you can also search right from the <b>address bar</b>. Click me whenever you need me.",
+            "Das war's! 🌙 Tipp: In Luma kannst du auch direkt in der <b>Adressleiste</b> suchen. Klick mich an, wenn du mich wieder brauchst.",
+            "That's it! 🌙 Tip: in Luma you can also search right from the <b>address bar</b>. Click me whenever you need me.",
           ),
           [{ label: t("Danke, Axo!", "Thanks, Axo!"), primary: true, run: quiet }],
         );

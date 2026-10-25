@@ -3,7 +3,7 @@
  * other Chromium-based browsers, read straight from their profile folders.
  *
  * Passwords, cookies and payment data are deliberately not imported: they
- * are encrypted with the other browser's key, and Moon Browser keeps no
+ * are encrypted with the other browser's key, and Luma keeps no
  * password store of its own — a dedicated password manager is the safer
  * home for them.
  */

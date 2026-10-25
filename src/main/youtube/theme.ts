@@ -1,5 +1,5 @@
 /**
- * YouTube in Moon Browser's night-sky look. The player wears it always (it
+ * YouTube in Luma's night-sky look. The player wears it always (it
  * is dark in both of YouTube's themes): the played part of the progress bar
  * is a softly glowing lavender trail that ends in a small full moon, and the
  * volume slider fills with lavender up to a four-pointed sparkle. The logo

@@ -5,7 +5,7 @@
  * reading the clipboard, opening other apps, pop-ups without a click — is
  * asked for in a bar above the page. Decisions can be remembered per site;
  * in private windows only until the window closes. Answers not remembered
- * hold until Moon Browser closes.
+ * hold until Luma closes.
  *
  * Protected content (DRM, for Netflix and the like) is allowed as in Chrome,
  * unless switched off in Settings.
@@ -140,7 +140,7 @@ export class Permissions {
     if (remember && prompt.kind !== "open-external") {
       for (const kind of kinds) this.remember(prompt.origin, kind, decision, entry.private);
     } else {
-      // Not remembered: it holds until Moon Browser closes, so the page sees
+      // Not remembered: it holds until Luma closes, so the page sees
       // it was allowed (or not) and doesn't ask again at once.
       for (const kind of kinds)
         if (Object.values(PAGE_PERMISSIONS).includes(kind))

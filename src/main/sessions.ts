@@ -203,7 +203,7 @@ export function configureBrowsingSession(browser: Browser, ses: Session, isPriva
       details.webContentsId !== undefined ? browser.tabFor(details.webContentsId) : undefined;
     const isDocument = details.resourceType === "mainFrame";
     const headers = details.responseHeaders ?? {};
-    // Extensions' header rules apply whether Moon Shield is on or not.
+    // Extensions' header rules apply whether Luma Shield is on or not.
     const dnrReq = dnrRequest(details, tab);
     let changed = dnrReq && dnr ? dnr.responseHeaders(dnrReq, headers) : false;
     // For a new document, the page it belongs to is the document itself.

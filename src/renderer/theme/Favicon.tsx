@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { GlobeIcon } from "./icons";
 
-/** A site's icon, the moon for Moon Browser's own pages, a globe otherwise. */
+/** A site's icon, the moon for Luma's own pages, a globe otherwise. */
 export function Favicon({
   url,
   src,

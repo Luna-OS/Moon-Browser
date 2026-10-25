@@ -1,4 +1,4 @@
-; Moon Browser's Windows installer: the night-sky theme of MoonTask's
+; Luma's Windows installer: the night-sky theme of MoonTask's
 ; installer, adapted to electron-builder's NSIS templates, plus the
 ; registration as a web browser.
 ;
@@ -335,23 +335,23 @@ FunctionEnd
 
 !macro customHeader
   !ifndef BUILD_UNINSTALLER
-    LangString moonWelcomeTitle ${LANG_ENGLISH} "Welcome to Moon Browser"
-    LangString moonWelcomeText ${LANG_ENGLISH} "The web, calmly under the moon.$\r$\n$\r$\nMoon Browser is a private browser: ads and trackers are blocked, sites load over HTTPS first, and nothing is sent anywhere behind your back.$\r$\n$\r$\nIt is installed for your user account only and needs no administrator rights. Your bookmarks, history and settings stay when you install an update.$\r$\n$\r$\nClick Next to continue."
-    LangString moonFinishTitle ${LANG_ENGLISH} "Moon Browser is ready"
-    LangString moonFinishText ${LANG_ENGLISH} "Moon Browser has been installed and is waiting in the Start menu. Updates install over it by themselves; there is never a need to uninstall first.$\r$\n$\r$\nTip: in Settings, under Import, you can bring over your bookmarks and history from Comet, Chrome, Edge or Brave."
-    LangString moonWelcomeTitle ${LANG_GERMAN} "Willkommen bei Moon Browser"
-    LangString moonWelcomeText ${LANG_GERMAN} "Das Web, ruhig unter dem Mond.$\r$\n$\r$\nMoon Browser ist ein privater Browser: Werbung und Tracker werden blockiert, Seiten laden zuerst über HTTPS, und nichts wird heimlich irgendwohin gesendet.$\r$\n$\r$\nEr wird nur für Ihr Benutzerkonto installiert und braucht keine Administratorrechte. Lesezeichen, Verlauf und Einstellungen bleiben bei jedem Update erhalten.$\r$\n$\r$\nKlicken Sie auf Weiter, um fortzufahren."
-    LangString moonFinishTitle ${LANG_GERMAN} "Moon Browser ist bereit"
-    LangString moonFinishText ${LANG_GERMAN} "Moon Browser wurde installiert und wartet im Startmenü. Updates installieren sich von selbst darüber; Sie müssen nie vorher deinstallieren.$\r$\n$\r$\nTipp: In den Einstellungen unter „Import“ holen Sie Lesezeichen und Verlauf aus Comet, Chrome, Edge oder Brave herüber."
+    LangString moonWelcomeTitle ${LANG_ENGLISH} "Welcome to Luma"
+    LangString moonWelcomeText ${LANG_ENGLISH} "The web, calmly under the moon.$\r$\n$\r$\nLuma is a private browser: ads and trackers are blocked, sites load over HTTPS first, and nothing is sent anywhere behind your back.$\r$\n$\r$\nIt is installed for your user account only and needs no administrator rights. Your bookmarks, history and settings stay when you install an update.$\r$\n$\r$\nClick Next to continue."
+    LangString moonFinishTitle ${LANG_ENGLISH} "Luma is ready"
+    LangString moonFinishText ${LANG_ENGLISH} "Luma has been installed and is waiting in the Start menu. Updates install over it by themselves; there is never a need to uninstall first.$\r$\n$\r$\nTip: in Settings, under Import, you can bring over your bookmarks and history from Comet, Chrome, Edge or Brave."
+    LangString moonWelcomeTitle ${LANG_GERMAN} "Willkommen bei Luma"
+    LangString moonWelcomeText ${LANG_GERMAN} "Das Web, ruhig unter dem Mond.$\r$\n$\r$\nLuma ist ein privater Browser: Werbung und Tracker werden blockiert, Seiten laden zuerst über HTTPS, und nichts wird heimlich irgendwohin gesendet.$\r$\n$\r$\nEr wird nur für Ihr Benutzerkonto installiert und braucht keine Administratorrechte. Lesezeichen, Verlauf und Einstellungen bleiben bei jedem Update erhalten.$\r$\n$\r$\nKlicken Sie auf Weiter, um fortzufahren."
+    LangString moonFinishTitle ${LANG_GERMAN} "Luma ist bereit"
+    LangString moonFinishText ${LANG_GERMAN} "Luma wurde installiert und wartet im Startmenü. Updates installieren sich von selbst darüber; Sie müssen nie vorher deinstallieren.$\r$\n$\r$\nTipp: In den Einstellungen unter „Import“ holen Sie Lesezeichen und Verlauf aus Comet, Chrome, Edge oder Brave herüber."
   !else
-    LangString moonUnWelcomeText ${LANG_ENGLISH} "This removes Moon Browser from your computer.$\r$\n$\r$\nYour profile — bookmarks, history and settings — stays in your user folder, so a later installation can pick it up again.$\r$\n$\r$\nClick Next to continue."
-    LangString moonUnWelcomeText ${LANG_GERMAN} "Hiermit wird Moon Browser von Ihrem Computer entfernt.$\r$\n$\r$\nIhr Profil — Lesezeichen, Verlauf und Einstellungen — bleibt in Ihrem Benutzerordner, sodass eine spätere Installation es wieder aufgreifen kann.$\r$\n$\r$\nKlicken Sie auf Weiter, um fortzufahren."
+    LangString moonUnWelcomeText ${LANG_ENGLISH} "This removes Luma from your computer.$\r$\n$\r$\nYour profile — bookmarks, history and settings — stays in your user folder, so a later installation can pick it up again.$\r$\n$\r$\nClick Next to continue."
+    LangString moonUnWelcomeText ${LANG_GERMAN} "Hiermit wird Luma von Ihrem Computer entfernt.$\r$\n$\r$\nIhr Profil — Lesezeichen, Verlauf und Einstellungen — bleibt in Ihrem Benutzerordner, sodass eine spätere Installation es wieder aufgreifen kann.$\r$\n$\r$\nKlicken Sie auf Weiter, um fortzufahren."
   !endif
 !macroend
 
 ; ---- Registration as a web browser ----
 ;
-; Moon Browser shows up in Windows' Settings → Apps → Default apps and can
+; Luma shows up in Windows' Settings → Apps → Default apps and can
 ; open http(s) links and .html files. The command lines end with -- "%1":
 ; everything after "--" is treated as an address, never as a command-line
 ; switch (no switch injection from links).
@@ -362,10 +362,10 @@ FunctionEnd
 !macro customInstall
   WriteRegStr SHCTX "Software\RegisteredApplications" "Moon Browser" "${MOON_CLIENT}\Capabilities"
 
-  WriteRegStr SHCTX "${MOON_CLIENT}" "" "Moon Browser"
+  WriteRegStr SHCTX "${MOON_CLIENT}" "" "Luma"
   WriteRegStr SHCTX "${MOON_CLIENT}\DefaultIcon" "" "${MOON_EXE},0"
   WriteRegStr SHCTX "${MOON_CLIENT}\shell\open\command" "" '"${MOON_EXE}"'
-  WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities" "ApplicationName" "Moon Browser"
+  WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities" "ApplicationName" "Luma"
   WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities" "ApplicationDescription" "The web, calmly under the moon."
   WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities" "ApplicationIcon" "${MOON_EXE},0"
   WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities\StartMenu" "StartMenuInternet" "Moon Browser"
@@ -375,12 +375,12 @@ FunctionEnd
   WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities\FileAssociations" ".html" "MoonBrowserHTML"
   WriteRegStr SHCTX "${MOON_CLIENT}\Capabilities\FileAssociations" ".xhtml" "MoonBrowserHTML"
 
-  WriteRegStr SHCTX "Software\Classes\MoonBrowserURL" "" "Moon Browser URL"
+  WriteRegStr SHCTX "Software\Classes\MoonBrowserURL" "" "Luma URL"
   WriteRegStr SHCTX "Software\Classes\MoonBrowserURL" "URL Protocol" ""
   WriteRegStr SHCTX "Software\Classes\MoonBrowserURL\DefaultIcon" "" "${MOON_EXE},0"
   WriteRegStr SHCTX "Software\Classes\MoonBrowserURL\shell\open\command" "" '"${MOON_EXE}" -- "%1"'
 
-  WriteRegStr SHCTX "Software\Classes\MoonBrowserHTML" "" "Moon Browser HTML Document"
+  WriteRegStr SHCTX "Software\Classes\MoonBrowserHTML" "" "Luma HTML Document"
   WriteRegStr SHCTX "Software\Classes\MoonBrowserHTML\DefaultIcon" "" "${MOON_EXE},0"
   WriteRegStr SHCTX "Software\Classes\MoonBrowserHTML\shell\open\command" "" '"${MOON_EXE}" -- "%1"'
 

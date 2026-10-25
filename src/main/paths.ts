@@ -11,7 +11,7 @@ export const webPreload = join(appRoot, "out", "preload", "web.cjs");
 export const adblockWorker = join(appRoot, "out", "main", "adblock-worker.cjs");
 /** electron-chrome-extensions' chrome.* preload, patched at build time (scripts/build-electron.mjs). */
 export const extensionApiPreload = join(appRoot, "out", "main", "chrome-extension-api.preload.js");
-/** The chrome.* APIs Moon Browser adds itself (side panel, identity, …). */
+/** The chrome.* APIs Luma adds itself (side panel, identity, …). */
 export const extensionExtraPreload = join(appRoot, "out", "preload", "extension-apis.cjs");
 export const windowIcon = join(appRoot, "build", "icons", "512x512.png");
 

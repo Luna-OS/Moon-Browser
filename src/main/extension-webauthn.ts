@@ -1,6 +1,6 @@
 /**
  * navigator.credentials for extension pages (see @shared/webauthn): the
- * request comes from the extension's own page, Moon Browser checks it as
+ * request comes from the extension's own page, Luma checks it as
  * Chrome would, fills in the client data with the extension's origin (never
  * taken from the page), and Windows asks for Windows Hello, a security key
  * or a phone in its own dialog.
@@ -126,7 +126,7 @@ export class ExtensionWebAuthn {
   /**
    * The ways to ask, in turn: first as Chrome does (its options, the window
    * in front); if Windows refuses that at once as invalid, from the page's
-   * own window, from the browser window, then with the options Moon Browser
+   * own window, from the browser window, then with the options Luma
    * used before.
    */
   private attempts(api: WindowsWebAuthn, own: bigint, main: bigint): Attempt[] {

@@ -1,7 +1,7 @@
 /**
  * chrome.declarativeNetRequest rules: checking them, and matching requests
  * against them the way Chrome does. Electron accepts the API but applies no
- * rules, so Moon Browser does it in its request pipeline.
+ * rules, so Luma does it in its request pipeline.
  *
  * https://developer.chrome.com/docs/extensions/reference/api/declarativeNetRequest
  */

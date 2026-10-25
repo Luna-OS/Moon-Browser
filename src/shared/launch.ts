@@ -1,5 +1,5 @@
 /**
- * Links and files other apps hand to Moon Browser. On Windows and Linux they
+ * Links and files other apps hand to Luma. On Windows and Linux they
  * come on the command line; macOS sends them as events (open-url,
  * open-file) instead, often before the browser has started. Those are held
  * here until it is ready.

@@ -14,14 +14,14 @@ function describe(s: UpdateStatus, autoCheck: boolean): string {
     case "ready":
       if (s.manual)
         return `Version ${s.version ?? ""} is out. Download it and drag it into Applications over this one — your profile stays as it is.`;
-      return `Version ${s.version ?? ""} is ready. Restart Moon Browser to install it — your tabs come back.${s.needsAdmin ? " Installing asks for your password." : ""}`;
+      return `Version ${s.version ?? ""} is ready. Restart Luma to install it — your tabs come back.${s.needsAdmin ? " Installing asks for your password." : ""}`;
     case "error":
       return `Couldn't look for updates: ${s.error ?? "unknown error"}`;
     default:
       return s.checkedAt
         ? `Up to date · checked ${timeAgo(s.checkedAt)}`
         : autoCheck
-          ? "Moon Browser looks for updates every few hours."
+          ? "Luma looks for updates every few hours."
           : "Not checked yet.";
   }
 }
@@ -29,10 +29,10 @@ function describe(s: UpdateStatus, autoCheck: boolean): string {
 /** The installed version, what the updater is doing, and the button for it. */
 export function UpdateRow({ autoCheck = true }: { autoCheck?: boolean }) {
   const [status, reload] = useLive(api.updateStatus, ["update"]);
-  if (!status) return <Row label="Moon Browser" hint="…" />;
+  if (!status) return <Row label="Luma" hint="…" />;
   const busy = status.state === "checking" || status.state === "downloading";
   return (
-    <Row label={`Moon Browser ${status.current}`} hint={describe(status, autoCheck)}>
+    <Row label={`Luma ${status.current}`} hint={describe(status, autoCheck)}>
       {status.state === "ready" ? (
         <button
           type="button"

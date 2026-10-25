@@ -1,9 +1,9 @@
 /**
- * A certificate for 127.0.0.1, made at start: for Moon Browser's own
+ * A certificate for 127.0.0.1, made at start: for Luma's own
  * DNS-over-HTTPS bridge (dns-bridge.ts), which Chromium only talks to over
  * HTTPS. Node can make keys but not certificates, so this writes the few
  * DER structures of a self-signed X.509 certificate itself. Nobody else
- * trusts it; Moon Browser trusts it for 127.0.0.1 only, by its fingerprint.
+ * trusts it; Luma trusts it for 127.0.0.1 only, by its fingerprint.
  */
 import { createHash, generateKeyPairSync, randomBytes, sign } from "node:crypto";
 

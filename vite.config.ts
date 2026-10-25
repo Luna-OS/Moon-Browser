@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath, URL } from "node:url";
 
-// Moon Browser renderer build.
+// Luma renderer build.
 //
 // Two pages share one asset folder:
 //   ui/     the browser itself: tabs, toolbar, address bar (moon://ui/)

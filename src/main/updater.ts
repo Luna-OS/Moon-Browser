@@ -1,5 +1,5 @@
 /**
- * Updates without reinstalling. Moon Browser looks for a new release on
+ * Updates without reinstalling. Luma looks for a new release on
  * GitHub, downloads it in the background — checked against the SHA-512 in
  * the release's latest.yml — and installs it over the current version when
  * it restarts. The profile (bookmarks, history, settings, extensions) lives
@@ -12,7 +12,7 @@
  *    "Restart to update", never silently on quit.
  *  - macOS with an Apple Developer ID: the system's own updater.
  *  - macOS without one (ad-hoc signed): the system won't install an update
- *    over it, so Moon Browser replaces its app itself (mac-update.ts). Only
+ *    over it, so Luma replaces its app itself (mac-update.ts). Only
  *    where it can't write — started from the disk image, or from a folder
  *    it doesn't own — "Update" opens the release's download page instead.
  */
@@ -40,7 +40,7 @@ interface Hooks {
   /** "Look for updates automatically". */
   autoCheck: () => boolean;
   onChange: (status: UpdateStatus) => void;
-  /** Called right before Moon Browser quits to install an update. */
+  /** Called right before Luma quits to install an update. */
   beforeInstall: () => void;
   /** Opens a page in a tab: the download page of an update installed by hand. */
   openPage: (url: string) => void;

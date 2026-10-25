@@ -1,5 +1,5 @@
 /**
- * The moon:// protocol: Moon Browser's own pages, served from the app
+ * The moon:// protocol: Luma's own pages, served from the app
  * bundle. moon://ui/ is the browser UI and exists only in the UI's session;
  * web tabs can reach the internal pages (moon://newtab/, moon://settings/, …)
  * but never the UI.

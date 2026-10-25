@@ -1,10 +1,14 @@
-# Moon Browser packaging: Windows (NSIS installer), Linux (AppImage, deb,
+# Luma packaging: Windows (NSIS installer), Linux (AppImage, deb,
 # rpm) and macOS (dmg, and a zip for updates).
 appId: io.lunaos.moonbrowser
-productName: Moon Browser
+# The name people see. Inside, the app keeps its first name, "Moon Browser"
+# (package.json's productName): the profile folder and the Keychain entry go
+# by it (src/shared/brand.ts). executableName and appId stay too, so updates
+# install over copies from before the new name.
+productName: Luma
 executableName: moon-browser
 copyright: © 2026 Luna
-artifactName: moon-browser-${version}-${os}-${arch}.${ext}
+artifactName: luma-${version}-${os}-${arch}.${ext}
 
 directories:
   output: release
@@ -68,7 +72,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Moon Browser
+  shortcutName: Luma
   runAfterFinish: true
   deleteAppDataOnUninstall: false
   installerSidebar: build/installer/sidebar.bmp
@@ -87,7 +91,7 @@ linux:
   vendor: Luna-OS
   synopsis: The web, calmly under the moon.
   description: >-
-    Moon Browser is a private, open-source Chromium browser: Perplexity search, ad and
+    Luma is a private, open-source Chromium browser: Perplexity search, ad and
     tracker blocking built in, HTTPS first, bangs, split view and sleeping tabs — in a
     calm night-sky design.
   mimeTypes:
@@ -97,7 +101,7 @@ linux:
     - x-scheme-handler/https
   desktop:
     entry:
-      Name: Moon Browser
+      Name: Luma
       GenericName: Web Browser
       Comment: The web, calmly under the moon
       Categories: Network;WebBrowser;
@@ -112,8 +116,8 @@ linux:
       arch: [x64]
 
 mac:
-  # "Moon Browser.app" in Applications, as Mac apps are named.
-  executableName: Moon Browser
+  # "Luma.app" in Applications, as Mac apps are named.
+  executableName: Luma
   icon: build/icon.png
   category: public.app-category.productivity
   darkModeSupport: true
@@ -125,14 +129,14 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Links from other apps, so Moon Browser can be the default browser.
+  # Links from other apps, so Luma can be the default browser.
   protocols:
     - name: Web site address
       role: Viewer
       schemes: [http, https]
   extendInfo:
     # macOS stops an app that uses these without saying why; sites only get
-    # them after Moon Browser has asked (src/main/permissions.ts).
+    # them after Luma has asked (src/main/permissions.ts).
     NSCameraUsageDescription: A website you visit can ask to use your camera.
     NSMicrophoneUsageDescription: A website you visit can ask to use your microphone.
     NSLocationWhenInUseUsageDescription: A website you visit can ask for your location.
@@ -158,4 +162,4 @@ mac:
       arch: [arm64, x64]
 
 dmg:
-  title: Moon Browser
+  title: Luma

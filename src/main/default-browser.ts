@@ -1,9 +1,9 @@
 /**
- * Whether Moon Browser is the system's default browser, and making it so.
+ * Whether Luma is the system's default browser, and making it so.
  *
  * Windows doesn't let apps make themselves the default browser: the
- * installer registers Moon Browser, and "Make default" opens the system
- * settings with Moon Browser preselected. On Linux, xdg-settings sets it
+ * installer registers Luma, and "Make default" opens the system
+ * settings with Luma preselected. On Linux, xdg-settings sets it
  * directly. On macOS, the system asks the user to confirm the change.
  */
 import { app, shell } from "electron";
@@ -76,7 +76,7 @@ export class DefaultBrowser {
       return this.isDefault;
     }
     if (process.platform === "darwin") {
-      // macOS asks the user itself ("Use Moon Browser" or keep the old
+      // macOS asks the user itself ("Use Luma" or keep the old
       // browser), after this returns: the next window focus checks again.
       app.setAsDefaultProtocolClient("http");
       app.setAsDefaultProtocolClient("https");

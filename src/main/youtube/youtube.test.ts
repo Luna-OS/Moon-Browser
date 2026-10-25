@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isYouTube, YOUTUBE_CSS } from "./theme";
 
-describe("YouTube in Moon's look", () => {
+describe("YouTube in Luma's look", () => {
   it("is only for YouTube, over HTTPS", () => {
     expect(isYouTube("https://youtube.com/watch?v=abc")).toBe(true);
     expect(isYouTube("https://www.youtube.com/")).toBe(true);

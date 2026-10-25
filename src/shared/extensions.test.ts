@@ -64,7 +64,7 @@ describe("extension errors", () => {
     expect(listsError(real, { developerMode: false, unpacked: false })).toBe(true);
   });
 
-  it("leaves out requests Moon Shield blocked or that failed offline", () => {
+  it("leaves out requests Luma Shield blocked or that failed offline", () => {
     const web = { developerMode: true, unpacked: true };
     expect(listsError("Failed to load resource: net::ERR_BLOCKED_BY_CLIENT", web)).toBe(false);
     expect(listsError("Failed to load resource: net::ERR_INTERNET_DISCONNECTED", web)).toBe(false);
@@ -100,9 +100,9 @@ describe("extension errors", () => {
     expect(listsError(text, { developerMode: true, unpacked: true })).toBe(true);
   });
 
-  it("keeps errors about chrome.* APIs Moon Browser lacks", () => {
+  it("keeps errors about chrome.* APIs Luma lacks", () => {
     const store = { developerMode: false, unpacked: false };
-    expect(listsError("chrome.readingList isn't available in Moon Browser.", store)).toBe(true);
+    expect(listsError("chrome.readingList isn't available in Luma.", store)).toBe(true);
     expect(
       listsError("Uncaught TypeError: Cannot read properties of undefined (reading 'onChanged')", {
         ...store,
@@ -190,7 +190,7 @@ describe("extension manifests", () => {
     expect(describePermissions({ permissions: ["storage", "alarms"] })).toEqual([]);
   });
 
-  it("notes what Moon Browser can't offer", () => {
+  it("notes what Luma can't offer", () => {
     // Native messaging works (through desktop apps' registrations for Chrome).
     expect(unsupportedFeatures({ permissions: ["nativeMessaging"] })).toEqual([]);
     expect(unsupportedFeatures({ permissions: ["tabGroups"] })).toEqual([]);

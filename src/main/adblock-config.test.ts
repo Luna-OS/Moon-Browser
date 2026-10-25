@@ -20,7 +20,7 @@ const blocked = (engine: FiltersEngine, url: string, type: string) =>
     }),
   ).match;
 
-describe("Moon Browser's own blocker fixes", () => {
+describe("Luma's own blocker fixes", () => {
   const engine = FiltersEngine.parse(`${LISTS}\n${MOON_FIXES}`, ENGINE_CONFIG);
 
   it("let Netflix's player log, so it doesn't stop with NSES-UHX", () => {

@@ -1,5 +1,5 @@
 /**
- * Moon Browser — the web, calmly under the moon.
+ * Luma — the web, calmly under the moon.
  *
  * Entry point of the main process: app-wide hardening, the single-instance
  * lock, and the start of the browser.
@@ -79,7 +79,7 @@ if (!app.requestSingleInstanceLock()) {
   // Hardware acceleration and protected content, as set in Settings → System.
   applyEngineSettings(browser.startedWith);
 
-  // macOS hands over links (Moon Browser as the default browser) and files
+  // macOS hands over links (Luma as the default browser) and files
   // as events, not on the command line — the first ones before the browser
   // is ready, so they wait for it.
   const launched = new LaunchQueue();

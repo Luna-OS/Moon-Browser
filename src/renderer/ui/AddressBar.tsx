@@ -201,7 +201,7 @@ export function AddressBar({
       : security === "insecure"
         ? "Not secure: this page is loaded over plain HTTP"
         : security === "internal"
-          ? "Moon Browser page"
+          ? "Luma page"
           : security === "extension"
             ? "A page of an extension"
             : security === "error"

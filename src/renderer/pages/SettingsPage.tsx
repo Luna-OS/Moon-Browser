@@ -126,7 +126,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           href="moon://about/"
           className="mt-3 flex items-center gap-2.5 rounded-[0.7rem] px-3 py-2 text-sm text-(--mb-text-muted) no-underline hover:bg-(--mb-hover) hover:text-(--mb-text)"
         >
-          <InfoIcon size={16} /> About Moon Browser
+          <InfoIcon size={16} /> About Luma
         </a>
       </nav>
 
@@ -157,7 +157,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
         <Card id="appearance" title="Appearance">
           <Row
             label="Theme"
-            hint="Night is Moon Browser's home; websites follow it when they support dark mode."
+            hint="Night is Luma's home; websites follow it when they support dark mode."
           >
             <Segmented
               label="Theme"
@@ -187,15 +187,15 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             checked={s.newTabShortcuts}
             onChange={(v) => set({ newTabShortcuts: v })}
           />
-          {/* Sites in Moon's look, side by side. */}
+          {/* Sites in Luma's look, side by side. */}
           <Toggle
-            label="YouTube in Moon's look"
+            label="YouTube in Luma's look"
             hint="YouTube wears the night sky: a moonlit progress bar and a starry volume slider. Applies from the next page load."
             checked={s.youtubeLook}
             onChange={(v) => set({ youtubeLook: v })}
           />
           <Toggle
-            label="Perplexity in Moon's look, with Axo"
+            label="Perplexity in Luma's look, with Axo"
             hint="Perplexity wears the night sky, and Axo, the pixel axolotl from Moon Code, sits on its search box — click it for a tour of the search or a tip."
             checked={s.perplexityLook}
             onChange={(v) => set({ perplexityLook: v })}
@@ -290,10 +290,10 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
 
         <ImportCard />
 
-        <Card id="privacy" title="Privacy & Moon Shield">
+        <Card id="privacy" title="Privacy & Luma Shield">
           <Toggle
             label="Block ads and trackers"
-            hint="Moon Shield uses uBlock Origin's filter lists, EasyList, EasyPrivacy and Peter Lowe's list — no paid exceptions for anyone."
+            hint="Luma Shield uses uBlock Origin's filter lists, EasyList, EasyPrivacy and Peter Lowe's list — no paid exceptions for anyone."
             checked={s.adblock}
             onChange={(v) => set({ adblock: v })}
           />
@@ -339,17 +339,17 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           />
           <DnsSettings settings={s} set={set} />
           <Toggle
-            label="Delete cookies and site data when Moon Browser closes"
+            label="Delete cookies and site data when Luma closes"
             hint="Every start is a fresh start: you'll be signed out of websites."
             checked={s.clearOnExit}
             onChange={(v) => set({ clearOnExit: v })}
           />
           <Row
             label="Always on"
-            hint="Every page runs in Chromium's sandbox, dangerous and scam sites on the filter lists are stopped before they load, programs and scripts are only downloaded after you confirm, and Moon Browser keeps no passwords."
+            hint="Every page runs in Chromium's sandbox, dangerous and scam sites on the filter lists are stopped before they load, programs and scripts are only downloaded after you confirm, and Luma keeps no passwords."
           />
           <Row
-            label="Sites with Moon Shield off"
+            label="Sites with Luma Shield off"
             hint={
               s.protectionAllowlist.length
                 ? undefined
@@ -380,7 +380,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
         <Card
           id="permissions"
           title="Site permissions"
-          description="Moon Browser asks before a site may use your camera, microphone, location, notifications or clipboard."
+          description="Luma asks before a site may use your camera, microphone, location, notifications or clipboard."
         >
           {!permissions || permissions.length === 0 ? (
             <Row
@@ -493,10 +493,10 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             label="Default browser"
             hint={
               isDefault
-                ? "Moon Browser is your default browser."
+                ? "Luma is your default browser."
                 : info.platform === "win32"
                   ? "Windows lets you choose it in Settings → Apps → Default apps."
-                  : "Open links from other apps in Moon Browser."
+                  : "Open links from other apps in Luma."
             }
           >
             {!isDefault && (
@@ -560,7 +560,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           <UpdateRow autoCheck={s.autoUpdate} />
           <Toggle
             label="Look for updates automatically"
-            hint="Every few hours, Moon Browser asks GitHub for a new release and downloads it in the background."
+            hint="Every few hours, Luma asks GitHub for a new release and downloads it in the background."
             checked={s.autoUpdate}
             onChange={(v) => set({ autoUpdate: v })}
           />
@@ -678,9 +678,9 @@ function ImportCard() {
       )}
       <p className="m-0 px-5 py-3.5 text-xs leading-relaxed text-(--mb-text-muted)">
         Passwords, cookies and payment data are not imported: they are locked with the other
-        browser's key, and Moon Browser keeps no password store on purpose. Export your passwords
-        from Comet into a password manager such as Bitwarden or KeePassXC — that keeps them safe in
-        every browser.
+        browser's key, and Luma keeps no password store on purpose. Export your passwords from Comet
+        into a password manager such as Bitwarden or KeePassXC — that keeps them safe in every
+        browser.
       </p>
     </Card>
   );
@@ -691,7 +691,7 @@ function AdblockRow({ status, onUpdate }: { status: AdblockStatus | null; onUpda
   const hint = status.updating
     ? "Updating the filter lists…"
     : status.error && !status.ready
-      ? `Couldn't download the filter lists yet (${status.error}). Moon Browser tries again in a while.`
+      ? `Couldn't download the filter lists yet (${status.error}). Luma tries again in a while.`
       : status.updatedAt
         ? `${status.lists.length} lists, updated ${timeAgo(status.updatedAt)}. ${formatNumber(status.totalBlocked)} ads and trackers blocked so far.`
         : "The filter lists are downloaded on first start.";

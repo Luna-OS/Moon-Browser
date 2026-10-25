@@ -1,5 +1,5 @@
 /**
- * Moon Browser's built-in ad and tracker blocker: the Ghostery adblocker
+ * Luma's built-in ad and tracker blocker: the Ghostery adblocker
  * engine (uBlock Origin–compatible filter syntax, including cosmetic
  * filters and scriptlets) wired into Electron's request pipeline.
  *
@@ -242,7 +242,7 @@ export class Adblocker {
 function parseInWorker(lists: string[], resources: string | null): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const child = utilityProcess.fork(adblockWorker, [], {
-      serviceName: "Moon Browser filter lists",
+      serviceName: "Luma filter lists",
       stdio: "inherit",
     });
     let settled = false;

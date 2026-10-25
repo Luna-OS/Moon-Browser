@@ -25,12 +25,12 @@ export function describeError(error: TabError): { title: string; text: string; f
   if (error.kind === "https") {
     return {
       title: `${host} doesn't offer a secure connection`,
-      text: "Moon Browser tried HTTPS first, but this site has no working secure version. If you continue, anyone on your network could read or change what you send and receive.",
+      text: "Luma tried HTTPS first, but this site has no working secure version. If you continue, anyone on your network could read or change what you send and receive.",
     };
   }
   if (error.kind === "blocked") {
     return {
-      title: "Moon Shield blocked this page",
+      title: "Luma Shield blocked this page",
       text: `${host} is on a filter list of sites that spread malware, scams or trackers. Nothing was loaded from it.`,
     };
   }
@@ -44,7 +44,7 @@ export function describeError(error: TabError): { title: string; text: string; f
   if (code <= -200 && code > -300) {
     return {
       title: "This connection is not private",
-      text: `The security certificate of ${host} is not valid, so Moon Browser stopped before anything was sent. Someone might be trying to intercept your data.`,
+      text: `The security certificate of ${host} is not valid, so Luma stopped before anything was sent. Someone might be trying to intercept your data.`,
     };
   }
   switch (code) {
@@ -90,7 +90,7 @@ export function describeError(error: TabError): { title: string; text: string; f
         text: "The connection was interrupted by a network change.",
       };
     case -20:
-      return { title: "This page was blocked", text: "Moon Shield blocked this page." };
+      return { title: "This page was blocked", text: "Luma Shield blocked this page." };
     case -312: {
       const port = portOf(error.url);
       return {
@@ -109,7 +109,7 @@ export function describeError(error: TabError): { title: string; text: string; f
     case -302:
       return {
         title: "This address can't be opened",
-        text: `Moon Browser doesn't open “${error.url.split(":")[0]}:” addresses.`,
+        text: `Luma doesn't open “${error.url.split(":")[0]}:” addresses.`,
         final: true,
       };
     default:

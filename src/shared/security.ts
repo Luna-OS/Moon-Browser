@@ -1,5 +1,5 @@
 /**
- * Small, pure building blocks of Moon Browser's protections — kept apart
+ * Small, pure building blocks of Luma's protections — kept apart
  * so each rule is unit-tested.
  */
 
@@ -189,7 +189,7 @@ export function zoneIdentifier(options: { url?: string; referrer?: string }): st
  * disk images from it before they first open.
  */
 export function quarantineMark(now: number, id: string): string {
-  return `0081;${Math.floor(now / 1000).toString(16)};Moon Browser;${id}`;
+  return `0081;${Math.floor(now / 1000).toString(16)};Luma;${id}`;
 }
 
 /**

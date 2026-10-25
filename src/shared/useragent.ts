@@ -1,8 +1,8 @@
 /**
- * Moon Browser presents itself as the Chromium it is: the app name and the
+ * Luma presents itself as the Chromium it is: the app name and the
  * "Electron/x" token are removed, and the Chrome version is reduced to its
  * major number like Chrome's own reduced user agent. That keeps sites
- * working and makes Moon Browser blend in instead of standing out.
+ * working and makes Luma blend in instead of standing out.
  *
  * It is the same everywhere, Google's sign-in included: headers, client
  * hints and what scripts read (navigator.userAgent, userAgentData) all say

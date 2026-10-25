@@ -166,7 +166,7 @@ export const AXOLOTL_FRAMES = {
       "..........................",
     ],
   ],
-  // Talking (Moon Browser's own): Axo says Perplexity's answer – its mouth
+  // Talking (Luma's own): Axo says Perplexity's answer – its mouth
   // open, shut and wide, as the idle frame otherwise.
   talk: [
     [

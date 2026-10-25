@@ -1,10 +1,10 @@
 /**
- * Which DNS Moon Browser uses: Chromium's automatic DNS over HTTPS, one of
+ * Which DNS Luma uses: Chromium's automatic DNS over HTTPS, one of
  * a few encrypted providers, the network's own, or a DNS server of the
  * user's, named by them — a DNS-over-HTTPS address, or a plain server by
  * IP address and port (a Pi-hole or Unbound at home, one inside a VPN such
  * as Netbird or Tailscale). Chromium itself only talks DNS over HTTPS to a
- * server of its choosing; plain servers are reached through Moon Browser's
+ * server of its choosing; plain servers are reached through Luma's
  * local bridge (main/dns-bridge.ts).
  */
 

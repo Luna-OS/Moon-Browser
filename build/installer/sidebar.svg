@@ -57,7 +57,7 @@
   </g>
   <circle cx="22" cy="100" r="1.2" fill="#9ad7f5" opacity="0.8"/>
   <circle cx="142" cy="150" r="1.2" fill="#d6cffd" opacity="0.8"/>
-  <!-- The Moon Browser mark: a crescent inside an orbit. -->
+  <!-- Luma's mark: a crescent inside an orbit. -->
   <ellipse cx="82" cy="82" rx="58" ry="18" transform="rotate(-18 82 82)" fill="none" stroke="url(#orbit)" stroke-width="4.5" stroke-opacity="0.45"/>
   <circle cx="81" cy="81" r="42" fill="#b9aefb" opacity="0.35" filter="url(#blur)" mask="url(#crescent)"/>
   <circle cx="81" cy="81" r="42" fill="url(#moon)" mask="url(#crescent)"/>
@@ -65,8 +65,7 @@
     <ellipse cx="82" cy="82" rx="58" ry="18" transform="rotate(-18 82 82)" fill="none" stroke="url(#orbit)" stroke-width="4.5" stroke-linecap="round"/>
   </g>
   <circle cx="131" cy="61" r="4" fill="#7fe3c6"/>
-  <text x="82" y="174" text-anchor="middle" font-family="URW Gothic" font-weight="600" font-size="26" letter-spacing="0.3" fill="url(#word)">Moon</text>
-  <text x="82" y="200" text-anchor="middle" font-family="URW Gothic" font-weight="600" font-size="26" letter-spacing="0.3" fill="url(#word)">Browser</text>
+  <text x="82" y="194" text-anchor="middle" font-family="URW Gothic" font-weight="600" font-size="36" letter-spacing="0.8" fill="url(#word)">Luma</text>
   <text x="82" y="224" text-anchor="middle" font-family="URW Gothic" font-size="10.5" fill="#d6cffd" fill-opacity="0.72">the web,</text>
   <text x="82" y="238" text-anchor="middle" font-family="URW Gothic" font-size="10.5" fill="#d6cffd" fill-opacity="0.72">calmly under the moon</text>
   <rect x="62" y="258" width="40" height="1" fill="#b9aefb" opacity="0.35"/>

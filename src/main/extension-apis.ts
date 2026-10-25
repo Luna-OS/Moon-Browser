@@ -275,7 +275,7 @@ export class ExtensionApis {
         webauthn.cancel(id, a);
         return undefined;
       default:
-        throw new Error(`${name} isn't available in Moon Browser`);
+        throw new Error(`${name} isn't available in Luma`);
     }
   }
 
@@ -362,7 +362,7 @@ export class ExtensionApis {
         const p = isObj(b) ? b : {};
         if (typeof p.index !== "number") throw new Error("tabGroups.move needs an index");
         if (p.windowId !== undefined && p.windowId !== found.win.win.id)
-          throw new Error("Moving tab groups to another window isn't available in Moon Browser.");
+          throw new Error("Moving tab groups to another window isn't available in Luma.");
         return groupInfo(found.win, found.win.moveGroup(found.group.id, p.index, false));
       }
       case "tabs.group":
@@ -394,7 +394,7 @@ export class ExtensionApis {
       case "native.send":
         return this.nativeSend(id, a, b, host);
       default:
-        throw new Error(`chrome.${name} isn't available in Moon Browser`);
+        throw new Error(`chrome.${name} isn't available in Luma`);
     }
   }
 
@@ -429,8 +429,8 @@ export class ExtensionApis {
     const manifest = this.ses.extensions.getExtension(id)?.manifest as
       { permissions?: unknown; host_permissions?: unknown } | undefined;
     // Only web pages the extension may read anyway (its host permissions):
-    // never Moon Browser's own pages, other extensions, local files or the
-    // Web Store. (activeTab alone isn't enough: Moon Browser doesn't grant
+    // never Luma's own pages, other extensions, local files or the
+    // Web Store. (activeTab alone isn't enough: Luma doesn't grant
     // it per click, so it would mean every page, any time, unasked.)
     const allowed =
       /^https?:/i.test(url) &&
@@ -750,13 +750,13 @@ export class ExtensionApis {
 
   // ---- debugger ----
 
-  /** A tab an extension may debug: a normal web page, never Moon Browser's own pages. */
+  /** A tab an extension may debug: a normal web page, never Luma's own pages. */
   private debuggable(target: unknown): WebContents {
     const tabId = isObj(target) ? num(target.tabId) : undefined;
     const tab = tabId !== undefined ? this.browser.tabFor(tabId) : undefined;
     const wc = tab?.wc;
     if (!tab || !wc || tab.window.isPrivate) throw new Error("No tab with this ID");
-    if (isInternalUrl(wc.getURL())) throw new Error("Cannot access a Moon Browser page");
+    if (isInternalUrl(wc.getURL())) throw new Error("Cannot access a Luma page");
     return wc;
   }
 
@@ -779,7 +779,7 @@ export class ExtensionApis {
         reason === "target closed" ? "target_closed" : "canceled_by_user",
       );
     };
-    // Moon Browser's own pages are never debugged: leaving for one ends it.
+    // Luma's own pages are never debugged: leaving for one ends it.
     const onNavigate = (event: { url: string; isMainFrame: boolean }) => {
       if (event.isMainFrame && isInternalUrl(event.url) && wc.debugger.isAttached())
         wc.debugger.detach();

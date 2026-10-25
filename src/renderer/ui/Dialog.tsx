@@ -1,5 +1,5 @@
 /**
- * Moon Browser's own dialogs (DialogInfo): the questions other browsers ask
+ * Luma's own dialogs (DialogInfo): the questions other browsers ask
  * in the system's message box, asked in the night-sky look over the
  * window. Enter takes the suggested answer, Escape dismisses.
  */

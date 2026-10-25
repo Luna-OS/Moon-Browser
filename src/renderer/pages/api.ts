@@ -40,7 +40,7 @@ export interface NewTabInfo {
   private: boolean;
   /** A browser to offer importing from on a fresh profile. */
   importFrom: string | null;
-  /** Offer to make Moon Browser the default browser. */
+  /** Offer to make Luma the default browser. */
   suggestDefault: boolean;
 }
 

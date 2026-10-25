@@ -1,4 +1,4 @@
-# The tools Moon Browser is built with. Its engine (Electron, with Chromium's
+# The tools Luma is built with. Its engine (Electron, with Chromium's
 # security fixes) is followed by the Security updates workflow instead.
 version: 2
 updates:

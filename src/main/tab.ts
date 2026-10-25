@@ -303,7 +303,7 @@ export class Tab {
 
   /**
    * Continue past a warning after the user chose to: over HTTP for a site
-   * without HTTPS, or to a page Moon Shield blocked. Remembered until the
+   * without HTTPS, or to a page Luma Shield blocked. Remembered until the
    * browser closes.
    */
   proceed(): void {
@@ -495,7 +495,7 @@ export class Tab {
       this.recordVisit();
       this.changed();
     });
-    // Perplexity in Moon's look, with Axo on its search box (Settings → Search).
+    // Perplexity in Luma's look, with Axo on its search box (Settings → Search).
     wc.on("dom-ready", () => {
       if (!browser.settings.perplexityLook || !isPerplexity(wc.getURL())) return;
       void wc.insertCSS(PERPLEXITY_CSS, { cssOrigin: "author" }).catch(() => undefined);
@@ -503,7 +503,7 @@ export class Tab {
         .executeJavaScriptInIsolatedWorld(AXO_WORLD, [{ code: axoScript() }])
         .catch(() => undefined);
     });
-    // YouTube in Moon's look (Settings → Appearance). It is a single-page app,
+    // YouTube in Luma's look (Settings → Appearance). It is a single-page app,
     // so the style stays for every video it then shows.
     wc.on("dom-ready", () => {
       if (!browser.settings.youtubeLook || !isYouTube(wc.getURL())) return;
@@ -649,7 +649,7 @@ export class Tab {
       this.window.removeTab(this);
     });
 
-    // Web pages may not navigate to Moon Browser's own pages.
+    // Web pages may not navigate to Luma's own pages.
     wc.on("will-frame-navigate", (details) => {
       if (!isInternalUrl(details.url)) return;
       let initiator = "";

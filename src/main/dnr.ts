@@ -2,7 +2,7 @@
  * chrome.declarativeNetRequest for the browsing session. Electron takes
  * the API calls but applies no rules; here each extension's rules are kept
  * — static rulesets from its package, dynamic rules in the profile,
- * session rules until Moon Browser quits — and src/main/sessions.ts asks
+ * session rules until Luma quits — and src/main/sessions.ts asks
  * them what to do with every web request.
  */
 import type { Extension } from "electron";
@@ -232,7 +232,7 @@ export class Dnr {
       case "setExtensionActionOptions":
         return undefined;
       default:
-        throw new Error(`chrome.declarativeNetRequest.${method} isn't available in Moon Browser`);
+        throw new Error(`chrome.declarativeNetRequest.${method} isn't available in Luma`);
     }
   }
 

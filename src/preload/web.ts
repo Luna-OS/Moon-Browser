@@ -6,9 +6,9 @@
  *   leaves it empty, and Google's sign-in turns such a browser away.
  * - The Badging API (navigator.setAppBadge) answers as in Chrome for sites
  *   that aren't installed apps — it resolves and does nothing. Electron
- *   would put every site's unread count ("99+") on Moon Browser's taskbar
+ *   would put every site's unread count ("99+") on Luma's taskbar
  *   icon.
- * - alert(), confirm() and prompt() ask in Moon Browser's own dialog over
+ * - alert(), confirm() and prompt() ask in Luma's own dialog over
  *   the tab (page-dialogs.ts), not in the system's message box.
  * - Permissions nobody decided yet read as undecided, as in Chrome
  *   (permissions.ts): Notification.permission "default" and

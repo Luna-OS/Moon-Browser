@@ -1,11 +1,15 @@
-# Moon Browser
+# Luma
 
 > The web, calmly under the moon.
 
-Moon Browser is a private, open-source Chromium browser for Windows, macOS and Linux — in the spirit of
+Luma is a private, open-source Chromium browser for Windows, macOS and Linux — in the spirit of
 [Helium](https://github.com/imputnet/helium): no bloat, no noise, ad and tracker blocking built in,
 and nothing phoning home. It wears the same night-sky design as
 [MoonDisk](https://github.com/Luna-OS/MoonDisk) and [MoonTask](https://github.com/Luna-OS/Moon-Task).
+
+Luma was called **Moon Browser** until version 0.1.35. Copies installed under the old name
+update to Luma by themselves and keep their profile — bookmarks, history, logins, extensions —
+and their place as the default browser.
 
 ![The new tab page: today's moon phase, the time and a search box](docs/screenshots/new-tab.png)
 
@@ -19,7 +23,7 @@ and nothing phoning home. It wears the same night-sky design as
   Brave Search, Kagi, Ecosia, Qwant, Google, Bing or your own engine are one click away.
 - **Bangs** straight from the address bar, like Helium's native bangs: `!w moon` searches
   Wikipedia, `!yt` YouTube, `!gh` GitHub, `!p` Perplexity — 60 of them, resolved locally.
-- **Moon Shield** — ads and trackers blocked with uBlock Origin's filter lists, EasyList,
+- **Luma Shield** — ads and trackers blocked with uBlock Origin's filter lists, EasyList,
   EasyPrivacy and Peter Lowe's list (no "acceptable ads" exceptions), including cosmetic filters
   and scriptlets. Optional cookie-banner and annoyance lists. One click switches it off per site.
 - **Import from Comet** — bookmarks (with their folders, just as they were) and history from
@@ -30,16 +34,16 @@ and nothing phoning home. It wears the same night-sky design as
   puzzle button lists them like Chrome does (*Full access* / *No access needed* on the current
   site), pins them to the toolbar and opens their options. Claude takes screenshots, downloads its
   GIFs and talks to Claude Desktop and Claude Code (native messaging, through the apps registered
-  for Chrome). Before an extension is added, Moon
-  Browser shows what it will be able to do; `moon://extensions` switches them off, removes them
+  for Chrome). Before an extension is added, Luma shows
+  what it will be able to do; `moon://extensions` switches them off, removes them
   and shows their issues (repeats counted once, noise left out), and repairs an extension whose files got damaged.
 - **Developer mode** on `moon://extensions` — load your own extension from a folder (*Load
   unpacked*), reload it after changes, see its ID and errors
-- **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
+- **Updates without reinstalling** — Luma downloads a new version in the background; one
   click on *Update* installs it over the old one and brings your tabs back — on macOS too
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
 - **Signing in to Google works** — Google turns away browsers that look like an app with a
-  browser built in ("This browser or app may not be secure"). Moon Browser gives pages Chrome's
+  browser built in ("This browser or app may not be secure"). Luma gives pages Chrome's
   whole `window.chrome` and says the same Chromium everywhere: in its user agent, its client
   hints and to scripts. "Sign in with Google" on other sites opens Google's pop-up
 - **Tab groups** like Chrome's — right-click a tab → *Add tab to new group*, give the group a
@@ -48,11 +52,11 @@ and nothing phoning home. It wears the same night-sky design as
 - **Continue where you left off** — your tabs and tab groups come back after a restart (switch
   it off under *Settings → Tabs & startup*)
 - **Split view** — two tabs side by side, with a divider to resize
-- **Perplexity in Moon's look** — the night sky and lavender instead of teal, and **Axo**, Moon
+- **Perplexity in Luma's look** — the night sky and lavender instead of teal, and **Axo**, Moon
   Code's pixel axolotl, sitting on the search box: it introduces itself, shows how the search works and
   has tips when you click it (*Settings → Search* switches it off). On an answer, Axo sits beside it
   and says it — the answer becomes its speech bubble — and follows you through the conversation
-- **YouTube in Moon's look** (optional, *Settings → Appearance*) — the night sky on YouTube, a
+- **YouTube in Luma's look** (optional, *Settings → Appearance*) — the night sky on YouTube, a
   glowing moon on the progress bar and a sparkle on the volume slider
 - **Netflix, Disney+, Prime Video and Spotify** play: protected (DRM) content works with
   Google's Widevine module, through castLabs' Electron for Content Security. *Settings → System*
@@ -80,9 +84,9 @@ and nothing phoning home. It wears the same night-sky design as
 
 ## Privacy and security
 
-Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for the details.
+Luma is built to be safe by default. See [SECURITY.md](SECURITY.md) for the details.
 
-- **No telemetry, no accounts, no sync.** Moon Browser only goes online for the pages you open,
+- **No telemetry, no accounts, no sync.** Luma only goes online for the pages you open,
   to refresh its filter lists every few days and to look for a new release on GitHub (every few
   hours; *Settings → Updates* switches it off). Installed extensions are kept up to date from the
   Chrome Web Store. Even Chromium's spell-check dictionaries are not fetched from Google unless
@@ -90,7 +94,7 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
   the like) comes from Google and is kept up to date from there, unless you switch protected
   content off.
 - **HTTPS first** — every site is tried over HTTPS; if a site has no working HTTPS, or sends you
-  back to HTTP, Moon Browser warns before loading it insecurely. Nothing is downgraded silently.
+  back to HTTP, Luma warns before loading it insecurely. Nothing is downgraded silently.
 - **Dangerous pages are stopped** before they load: sites on the malware, scam and tracker lists
   get a warning page instead (like uBlock Origin's strict blocking).
 - **Third-party cookies blocked**, **Global Privacy Control** sent, **tracking parameters**
@@ -107,15 +111,15 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
   until you choose *Keep anyway*. On Windows every download gets the Mark of the Web, so
   SmartScreen checks it; on macOS the quarantine mark, so Gatekeeper checks apps before they
   first open.
-- **Questions in Moon Browser's own dialogs** — adding or removing an extension, its requests
+- **Questions in Luma's own dialogs** — adding or removing an extension, its requests
   for more access, program downloads, *Leave site?* and a page's `alert()`, `confirm()` and
   `prompt()` are asked in the night-sky look over the window, not in the system's message box.
   A page that keeps asking can be stopped (*Don't let this page show more dialogs*).
-- **Sandboxed everything** — every page, Moon Browser's own pages and the browser UI run in
+- **Sandboxed everything** — every page, Luma's own pages and the browser UI run in
   Chromium's sandbox with context isolation; web pages can't reach the internal API or the
   `moon://` pages, and every IPC message is checked for who sent it.
 - **Security updates on their own** — Chromium's security fixes (the ones Chrome and Helium
-  ship) reach Moon Browser through Electron's patch releases. Every six hours a workflow looks
+  ship) reach Luma through Electron's patch releases. Every six hours a workflow looks
   for one, runs every test with it and, if they all pass, releases the next version; your copy
   then updates itself.
 - **Hardened app** — Electron fuses are flipped in the shipped binary: no running as Node.js,
@@ -125,7 +129,7 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
   Bitwarden, 1Password, …) from the Chrome Web Store instead.
 - **Extensions only with your OK** — each one shows its permissions before it is added, only
   comes from the Chrome Web Store, and never runs in private windows.
-- Optional: delete cookies and site data every time Moon Browser closes.
+- Optional: delete cookies and site data every time Luma closes.
 
 ## Keyboard
 
@@ -153,7 +157,7 @@ Moon Browser is built to be safe by default. See [SECURITY.md](SECURITY.md) for 
 On a Mac, `⌘` takes the place of `Ctrl`, and Chrome's Mac keys work: `⌘ [` / `⌘ ]` back and
 forward, `⌘ ⇧ [` / `⌘ ⇧ ]` or `⌘ ⌥ ←` / `⌘ ⌥ →` previous and next tab, `⌘ Y` history,
 `⌥ ⌘ B` bookmarks, `⇧ ⌘ J` downloads, `⌃ ⌘ F` full screen, `⌥ ⌘ I` developer tools, `⌘ Q`
-quit. The menu bar has them all; `⌘ H` hides Moon Browser, as in every Mac app.
+quit. The menu bar has them all; `⌘ H` hides Luma, as in every Mac app.
 
 ## Installation
 
@@ -162,11 +166,11 @@ Installers for **Windows** (`.exe`, x64; runs on ARM64 through Windows' emulatio
 published on the [Releases](https://github.com/Luna-OS/Moon-Browser/releases) page.
 
 - **Windows:** run the installer — it installs for your user account, needs no administrator
-  rights and lets you choose the folder. Moon Browser registers itself as a web browser; *Make
-  default* (new tab page, menu or settings) opens Windows' *Default apps* with Moon Browser
+  rights and lets you choose the folder. Luma registers itself as a web browser; *Make
+  default* (new tab page, menu or settings) opens Windows' *Default apps* with Luma
   preselected.
 - **macOS** (13 Ventura or newer): open the `.dmg` for your Mac — `arm64` for Apple Silicon
-  (M1 and later), `x64` for Intel — and drag Moon Browser into *Applications*. *Make default*
+  (M1 and later), `x64` for Intel — and drag Luma into *Applications*. *Make default*
   asks macOS, which then asks you to confirm.
 - **Linux:** install the `.deb` or `.rpm`, or make the `.AppImage` executable and start it.
   On Ubuntu 24.04 and newer, prefer the `.deb`: it sets up Chromium's sandbox helper, which the
@@ -178,16 +182,16 @@ and not notarized by Apple, so macOS refuses the first start ("Apple could not v
 
 - macOS 15 Sequoia and newer: try to open it once, then *System Settings → Privacy & Security →
   Open Anyway*.
-- macOS 14 and older: right-click Moon Browser in *Applications* → *Open* → *Open*.
-- Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/Moon Browser.app"`
+- macOS 14 and older: right-click Luma in *Applications* → *Open* → *Open*.
+- Or, in Terminal: `xattr -dr com.apple.quarantine "/Applications/Luma.app"`
 
 macOS asks only once. Cookies are encrypted with a key in your Keychain; after an update macOS
-may ask once more whether Moon Browser may use it (*Always Allow*).
+may ask once more whether Luma may use it (*Always Allow*).
 
 ### Updates
 
-Moon Browser looks for a new release every few hours and downloads it in the background. When
-it is ready, an **Update** button appears next to the menu: click it and Moon Browser restarts
+Luma looks for a new release every few hours and downloads it in the background. When
+it is ready, an **Update** button appears next to the menu: click it and Luma restarts
 into the new version with your tabs. Nothing has to be uninstalled, and your profile —
 bookmarks, history, settings, extensions — stays where it is. *Settings → Updates* shows the
 state and has a *Check now* button.
@@ -197,11 +201,21 @@ state and has a *Check now* button.
 - **.deb / .rpm:** the package is installed with your system's package tool, which asks for your
   password — so only when you click *Update*.
 - **macOS:** the Mac builds aren't signed with an Apple Developer ID, so macOS's own updater won't
-  install over them; Moon Browser does it itself. It downloads the zip for your Mac, checks it
+  install over them; Luma does it itself. It downloads the zip for your Mac, checks it
   against the SHA-512 the release lists, checks the new app's signature, bundle ID and version,
-  and swaps it in for the old one when you click *Update* (or when you quit). This needs Moon
-  Browser in a folder you can write to — *Applications* is fine. Started from the disk image,
+  and swaps it in for the old one when you click *Update* (or when you quit). This needs Luma in
+  a folder you can write to — *Applications* is fine. Started from the disk image,
   *Update* opens the release's download page instead.
+
+  Copies older than 0.1.35 (still called Moon Browser) can't do that yet. To bring one up to date
+  in place — no uninstalling, everything stays — paste this into *Terminal*:
+
+  ```sh
+  curl -fsSL https://github.com/Luna-OS/Moon-Browser/releases/latest/download/update-mac.sh | bash
+  ```
+
+  It ([scripts/update-mac.sh](scripts/update-mac.sh)) makes the same checks, quits the browser,
+  swaps in the new app as *Luma* and opens it again.
 
 Running the installer of a newer version by hand works too: it updates in place.
 
@@ -209,13 +223,13 @@ Running the installer of a newer version by hand works too: it updates in place.
 
 1. Open *Menu → Extensions* and click **Chrome Web Store** (or go straight to
    [NordPass in the Chrome Web Store](https://chromewebstore.google.com/detail/eiaeiblijfjekdanodkjadfinkhbfgcd)).
-2. Click **Add to Moon Browser** and confirm what the extension may do.
+2. Click **Add to Luma** and confirm what the extension may do.
 3. The NordPass button appears in the toolbar: sign in there. Autofill, saved logins and the
    2FA codes of NordPass Authenticator all live in the extension.
 4. On Windows, NordPass can use **Windows Hello** (fingerprint, face or PIN) to unlock and for
-   NordPass Authenticator: Moon Browser passes the extension's request to Windows' own
+   NordPass Authenticator: Luma passes the extension's request to Windows' own
    WebAuthn dialog, laid out exactly as Chrome lays it out. Should Windows refuse it at once,
-   Moon Browser tries again from the page's own window and with the older layout, and
+   Luma tries again from the page's own window and with the older layout, and
    `moon://extensions` lists what Windows said to each try.
 
 Extensions get the Chrome APIs password managers rely on — storage, alarms, idle, tabs, windows,
@@ -232,13 +246,13 @@ developer mode, where they can help.
 Open *Settings → Import* (the new tab page offers it on a fresh profile too), pick Comet and
 import your bookmarks and history. The bookmarks keep their folders, and the bookmarks bar
 switches on to show them. If Comet isn't found automatically, *Choose folder…* and
-point Moon Browser at Comet's profile folder (on Windows usually
+point Luma at Comet's profile folder (on Windows usually
 `%LOCALAPPDATA%\Perplexity\Comet\User Data\Default`). Passwords stay out on purpose: export them
 from Comet into a password manager.
 
 ## How it compares to Helium
 
-Helium is a patched Chromium (on top of ungoogled-chromium). Moon Browser takes Helium's ideas —
+Helium is a patched Chromium (on top of ungoogled-chromium). Luma takes Helium's ideas —
 unbiased blocking, bangs, a quiet interface, privacy by default, split view, extensions from the
 Chrome Web Store — and builds them on [Electron](https://www.electronjs.org), which ships the
 same Chromium engine and security fixes but can be built on an ordinary machine in minutes
@@ -252,7 +266,7 @@ blocker, is built in.
 
 ```sh
 npm install
-npm run dev              # build and start Moon Browser
+npm run dev              # build and start Luma
 npm test                 # unit tests (address bar, bangs, settings, import, security rules, …)
 npm run lint && npm run typecheck && npm run format:check
 npm run test:e2e         # drives the real browser, with a test extension (needs a display)
@@ -265,7 +279,7 @@ Set `MOON_BROWSER_PROFILE=/some/folder` to start with a separate profile.
 
 ```
 src/
-  main/       the browser: windows, tabs, the request pipeline (HTTPS first, Moon Shield,
+  main/       the browser: windows, tabs, the request pipeline (HTTPS first, Luma Shield,
               cookies), permissions, downloads, import, extensions, updates, the moon://
               protocol, IPC
   preload/    the small APIs the browser UI and the internal pages get — nothing else
@@ -295,6 +309,6 @@ and electron-chrome-web-store (MIT) for Chrome extensions;
 
 ## License
 
-Moon Browser is free software: you can redistribute it and/or modify it under the terms of the
+Luma is free software: you can redistribute it and/or modify it under the terms of the
 [GNU General Public License](LICENSE), version 3 or (at your option) any later version.
-Copyright © 2026 Luna. The filter lists Moon Browser downloads keep their own licenses.
+Copyright © 2026 Luna. The filter lists Luma downloads keep their own licenses.

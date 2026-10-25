@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { axoScript } from "./axo";
 import { isPerplexity, PERPLEXITY_CSS } from "./theme";
 
-describe("Perplexity in Moon's look", () => {
+describe("Perplexity in Luma's look", () => {
   it("is only for Perplexity, over HTTPS", () => {
     expect(isPerplexity("https://www.perplexity.ai/")).toBe(true);
     expect(isPerplexity("https://perplexity.ai/search/abc")).toBe(true);
