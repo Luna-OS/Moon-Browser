@@ -1,14 +1,18 @@
 /**
  * The main-process side of src/preload/extension-apis.ts: chrome.sidePanel,
  * chrome.identity, chrome.search, chrome.debugger, chrome.downloads,
- * tabs.captureVisibleTab and native messaging for extensions.
+ * chrome.permissions, tabs.captureVisibleTab, native messaging and the
+ * clipboard (document.execCommand "copy" and "paste") for extensions.
  *
  * The calling extension is always taken from where the call comes from —
  * the origin of the frame or the scope of the service worker — never from
  * the message, and each API needs the permission its manifest declares.
  */
 import {
+  app,
   BrowserWindow,
+  clipboard,
+  ClipboardItem,
   ipcMain,
   webContents,
   type DownloadItem,
@@ -18,6 +22,8 @@ import {
   type Session,
   type WebContents,
 } from "electron";
+import { randomUUID } from "node:crypto";
+import { clipboardCommands, declaresClipboard } from "@shared/clipboard-commands";
 import { searchUrl } from "@shared/engines";
 import { hasSiteAccess } from "@shared/extensions";
 import { safeFilename } from "@shared/security";
@@ -36,6 +42,7 @@ export function groupInfo(win: MoonWindow, group: TabGroupInfo) {
 const CALL = "moon-ext:call";
 const EVENT = "moon-ext:event";
 const SUBSCRIBE = "moon-ext:subscribe";
+const CLIPBOARD = "moon-ext:clipboard";
 
 /** The permission each API needs. */
 const PERMISSION: Record<string, string> = {
@@ -51,7 +58,15 @@ const PERMISSION: Record<string, string> = {
   proxy: "proxy",
   downloads: "downloads",
   native: "nativeMessaging",
+  // Needs none: what an extension may ask for is checked there.
+  permissions: "",
 };
+
+/** The most an extension may put on the clipboard at once. */
+const MAX_CLIPBOARD = 16 * 1024 * 1024;
+/** How long after copying an offscreen document sees the clipboard, and how fresh. */
+const MIRROR_TIME = 10 * 60_000;
+const MIRROR_INTERVAL = 1000;
 
 /** How long runtime.sendNativeMessage waits for the host's answer. */
 const SEND_TIMEOUT = 5 * 60_000;
@@ -107,6 +122,13 @@ export class ExtensionApis {
   private nextDownloadId = 1;
   /** Native messaging ports: port ID → the host process and who opened it. */
   private readonly ports = new Map<string, { id: string; host: Host; port: NativePort }>();
+  /** The secret that marks copied text in an offscreen document's console messages. */
+  private readonly copyTokens = new WeakMap<WebContents, string>();
+  /** Offscreen documents whose clipboard copy is kept current (see offscreenClipboard). */
+  private readonly mirrors = new Map<
+    WebContents,
+    { until: number; last: string | null; timer: NodeJS.Timeout }
+  >();
   private sends = 0;
 
   constructor(
@@ -126,6 +148,36 @@ export class ExtensionApis {
       const id = this.frameExtension(event);
       if (id && typeof name === "string")
         this.subscribe(id, name, { kind: "frame", wc: event.sender });
+    });
+    // document.execCommand("copy" / "paste") in extension pages (the preload
+    // asks only where Chromium refused): with clipboardWrite or clipboardRead.
+    ipcMain.on(CLIPBOARD, (event, op: unknown, text: unknown, html: unknown) => {
+      // The page waits for the answer.
+      const answer = (value: boolean | string | null) => {
+        try {
+          event.returnValue = value;
+        } catch {
+          // The page is gone.
+        }
+      };
+      const id = this.frameExtension(event);
+      const ext = this.browser.extensions;
+      if (id && op === "write" && ext.declares(id, "clipboardWrite"))
+        void this.writeClipboard(text, html).then(answer);
+      else if (id && op === "read" && ext.declares(id, "clipboardRead"))
+        clipboard.readText().then(answer, () => answer(null));
+      else answer(op === "write" ? false : null);
+    });
+    // Offscreen documents (chrome.offscreen) are pages Chromium makes by
+    // itself ("remote" ones): no preload runs in them, so copying is put in
+    // from here and comes back as a console message carrying a secret
+    // token. NordPass copies passwords in one.
+    app.on("web-contents-created", (_event, wc) => {
+      if (wc.session !== this.ses || wc.getType() !== "remote") return;
+      wc.on("dom-ready", () => this.offscreenClipboard(wc));
+      wc.on("console-message", (details) => this.offscreenCopied(wc, details.message));
+      // Luma may only hear of it once its page is there.
+      this.offscreenClipboard(wc);
     });
     // Service workers talk through their own IPC; hook each extension worker
     // as it starts (before its script runs).
@@ -179,6 +231,100 @@ export class ExtensionApis {
           });
       });
     });
+  }
+
+  /** Puts an extension's text on the clipboard; false if it is too much or fails. */
+  private writeClipboard(text: unknown, html: unknown): Promise<boolean> {
+    const plain = typeof text === "string" ? text : "";
+    const rich = typeof html === "string" ? html : "";
+    if (plain.length + rich.length > MAX_CLIPBOARD) return Promise.resolve(false);
+    const data: Record<string, string> = { "text/plain": plain };
+    if (rich) data["text/html"] = rich;
+    return clipboard.write([new ClipboardItem(data)]).then(
+      () => true,
+      () => false,
+    );
+  }
+
+  /**
+   * Copying and pasting in an offscreen document (see install). Nothing
+   * there can wait for the main process, so pasting sees a copy of the
+   * clipboard, kept current for a while after the extension copied: what
+   * NordPass reads to see whether its copied password is still there before
+   * it clears the clipboard. Otherwise pasting stays refused.
+   */
+  private offscreenClipboard(wc: WebContents): void {
+    const id = extensionIdOf(wc.getURL());
+    const manifest = (id ? this.ses.extensions.getExtension(id)?.manifest : undefined) as
+      object | undefined;
+    if (!manifest || !declaresClipboard(manifest)) return;
+    let token = this.copyTokens.get(wc);
+    if (!token) this.copyTokens.set(wc, (token = `moon-copy:${randomUUID()}:`));
+    const key = JSON.stringify(token);
+    wc.executeJavaScript(
+      `{
+        const log = console.debug.bind(console);
+        let clipboard = null;
+        Object.defineProperty(globalThis, ${key}, { value: (text) => { clipboard = text; }, configurable: true });
+        (${clipboardCommands.toString()})(
+          (text, html) => (log(${key} + JSON.stringify([text, html])), true),
+          () => clipboard,
+        );
+      }`,
+    ).catch(() => undefined);
+  }
+
+  private offscreenCopied(wc: WebContents, message: string): void {
+    const token = this.copyTokens.get(wc);
+    if (!token || !message.startsWith(token)) return;
+    const id = extensionIdOf(wc.getURL());
+    if (!id || !this.browser.extensions.declares(id, "clipboardWrite")) return;
+    let copied: unknown;
+    try {
+      copied = JSON.parse(message.slice(token.length));
+    } catch {
+      return;
+    }
+    if (Array.isArray(copied))
+      void this.writeClipboard(copied[0], copied[1]).then(() => this.mirrorClipboard(wc, id));
+  }
+
+  /** Keeps the clipboard copy of an offscreen document current, for a while. */
+  private mirrorClipboard(wc: WebContents, id: string): void {
+    const token = this.copyTokens.get(wc);
+    if (!token) return;
+    const running = this.mirrors.get(wc);
+    if (running) {
+      running.until = Date.now() + MIRROR_TIME;
+      return;
+    }
+    const show = (text: string | null) => {
+      if (text === mirror.last || wc.isDestroyed()) return;
+      mirror.last = text;
+      wc.executeJavaScript(`globalThis[${JSON.stringify(token)}]?.(${JSON.stringify(text)})`).catch(
+        () => undefined,
+      );
+    };
+    const tick = () => {
+      if (
+        wc.isDestroyed() ||
+        Date.now() > mirror.until ||
+        !this.browser.extensions.declares(id, "clipboardRead")
+      ) {
+        clearInterval(mirror.timer);
+        this.mirrors.delete(wc);
+        show(null);
+        return;
+      }
+      clipboard.readText().then(show, () => undefined);
+    };
+    const mirror = {
+      until: Date.now() + MIRROR_TIME,
+      last: null as string | null,
+      timer: setInterval(tick, MIRROR_INTERVAL),
+    };
+    this.mirrors.set(wc, mirror);
+    tick();
   }
 
   /** An extension was switched off or removed: the apps it talks to end. */
@@ -328,6 +474,14 @@ export class ExtensionApis {
       }
       case "identity.launchWebAuthFlow":
         return this.webAuthFlow(id, a);
+      case "permissions.request":
+        return ext.requestPermissions(id, a);
+      case "permissions.contains":
+        return ext.containsPermissions(id, a);
+      case "permissions.getAll":
+        return ext.heldPermissions(id);
+      case "permissions.remove":
+        return ext.removePermissions(id, a);
       case "search.query":
         return this.search(a);
       case "debugger.attach":

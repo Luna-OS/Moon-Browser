@@ -43,13 +43,20 @@ import {
   EXTENSIONS_PARTITION,
   extensionPageUrl,
   hasSiteAccess,
+  isEmptyPermissionSet,
   listsError,
   localize,
+  missingPermissions,
+  optionalPermissions,
   optionsPage,
+  parsePermissionSet,
   pickIcon,
+  requiredPermissions,
   sidePanelPage,
+  unitePermissions,
   unsupportedFeatures,
   type ManifestLike,
+  type PermissionSet,
 } from "@shared/extensions";
 import { internalUrl, NEWTAB_URL } from "@shared/internal";
 import type { TabGroupInfo } from "@shared/tab-groups";
@@ -75,6 +82,8 @@ interface PanelOptions {
  */
 interface PopupView {
   browserWindow?: BrowserWindow;
+  /** Closes the pop-up if another of the app's windows has the focus (on blur). */
+  maybeClose?: () => void;
   destroy(): void;
   isDestroyed(): boolean;
   whenReady(): Promise<void>;
@@ -147,6 +156,9 @@ export class Extensions {
   private readonly icons = new Map<string, string | null>();
   /** The extension whose toolbar pop-up is open. */
   private popupExtension: string | null = null;
+  private popupWindow: BrowserWindow | null = null;
+  /** Extensions asking for more access right now: the question, answered with yes or no. */
+  private readonly asking = new Map<string, Promise<boolean>>();
   /** Extensions loaded while Luma starts get runtime.onStartup. */
   private starting = true;
   /** Unpacked extensions being reloaded: loading them again is an update. */
@@ -215,28 +227,9 @@ export class Extensions {
           details.groupId = tab.groupId ?? -1;
         }
       },
-      requestPermissions: async (extension, request) => {
-        const wanted = describePermissions({
-          permissions: request.permissions ?? [],
-          host_permissions: request.origins ?? [],
-        });
-        if (!wanted.length) return true;
-        const response = await browser.ask({
-          tone: "calm",
-          glyph: "permission",
-          image: this.largeIconOf(extension),
-          eyebrow: "Extension permissions",
-          title: `“${extension.name}” asks for more access`,
-          list: { label: "It could then", items: wanted },
-          buttons: [
-            { label: "Deny", style: "secondary" },
-            { label: "Allow", style: "primary" },
-          ],
-          defaultId: 0,
-          cancelId: 0,
-        });
-        return response === 1;
-      },
+      // Where the library's chrome.permissions is in place of Luma's own
+      // (src/preload/extension-apis.ts), it asks the same way.
+      requestPermissions: (extension, request) => this.requestPermissions(extension.id, request),
     });
 
     // The APIs the library lacks (side panel, identity, …), in extension
@@ -514,9 +507,11 @@ export class Extensions {
     const win = popup.browserWindow;
     if (!win) return;
     this.popupExtension = popup.extensionId;
+    this.popupWindow = win;
     this.changed();
     win.once("closed", () => {
       if (this.popupExtension === popup.extensionId) this.popupExtension = null;
+      if (this.popupWindow === win) this.popupWindow = null;
       this.changed();
     });
     win.webContents.setWindowOpenHandler(({ url }) => {
@@ -529,9 +524,19 @@ export class Extensions {
     // The library closes the pop-up when it loses the focus to another of
     // Luma's windows, but asks too early: the other window isn't
     // focused yet then. So: closed when another window gets the focus.
+    // While the extension asks for more access (its question is in the
+    // main window), the pop-up stays: it waits for the answer.
     const closeOnFocus = (_event: unknown, focused: BrowserWindow) => {
-      if (focused !== win && !popup.isDestroyed()) popup.destroy();
+      if (focused !== win && !popup.isDestroyed() && !this.asking.has(popup.extensionId))
+        popup.destroy();
     };
+    const { maybeClose } = popup;
+    if (typeof maybeClose === "function") {
+      win.off("blur", maybeClose);
+      win.on("blur", () => {
+        if (!this.asking.has(popup.extensionId)) maybeClose();
+      });
+    }
     app.on("browser-window-focus", closeOnFocus);
     win.once("closed", () => app.off("browser-window-focus", closeOnFocus));
     void popup.whenReady().then(async () => {
@@ -707,8 +712,9 @@ export class Extensions {
     this.dnr.forget(id);
     this.proxy.forget(id);
     const prefs = this.prefs();
-    if (prefs.versions[id]) {
+    if (prefs.versions[id] || prefs.granted[id]) {
       delete prefs.versions[id];
+      delete prefs.granted[id];
       this.browser.profile.extensions.changed();
     }
     this.setDisabled(id, false);
@@ -943,10 +949,131 @@ export class Extensions {
     return !!this.unpackedEntry(id);
   }
 
+  /** Whether an extension holds an API permission: from its manifest, or allowed later. */
   declares(id: string, permission: string): boolean {
+    return this.heldPermissions(id).permissions.includes(permission);
+  }
+
+  // ---- chrome.permissions ----
+
+  /** The optional permissions people allowed an extension, as far as it still declares them. */
+  private grantedPermissions(id: string, manifest: ManifestLike): PermissionSet {
+    const granted = this.prefs().granted[id];
+    if (!granted) return { permissions: [], origins: [] };
+    // An update may have dropped some from the manifest: those are gone.
+    const dropped = missingPermissions(optionalPermissions(manifest), granted);
+    return {
+      permissions: granted.permissions.filter((p) => !dropped.permissions.includes(p)),
+      origins: granted.origins.filter((o) => !dropped.origins.includes(o)),
+    };
+  }
+
+  /** What an extension may use: its manifest's permissions and sites, and those allowed later. */
+  heldPermissions(id: string): PermissionSet {
+    const manifest = this.session?.extensions.getExtension(id)?.manifest as
+      ManifestLike | undefined;
+    if (!manifest) return { permissions: [], origins: [] };
+    return unitePermissions(requiredPermissions(manifest), this.grantedPermissions(id, manifest));
+  }
+
+  /**
+   * chrome.permissions.request. What the extension holds already is granted
+   * at once, as in Chrome (NordPass asks before every copy); anything new is
+   * asked for, one question per extension at a time. What people allow is
+   * kept until the extension gives it up or is removed.
+   */
+  async requestPermissions(id: string, raw: unknown): Promise<boolean> {
     const ext = this.session?.extensions.getExtension(id);
-    const permissions = (ext?.manifest as { permissions?: unknown } | undefined)?.permissions;
-    return Array.isArray(permissions) && permissions.includes(permission);
+    if (!ext) return false;
+    const manifest = ext.manifest as ManifestLike;
+    const request = parsePermissionSet(raw);
+    const declared = unitePermissions(requiredPermissions(manifest), optionalPermissions(manifest));
+    if (!isEmptyPermissionSet(missingPermissions(declared, request)))
+      throw new Error("Only permissions specified in the manifest may be requested.");
+    for (let open = this.asking.get(id); open; open = this.asking.get(id))
+      await open.catch(() => false);
+    const wanted = missingPermissions(this.heldPermissions(id), request);
+    if (isEmptyPermissionSet(wanted)) return true;
+    const lines = describePermissions({
+      permissions: wanted.permissions,
+      host_permissions: wanted.origins,
+    });
+    // Permissions without a warning are granted without a question, as in Chrome.
+    const question = lines.length ? this.askForPermissions(ext, lines) : Promise.resolve(true);
+    this.asking.set(id, question);
+    let allowed = false;
+    try {
+      allowed = await question;
+    } finally {
+      this.asking.delete(id);
+      // The pop-up that asked waited for the answer; it has the focus again.
+      const popup = this.popupWindow;
+      if (this.popupExtension === id && popup && !popup.isDestroyed()) popup.focus();
+    }
+    if (!allowed || !this.session?.extensions.getExtension(id)) return false;
+    const prefs = this.prefs();
+    prefs.granted[id] = unitePermissions(
+      prefs.granted[id] ?? { permissions: [], origins: [] },
+      wanted,
+    );
+    this.browser.profile.extensions.changed();
+    this.apis?.emit(id, "permissions.onAdded", wanted);
+    return true;
+  }
+
+  private async askForPermissions(ext: Extension, lines: string[]): Promise<boolean> {
+    const response = await this.browser.ask({
+      tone: "calm",
+      glyph: "permission",
+      image: this.largeIconOf(ext),
+      eyebrow: "Extension permissions",
+      title: `“${ext.name}” asks for more access`,
+      list: { label: "It could then", items: lines },
+      buttons: [
+        { label: "Deny", style: "secondary" },
+        { label: "Allow", style: "primary" },
+      ],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    return response === 1;
+  }
+
+  /** chrome.permissions.contains. */
+  containsPermissions(id: string, raw: unknown): boolean {
+    const held = this.heldPermissions(id);
+    return isEmptyPermissionSet(missingPermissions(held, parsePermissionSet(raw)));
+  }
+
+  /** chrome.permissions.remove: of the optional ones, as in Chrome. */
+  removePermissions(id: string, raw: unknown): boolean {
+    const manifest = this.session?.extensions.getExtension(id)?.manifest as
+      ManifestLike | undefined;
+    if (!manifest) return false;
+    const request = parsePermissionSet(raw);
+    const required = requiredPermissions(manifest);
+    if (
+      request.permissions.some((p) => required.permissions.includes(p)) ||
+      request.origins.some((o) => required.origins.includes(o))
+    )
+      throw new Error("You cannot remove required permissions.");
+    const prefs = this.prefs();
+    const granted = prefs.granted[id];
+    if (!granted) return true;
+    const removed = {
+      permissions: granted.permissions.filter((p) => request.permissions.includes(p)),
+      origins: granted.origins.filter((o) => request.origins.includes(o)),
+    };
+    if (isEmptyPermissionSet(removed)) return true;
+    const left = {
+      permissions: granted.permissions.filter((p) => !removed.permissions.includes(p)),
+      origins: granted.origins.filter((o) => !removed.origins.includes(o)),
+    };
+    if (isEmptyPermissionSet(left)) delete prefs.granted[id];
+    else prefs.granted[id] = left;
+    this.browser.profile.extensions.changed();
+    this.apis?.emit(id, "permissions.onRemoved", removed);
+    return true;
   }
 
   // ---- Toolbar and extensions menu ----
@@ -1131,6 +1258,7 @@ export class Extensions {
       developerMode: this.developerMode(),
       unpacked: !!this.unpackedEntry(id),
       onWebPage: where.onWebPage,
+      source: where.source,
     });
     if (!listed) return;
     const message = text.length > 1000 ? `${text.slice(0, 999)}…` : text;

@@ -157,6 +157,24 @@ await copyFile(
       'sendNativeMessage: invokeExtension2("runtime.sendNativeMessage")\n',
       'sendNativeMessage: invokeExtension2("runtime.sendNativeMessage"),\n              ...(base?.connectNative?.moonNative ? { connectNative: base.connectNative, sendNativeMessage: base.sendNativeMessage } : {})\n',
     ],
+    // chrome.permissions: Luma's own asks once and keeps the answer
+    // (src/main/extensions.ts); it wins over the library's.
+    [
+      `contains: invokeExtension2("permissions.contains"),
+              getAll: invokeExtension2("permissions.getAll"),
+              remove: invokeExtension2("permissions.remove"),
+              request: invokeExtension2("permissions.request"),
+              onAdded: new ExtensionEvent("permissions.onAdded"),
+              onRemoved: new ExtensionEvent("permissions.onRemoved")`,
+      `...(base?.request?.moonPermissions ? {} : {
+                contains: invokeExtension2("permissions.contains"),
+                getAll: invokeExtension2("permissions.getAll"),
+                remove: invokeExtension2("permissions.remove"),
+                request: invokeExtension2("permissions.request"),
+                onAdded: new ExtensionEvent("permissions.onAdded"),
+                onRemoved: new ExtensionEvent("permissions.onRemoved")
+              })`,
+    ],
     [
       "webRTCIPHandlingPolicy: new ChromeSetting()",
       'webRTCIPHandlingPolicy: new ChromeSetting("default_public_interface_only")',

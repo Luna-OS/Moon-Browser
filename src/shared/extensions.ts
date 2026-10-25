@@ -26,6 +26,7 @@ export interface ManifestLike {
   permissions?: unknown;
   optional_permissions?: unknown;
   host_permissions?: unknown;
+  optional_host_permissions?: unknown;
   content_scripts?: unknown;
   icons?: unknown;
   options_page?: unknown;
@@ -235,11 +236,14 @@ const NETWORK_NOISE = [
  *   page asked for something of the extension (sites look for extensions
  *   that way), which isn't the extension's error. Errors of its content
  *   scripts there still are.
+ * - Nor do Electron's own (`source` in node:electron/…): in an offscreen
+ *   document it tries the browser's preloads, which can't run there.
  */
 export function listsError(
   message: string,
-  extension: { developerMode: boolean; unpacked: boolean; onWebPage?: boolean },
+  extension: { developerMode: boolean; unpacked: boolean; onWebPage?: boolean; source?: string },
 ): boolean {
+  if (extension.source?.startsWith("node:electron/")) return false;
   const failedLoad = message.startsWith("Failed to load resource");
   if (failedLoad && (extension.onWebPage || NETWORK_NOISE.some((n) => message.includes(n))))
     return false;
@@ -310,3 +314,86 @@ export function hasSiteAccess(manifest: ManifestLike, url: string): boolean {
   ];
   return patterns.some((p) => matchesPattern(p, url));
 }
+
+/** API permissions and sites, as chrome.permissions names them. */
+export interface PermissionSet {
+  permissions: string[];
+  origins: string[];
+}
+
+const isHostPattern = (p: string) => p.includes("://") || p === "<all_urls>";
+
+/** What a chrome.permissions call names: lists of strings, or an error, as in Chrome. */
+export function parsePermissionSet(raw: unknown): PermissionSet {
+  if (!raw || typeof raw !== "object") throw new Error("Invalid permissions.");
+  const list = (v: unknown): string[] => {
+    if (v === undefined) return [];
+    if (!Array.isArray(v) || v.some((x) => typeof x !== "string" || x.length > 512))
+      throw new Error("Invalid permissions.");
+    return [...new Set(v as string[])].slice(0, 200);
+  };
+  const { permissions, origins } = raw as { permissions?: unknown; origins?: unknown };
+  return { permissions: list(permissions), origins: list(origins) };
+}
+
+/** What an extension holds from the start: the manifest's permissions and sites. */
+export function requiredPermissions(manifest: ManifestLike): PermissionSet {
+  const permissions = strings(manifest.permissions);
+  return {
+    permissions: permissions.filter((p) => !isHostPattern(p)),
+    // Manifest V2 put host patterns among the permissions.
+    origins: [...strings(manifest.host_permissions), ...permissions.filter(isHostPattern)],
+  };
+}
+
+/** What an extension may ask for later (chrome.permissions.request). */
+export function optionalPermissions(manifest: ManifestLike): PermissionSet {
+  const permissions = strings(manifest.optional_permissions);
+  return {
+    permissions: permissions.filter((p) => !isHostPattern(p)),
+    origins: [...strings(manifest.optional_host_permissions), ...permissions.filter(isHostPattern)],
+  };
+}
+
+const PATTERN = /^(\*|https?|wss?|file|ftp):\/\/([^/]*)(\/.*)$/;
+
+/** Whether the match pattern `outer` covers every address `inner` covers. */
+export function coversPattern(outer: string, inner: string): boolean {
+  if (outer === "<all_urls>") return inner === "<all_urls>" || PATTERN.test(inner);
+  const o = PATTERN.exec(outer);
+  const i = PATTERN.exec(inner);
+  if (!o || !i) return false;
+  const [, oScheme, oHost, oPath] = o;
+  const [, iScheme, iHost, iPath] = i;
+  if (oScheme === "*" ? !["*", "http", "https"].includes(iScheme) : oScheme !== iScheme)
+    return false;
+  const outerHost = oHost.toLowerCase();
+  const innerHost = iHost.toLowerCase();
+  if (outerHost !== "*" && outerHost !== innerHost) {
+    if (!outerHost.startsWith("*.")) return false;
+    const base = outerHost.slice(2);
+    const host = innerHost.replace(/^\*\./, "");
+    if (host !== base && !host.endsWith(`.${base}`)) return false;
+  }
+  const glob = new RegExp(`^${oPath.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
+  return glob.test(iPath);
+}
+
+/** The part of `request` that `held` doesn't include. */
+export function missingPermissions(held: PermissionSet, request: PermissionSet): PermissionSet {
+  return {
+    permissions: request.permissions.filter((p) => !held.permissions.includes(p)),
+    origins: request.origins.filter((o) => !held.origins.some((h) => coversPattern(h, o))),
+  };
+}
+
+/** Both sets together. */
+export function unitePermissions(a: PermissionSet, b: PermissionSet): PermissionSet {
+  return {
+    permissions: [...new Set([...a.permissions, ...b.permissions])],
+    origins: [...new Set([...a.origins, ...b.origins])],
+  };
+}
+
+export const isEmptyPermissionSet = (set: PermissionSet) =>
+  set.permissions.length === 0 && set.origins.length === 0;

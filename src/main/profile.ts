@@ -12,6 +12,7 @@ import {
   removeNode,
   repairTree,
 } from "@shared/bookmarks";
+import type { PermissionSet } from "@shared/extensions";
 import type { ImportedNode } from "@shared/import";
 import { sanitizeSettings } from "@shared/settings";
 import type {
@@ -36,6 +37,8 @@ export interface ExtensionPrefs {
   versions: Record<string, string>;
   /** The proxy an extension set through chrome.proxy (checked again before use). */
   proxy?: { id: string; value: unknown };
+  /** Optional permissions people allowed (chrome.permissions.request), by extension. */
+  granted: Record<string, PermissionSet>;
 }
 
 export interface UnpackedExtension {
@@ -49,6 +52,19 @@ function parseVersions(raw: unknown): Record<string, string> {
   for (const [id, version] of Object.entries(raw).slice(0, 1000))
     if (/^[a-p]{32}$/.test(id) && typeof version === "string" && version.length <= 64)
       out[id] = version;
+  return out;
+}
+
+function parseGranted(raw: unknown): Record<string, PermissionSet> {
+  const out: Record<string, PermissionSet> = {};
+  if (!isObj(raw)) return out;
+  const list = (v: unknown) =>
+    Array.isArray(v)
+      ? v.filter((s): s is string => typeof s === "string" && s.length <= 512).slice(0, 200)
+      : [];
+  for (const [id, set] of Object.entries(raw).slice(0, 1000))
+    if (/^[a-p]{32}$/.test(id) && isObj(set))
+      out[id] = { permissions: list(set.permissions), origins: list(set.origins) };
   return out;
 }
 
@@ -298,6 +314,7 @@ export class Profile {
       developerMode: isObj(raw) && raw.developerMode === true,
       unpacked: parseUnpacked(isObj(raw) ? raw.unpacked : null),
       versions: parseVersions(isObj(raw) ? raw.versions : null),
+      granted: parseGranted(isObj(raw) ? raw.granted : null),
       ...(isObj(raw) &&
       isObj(raw.proxy) &&
       typeof raw.proxy.id === "string" &&

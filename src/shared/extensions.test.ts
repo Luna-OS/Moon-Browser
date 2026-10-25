@@ -7,8 +7,13 @@ import {
   extensionPageUrl,
   hasSiteAccess,
   isMessagingNoise,
+  coversPattern,
   listsError,
   matchesPattern,
+  missingPermissions,
+  optionalPermissions,
+  parsePermissionSet,
+  requiredPermissions,
   sidePanelPage,
   localize,
   optionsPage,
@@ -62,6 +67,61 @@ describe("extension errors", () => {
     expect(listsError(noise, { developerMode: true, unpacked: true })).toBe(true);
     // Real errors always.
     expect(listsError(real, { developerMode: false, unpacked: false })).toBe(true);
+  });
+
+  it("tells what an extension holds and what it may still ask for", () => {
+    // NordPass: clipboard access is optional, asked for before copying.
+    const manifest = {
+      permissions: ["storage", "tabs"],
+      optional_permissions: ["clipboardRead", "clipboardWrite"],
+      host_permissions: ["http://*/*", "https://*/*"],
+      optional_host_permissions: ["https://*.example.com/*"],
+    };
+    const held = requiredPermissions(manifest);
+    expect(held).toEqual({
+      permissions: ["storage", "tabs"],
+      origins: ["http://*/*", "https://*/*"],
+    });
+    expect(optionalPermissions(manifest)).toEqual({
+      permissions: ["clipboardRead", "clipboardWrite"],
+      origins: ["https://*.example.com/*"],
+    });
+    // Manifest V2 put sites among the permissions.
+    expect(requiredPermissions({ permissions: ["storage", "<all_urls>"] })).toEqual({
+      permissions: ["storage"],
+      origins: ["<all_urls>"],
+    });
+    const clipboard = parsePermissionSet({ permissions: ["clipboardWrite", "clipboardWrite"] });
+    expect(clipboard).toEqual({ permissions: ["clipboardWrite"], origins: [] });
+    expect(missingPermissions(held, clipboard)).toEqual(clipboard);
+    expect(
+      missingPermissions(held, { permissions: ["tabs"], origins: ["https://moon.example/*"] }),
+    ).toEqual({ permissions: [], origins: [] });
+    expect(() => parsePermissionSet({ permissions: "tabs" })).toThrow();
+    expect(() => parsePermissionSet(null)).toThrow();
+  });
+
+  it("compares match patterns", () => {
+    expect(coversPattern("<all_urls>", "https://moon.example/*")).toBe(true);
+    expect(coversPattern("*://*/*", "https://moon.example/a/*")).toBe(true);
+    expect(coversPattern("*://*/*", "<all_urls>")).toBe(false);
+    expect(coversPattern("https://*.example.com/*", "https://a.example.com/x")).toBe(true);
+    expect(coversPattern("https://*.example.com/*", "https://example.com/*")).toBe(true);
+    expect(coversPattern("https://*.example.com/*", "https://*.b.example.com/*")).toBe(true);
+    expect(coversPattern("https://*.example.com/*", "https://example.org/*")).toBe(false);
+    expect(coversPattern("https://example.com/a/*", "https://example.com/b/*")).toBe(false);
+    expect(coversPattern("http://*/*", "https://example.com/*")).toBe(false);
+  });
+
+  it("leaves out Electron's own errors in an extension's pages", () => {
+    const store = { developerMode: false, unpacked: false };
+    const electron = { ...store, source: "node:electron/js2c/renderer_init:1" };
+    expect(listsError("Unable to load preload script: /app/out/preload/web.cjs", electron)).toBe(
+      false,
+    );
+    expect(listsError("TypeError: x is undefined", { ...store, source: "js/offscreen.js:3" })).toBe(
+      true,
+    );
   });
 
   it("leaves out requests Luma Shield blocked or that failed offline", () => {
