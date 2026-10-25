@@ -10,9 +10,11 @@
  *  - Linux .deb / .rpm: the package is installed with dpkg or rpm, which asks
  *    for the administrator password — so only when the user clicks
  *    "Restart to update", never silently on quit.
- *  - macOS: the system only installs an update over an app signed with an
- *    Apple Developer ID. A build without one (ad-hoc signed) looks for
- *    updates the same way, and "Update" opens the release's download page.
+ *  - macOS with an Apple Developer ID: the system's own updater.
+ *  - macOS without one (ad-hoc signed): the system won't install an update
+ *    over it, so Moon Browser replaces its app itself (mac-update.ts). Only
+ *    where it can't write — started from the disk image, or from a folder
+ *    it doesn't own — "Update" opens the release's download page instead.
  */
 import { app } from "electron";
 import {
@@ -24,6 +26,8 @@ import {
   type AppUpdater,
 } from "electron-updater";
 import { existsSync, readFileSync } from "node:fs";
+import { appBundleOf, canReplace } from "./mac-update";
+import { MacSelfUpdater } from "./mac-self-updater";
 import { join } from "node:path";
 import type { UpdateStatus } from "@shared/types";
 
@@ -57,8 +61,13 @@ function createUpdater(): Impl | null {
   if (process.platform === "win32") return { updater: new NsisUpdater(), needsAdmin: false };
   if (process.platform === "darwin") {
     // Left there by the build when it signs with a Developer ID (build/fuses.cjs).
-    const signed = existsSync(join(resources, "developer-id"));
-    return { updater: new MacUpdater(), needsAdmin: false, manual: !signed };
+    if (existsSync(join(resources, "developer-id")))
+      return { updater: new MacUpdater(), needsAdmin: false };
+    const bundle = appBundleOf(process.execPath);
+    if (bundle && canReplace(bundle))
+      // It speaks electron-updater's events and calls (mac-self-updater.ts).
+      return { updater: new MacSelfUpdater(bundle) as unknown as AppUpdater, needsAdmin: false };
+    return { updater: new MacUpdater(), needsAdmin: false, manual: true };
   }
   if (process.platform !== "linux") return null;
   // An AppImage replaces itself; checked first, because the AppImage may

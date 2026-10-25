@@ -36,8 +36,7 @@ and nothing phoning home. It wears the same night-sky design as
 - **Developer mode** on `moon://extensions` — load your own extension from a folder (*Load
   unpacked*), reload it after changes, see its ID and errors
 - **Updates without reinstalling** — Moon Browser downloads a new version in the background; one
-  click on *Update* installs it over the old one and brings your tabs back (on macOS, for now,
-  *Update* opens the download page: see [Updates](#updates))
+  click on *Update* installs it over the old one and brings your tabs back — on macOS too
 - **Default browser in one click** — from the new tab page, the menu or *Settings → System*
 - **Signing in to Google works** — Google turns away browsers that look like an app with a
   browser built in ("This browser or app may not be secure"). Moon Browser gives pages Chrome's
@@ -197,9 +196,12 @@ state and has a *Check now* button.
 - **AppImage:** the AppImage file is replaced.
 - **.deb / .rpm:** the package is installed with your system's package tool, which asks for your
   password — so only when you click *Update*.
-- **macOS:** macOS only lets an app replace itself when it is signed with an Apple Developer ID,
-  which the Mac builds don't have yet. Moon Browser still looks for new versions; *Update* then
-  opens the release's download page: drag the new version into *Applications* over the old one.
+- **macOS:** the Mac builds aren't signed with an Apple Developer ID, so macOS's own updater won't
+  install over them; Moon Browser does it itself. It downloads the zip for your Mac, checks it
+  against the SHA-512 the release lists, checks the new app's signature, bundle ID and version,
+  and swaps it in for the old one when you click *Update* (or when you quit). This needs Moon
+  Browser in a folder you can write to — *Applications* is fine. Started from the disk image,
+  *Update* opens the release's download page instead.
 
 Running the installer of a newer version by hand works too: it updates in place.
 
