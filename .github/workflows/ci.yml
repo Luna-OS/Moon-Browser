@@ -167,6 +167,20 @@ jobs:
           [ "$(plutil -extract CFBundleShortVersionString raw -o - "update-check/Luma.app/Contents/Info.plist")" = "$version" ]
           grep -q "^version: $version" release/latest-mac.yml
 
+          # The update script for copies older than the built-in updater
+          # (scripts/update-mac.sh): an old "Moon Browser.app" becomes this
+          # build's Luma.app, with this build as the newest release.
+          mkdir -p feed/latest/download "feed/download/v$version" old
+          cp release/latest-mac.yml feed/latest/download/
+          cp release/*-mac-*.zip "feed/download/v$version/"
+          ditto release/mac-arm64/Luma.app "old/Moon Browser.app"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.1.30" "old/Moon Browser.app/Contents/Info.plist"
+          LUMA_APP="$PWD/old/Moon Browser.app" LUMA_RELEASES="file://$PWD/feed" bash scripts/update-mac.sh
+          [ ! -e "old/Moon Browser.app" ]
+          [ "$(plutil -extract CFBundleShortVersionString raw -o - old/Luma.app/Contents/Info.plist)" = "$version" ]
+          codesign --verify --deep --strict old/Luma.app
+          LUMA_APP="$PWD/old/Luma.app" LUMA_RELEASES="file://$PWD/feed" bash scripts/update-mac.sh | grep -q "up to date"
+
           app="release/mac-arm64/Luma.app"
           exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")"
           "$exe" > app.log 2>&1 &

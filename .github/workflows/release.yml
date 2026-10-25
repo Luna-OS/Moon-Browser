@@ -227,3 +227,4 @@ jobs:
             dist/mac/**/*.zip.blockmap
             dist/mac/**/latest-mac.yml
             dist/mac/checksums-mac.txt
+            scripts/update-mac.sh

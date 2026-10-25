@@ -207,6 +207,16 @@ state and has a *Check now* button.
   a folder you can write to — *Applications* is fine. Started from the disk image,
   *Update* opens the release's download page instead.
 
+  Copies older than 0.1.35 (still called Moon Browser) can't do that yet. To bring one up to date
+  in place — no uninstalling, everything stays — paste this into *Terminal*:
+
+  ```sh
+  curl -fsSL https://github.com/Luna-OS/Moon-Browser/releases/latest/download/update-mac.sh | bash
+  ```
+
+  It ([scripts/update-mac.sh](scripts/update-mac.sh)) makes the same checks, quits the browser,
+  swaps in the new app as *Luma* and opens it again.
+
 Running the installer of a newer version by hand works too: it updates in place.
 
 ### Using NordPass (or another password manager)
