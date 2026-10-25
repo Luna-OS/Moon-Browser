@@ -2,8 +2,10 @@
  * Chrome extension APIs that neither Electron nor electron-chrome-extensions
  * provide: chrome.sidePanel, chrome.identity, chrome.tabGroups, chrome.search,
  * chrome.debugger, chrome.proxy, chrome.downloads, tabs.captureVisibleTab,
- * native messaging, the rules of chrome.declarativeNetRequest, and the
- * events runtime.onInstalled and onStartup. Without them, an extension whose
+ * native messaging, the rules of chrome.declarativeNetRequest, the events
+ * runtime.onInstalled and onStartup, chrome.permissions that keeps its
+ * answers, and copying and pasting with the clipboard permissions (see
+ * src/shared/clipboard-commands.ts). Without them, an extension whose
  * service worker calls one at start-up (Claude's side panel and tab groups,
  * logins through identity.launchWebAuthFlow) crashes before it does anything.
  *
@@ -12,10 +14,12 @@
  * extension's ID from the caller's origin, never from the message.
  */
 import { contextBridge, ipcRenderer } from "electron";
+import { clipboardCommands, declaresClipboard } from "../shared/clipboard-commands";
 
 const CALL = "moon-ext:call";
 const EVENT = "moon-ext:event";
 const SUBSCRIBE = "moon-ext:subscribe";
+const CLIPBOARD = "moon-ext:clipboard";
 
 function inExtension(): boolean {
   if (process.type === "service-worker") {
@@ -603,6 +607,32 @@ function install(bridge: {
     }
   }
 
+  // chrome.permissions: Luma asks for optional permissions and keeps the
+  // answer (src/main/extensions.ts). The library's version asks again on
+  // every call — NordPass asks before each copy — and forgets at quit.
+  {
+    const request = fn("permissions.request") as ((...a: unknown[]) => unknown) & {
+      moonPermissions?: boolean;
+    };
+    request.moonPermissions = true;
+    try {
+      Object.defineProperty(chrome, "permissions", {
+        value: {
+          request,
+          contains: fn("permissions.contains"),
+          getAll: fn("permissions.getAll"),
+          remove: fn("permissions.remove"),
+          onAdded: event("permissions.onAdded"),
+          onRemoved: event("permissions.onRemoved"),
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    } catch {
+      // chrome is frozen
+    }
+  }
+
   // chrome.proxy: Electron refuses the calls; Luma sets the proxy.
   if (has("proxy")) {
     try {
@@ -664,7 +694,14 @@ if (inExtension()) {
   const bridge = {
     // MOON_WEBAUTHN_LIBRARY: the end-to-end test's stand-in (extension-webauthn.ts).
     webauthn: process.platform === "win32" || !!process.env.MOON_WEBAUTHN_LIBRARY,
-    call: (name: string, ...args: unknown[]) => ipcRenderer.invoke(CALL, name, ...args),
+    // Errors as Chrome words them, without Electron's "Error invoking remote method …".
+    call: (name: string, ...args: unknown[]) =>
+      ipcRenderer.invoke(CALL, name, ...args).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          message.replace(/^Error invoking remote method '[^']*': (\w*Error: )?/, ""),
+        );
+      }),
     on: (name: string, listener: (...args: unknown[]) => void) => {
       let set = listeners.get(name);
       if (!set) {
@@ -676,4 +713,24 @@ if (inExtension()) {
     },
   };
   contextBridge.executeInMainWorld({ func: install, args: [bridge] });
+  // Copying and pasting with clipboardWrite / clipboardRead (the main
+  // process checks them); service workers have no document.
+  const declared =
+    process.type !== "service-worker" &&
+    (contextBridge.executeInMainWorld({
+      func: () => {
+        const runtime = (globalThis as { chrome?: { runtime?: { getManifest?: () => unknown } } })
+          .chrome?.runtime;
+        return runtime?.getManifest?.() ?? {};
+      },
+    }) as object);
+  if (declared && declaresClipboard(declared)) {
+    const write = (text: string, html: string): boolean =>
+      ipcRenderer.sendSync(CLIPBOARD, "write", String(text), String(html)) === true;
+    const read = (): string | null => {
+      const text: unknown = ipcRenderer.sendSync(CLIPBOARD, "read");
+      return typeof text === "string" ? text : null;
+    };
+    contextBridge.executeInMainWorld({ func: clipboardCommands, args: [write, read] });
+  }
 }

@@ -7,7 +7,7 @@ import { _electron as electron } from "playwright-core";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { createSocket } from "node:dgram";
 import { existsSync, readdirSync } from "node:fs";
-import { access, cp, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { access, cp, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -571,6 +571,85 @@ try {
       groupId,
     );
     // A second click on the button closes the pop-up.
+    await ui.mouse.click(button.x, button.y);
+    await waitFor(() => popupBounds().then((b) => b === null), "the pop-up to close");
+  });
+
+  await check("an extension asks for more access once, then copies and pastes", async () => {
+    const button = await extensionButton();
+    await ui.mouse.click(button.x, button.y);
+    await waitFor(() => inPopup("document.readyState === 'complete'"), "the pop-up");
+    const clipboard = {
+      permissions: ["clipboardRead", "clipboardWrite"],
+    };
+    const holds = () => inPopup(`chrome.permissions.contains(${JSON.stringify(clipboard)})`);
+    if ((await holds()) !== false) throw new Error("optional permissions held from the start");
+    const copy = (text) =>
+      inPopup(`(() => {
+        const field = document.body.appendChild(document.createElement("textarea"));
+        field.value = ${JSON.stringify(text)};
+        field.select();
+        const copied = document.execCommand("copy");
+        field.remove();
+        return copied;
+      })()`);
+    const systemClipboard = () => app.evaluate(({ clipboard: c }) => c.readText());
+    if ((await copy("not yet")) !== false) throw new Error("copied without the permission");
+    // The pop-up asks (as NordPass does before copying) and waits for the
+    // answer: it stays open while the question is in the window.
+    await inPopup(
+      `chrome.permissions.request(${JSON.stringify(clipboard)}).then((r) => { window.granted = r; }); true`,
+    );
+    const dialog = ui.getByRole("alertdialog");
+    await waitFor(() => dialog.isVisible(), "the permission question");
+    const text = await dialog.textContent();
+    if (!text.includes("asks for more access") || !text.includes("Change what you copy and paste"))
+      throw new Error(`question: ${text}`);
+    await dialog.getByRole("button", { name: "Allow" }).click();
+    await waitFor(() => inPopup("window.granted === true"), "the pop-up to hear the answer");
+    if ((await holds()) !== true) throw new Error("not held after Allow");
+    // Asked again (before every copy): granted at once, no question.
+    await inPopup(
+      `chrome.permissions.request(${JSON.stringify(clipboard)}).then((r) => { window.again = r; }); true`,
+    );
+    await waitFor(() => inPopup("window.again === true"), "the second answer");
+    if (await dialog.isVisible()) throw new Error("asked a second time");
+    // Copying now works, in the pop-up…
+    if ((await copy("copied in the pop-up")) !== true) throw new Error("copy refused");
+    await waitFor(
+      async () => (await systemClipboard()) === "copied in the pop-up",
+      "the pop-up's copy on the clipboard",
+    );
+    // …and in an offscreen document, where NordPass copies, and it reads
+    // the clipboard back there (to clear it later).
+    const offscreen = (message) =>
+      inPopup(`chrome.offscreen.hasDocument()
+        .then((has) => has || chrome.offscreen.createDocument({ url: "offscreen.html", reasons: ["CLIPBOARD"], justification: "test" }))
+        .then(() => chrome.runtime.sendMessage(${JSON.stringify({ target: "offscreen", ...message })}))`);
+    const copied = await offscreen({ copy: "copied offscreen" });
+    if (copied?.copied !== true) throw new Error(`offscreen copy: ${JSON.stringify(copied)}`);
+    await waitFor(
+      async () => (await systemClipboard()) === "copied offscreen",
+      "the offscreen copy on the clipboard",
+    );
+    await waitFor(
+      async () => (await offscreen({ paste: true }))?.text === "copied offscreen",
+      "the offscreen document to read the clipboard",
+    );
+    // Kept for the next start, given up on request.
+    await waitFor(async () => {
+      const prefs = JSON.parse(await readFile(join(profile, "extensions.json"), "utf8"));
+      return prefs.granted?.[EXTENSION_ID]?.permissions?.includes("clipboardWrite");
+    }, "the allowed permissions in extensions.json");
+    const removed = await inPopup(
+      `chrome.permissions.remove({ permissions: ["clipboardRead"] }).then(() => chrome.permissions.contains({ permissions: ["clipboardRead"] }))`,
+    );
+    if (removed !== false) throw new Error("clipboardRead still held after remove()");
+    const required = await inPopup(
+      `chrome.permissions.remove({ permissions: ["storage"] }).then(() => "removed", (e) => e.message)`,
+    );
+    if (required !== "You cannot remove required permissions.")
+      throw new Error(`removing a required permission: ${required}`);
     await ui.mouse.click(button.x, button.y);
     await waitFor(() => popupBounds().then((b) => b === null), "the pop-up to close");
   });

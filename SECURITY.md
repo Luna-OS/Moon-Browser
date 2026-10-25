@@ -234,10 +234,16 @@ never imported.
 
 - Extensions run on Electron's extension support plus electron-chrome-extensions and
   Luma's own additions (side panel, identity, tab groups, search, debugger, proxy,
-  `declarativeNetRequest` rules, `runtime.onInstalled` / `onStartup`), which cover the common
-  APIs but not all of Chrome's: keyboard commands and moving tab groups to another window are
-  missing, and `chrome.webRequest` listeners get no events (Luma Shield handles the requests
-  itself).
+  `declarativeNetRequest` rules, `runtime.onInstalled` / `onStartup`, `chrome.permissions`),
+  which cover the common APIs but not all of Chrome's: keyboard commands and moving tab groups
+  to another window are missing, and `chrome.webRequest` listeners get no events (Luma Shield
+  handles the requests itself). Optional site access an extension is given is recorded, but
+  Electron still applies only the sites its manifest names.
+- Extensions holding `clipboardWrite` / `clipboardRead` (also when allowed later) copy and paste
+  with `document.execCommand`, as in Chrome — Electron refuses it, so Luma does it for them. In
+  an offscreen document, pasting sees the clipboard as it was up to a second earlier, and only
+  for ten minutes after the extension last copied there (password managers check whether their
+  copied password is still there before clearing it).
 - `declarativeNetRequest` rules (static rulesets, dynamic and session rules) apply to requests
   of web pages in normal windows, before Luma Shield: block, allow, allowAllRequests,
   upgradeScheme, redirect and modifyHeaders. Redirects and header changes need host access to
