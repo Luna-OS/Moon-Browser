@@ -139,7 +139,7 @@ export function NewTabPage({ settings }: { settings: Settings | null }) {
           <span className="text-(--mb-accent)">
             <MoonIcon size={17} />
           </span>
-          <span className="flex-1">Open links from other apps in Moon Browser, too.</span>
+          <span className="flex-1">Open links from other apps in Luma, too.</span>
           <button
             type="button"
             className="mb-btn mb-btn-primary mb-btn-sm"
@@ -169,7 +169,7 @@ export function NewTabPage({ settings }: { settings: Settings | null }) {
         info &&
         info.totalBlocked > 0 && (
           <p className="mb-chip mb-chip-mint mt-10 h-auto! px-3! py-1.5!">
-            <ShieldIcon size={13} /> Moon Shield has blocked {formatNumber(info.totalBlocked)} ads
+            <ShieldIcon size={13} /> Luma Shield has blocked {formatNumber(info.totalBlocked)} ads
             and trackers
           </p>
         )

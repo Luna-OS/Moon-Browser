@@ -36,7 +36,7 @@ jobs:
 
   # Starts the real browser and drives it: tabs, the address bar, search,
   # settings, the Comet import, split view and the security boundaries
-  # between web pages and Moon Browser's own pages.
+  # between web pages and Luma's own pages.
   e2e:
     needs: checks
     strategy:
@@ -121,7 +121,7 @@ jobs:
           xvfb-run -a release/linux-unpacked/moon-browser --no-sandbox > app.log 2>&1 &
           sleep 20
           if ! pgrep -f "release/linux-unpacked/moon-browser" > /dev/null; then
-            echo "Moon Browser exited during start-up:"; cat app.log
+            echo "Luma exited during start-up:"; cat app.log
             exit 1
           fi
           pkill -f "release/linux-unpacked/moon-browser" || true
@@ -133,7 +133,7 @@ jobs:
           $app = Start-Process -FilePath "release\win-unpacked\moon-browser.exe" -PassThru
           Start-Sleep -Seconds 20
           if ($app.HasExited) {
-            Write-Host "Moon Browser exited during start-up with code $($app.ExitCode)"
+            Write-Host "Luma exited during start-up with code $($app.ExitCode)"
             exit 1
           }
           Stop-Process -Id $app.Id -Force
@@ -147,7 +147,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           for dir in mac-arm64:arm64 mac:x86_64; do
-            app="release/${dir%%:*}/Moon Browser.app"
+            app="release/${dir%%:*}/Luma.app"
             plist="$app/Contents/Info.plist"
             exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$plist")"
             codesign --verify --deep --strict --verbose=2 "$app"
@@ -159,20 +159,20 @@ jobs:
           grep -q "mac-arm64.zip" release/latest-mac.yml && grep -q "mac-x64.zip" release/latest-mac.yml
           # What the built-in updater checks before it swaps in a new version
           # (src/main/mac-update.ts): the zip unpacks to a correctly signed
-          # Moon Browser of the version latest-mac.yml names.
+          # Luma of the version latest-mac.yml names.
           version="$(node -p "require('./package.json').version")"
           ditto -x -k release/*-mac-arm64.zip update-check
-          codesign --verify --deep --strict "update-check/Moon Browser.app"
-          [ "$(plutil -extract CFBundleIdentifier raw -o - "update-check/Moon Browser.app/Contents/Info.plist")" = io.lunaos.moonbrowser ]
-          [ "$(plutil -extract CFBundleShortVersionString raw -o - "update-check/Moon Browser.app/Contents/Info.plist")" = "$version" ]
+          codesign --verify --deep --strict "update-check/Luma.app"
+          [ "$(plutil -extract CFBundleIdentifier raw -o - "update-check/Luma.app/Contents/Info.plist")" = io.lunaos.moonbrowser ]
+          [ "$(plutil -extract CFBundleShortVersionString raw -o - "update-check/Luma.app/Contents/Info.plist")" = "$version" ]
           grep -q "^version: $version" release/latest-mac.yml
 
-          app="release/mac-arm64/Moon Browser.app"
+          app="release/mac-arm64/Luma.app"
           exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")"
           "$exe" > app.log 2>&1 &
           sleep 20
           if ! pgrep -f "$exe" > /dev/null; then
-            echo "Moon Browser exited during start-up:"; cat app.log
+            echo "Luma exited during start-up:"; cat app.log
             exit 1
           fi
           pkill -f "$exe" || true
@@ -211,7 +211,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: moon-browser-${{ runner.os }}
+          name: luma-${{ runner.os }}
           path: |
             release/*.exe
             release/*.deb

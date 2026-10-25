@@ -1,5 +1,5 @@
 /**
- * A page's alert(), confirm() and prompt() in Moon Browser's own dialog
+ * A page's alert(), confirm() and prompt() in Luma's own dialog
  * over its tab, where Electron would show the system's message box. The
  * web preload hands them over synchronously — the page waits, as it does
  * for the real ones — and the answer goes back the same way.

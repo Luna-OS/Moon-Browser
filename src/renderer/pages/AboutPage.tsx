@@ -44,7 +44,7 @@ const CREDITS: { name: string; url: string; what: string; license: string }[] = 
   {
     name: "Ghostery adblocker",
     url: "https://github.com/ghostery/adblocker",
-    what: "the blocking engine behind Moon Shield",
+    what: "the blocking engine behind Luma Shield",
     license: "MPL-2.0",
   },
   {
@@ -87,8 +87,8 @@ export function AboutPage() {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 pt-14 pb-16">
       <div className="flex flex-col items-center gap-3 text-center">
-        <img src="/moon.svg" width={112} height={112} alt="Moon Browser" />
-        <h1 className="mb-title m-0 text-4xl font-semibold">Moon Browser</h1>
+        <img src="/moon.svg" width={112} height={112} alt="Luma" />
+        <h1 className="mb-title m-0 text-4xl font-semibold">Luma</h1>
         <p className="m-0 text-(--mb-text-muted)">The web, calmly under the moon.</p>
         {info && <span className="mb-chip">Version {info.version}</span>}
       </div>
@@ -111,7 +111,7 @@ export function AboutPage() {
 
       <Card
         title="Open source"
-        description="Moon Browser is free software under the GNU General Public License, version 3 or later — made by Luna, standing on the shoulders of:"
+        description="Luma is free software under the GNU General Public License, version 3 or later — made by Luna, standing on the shoulders of:"
       >
         <ul className="m-0 list-none p-1.5">
           {CREDITS.map((c) => (

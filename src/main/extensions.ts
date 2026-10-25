@@ -9,7 +9,7 @@
  * update server and keeps extensions up to date.
  *
  * Extensions run in normal windows only, never in private ones. Before an
- * extension is added, Moon Browser shows what it will be able to do.
+ * extension is added, Luma shows what it will be able to do.
  */
 import {
   app,
@@ -135,7 +135,7 @@ export class Extensions {
   private api: ElectronChromeExtensions | null = null;
   private apis: ExtensionApis | null = null;
   private session: Session | null = null;
-  /** Set while Moon Browser itself tells the extension system a tab is gone. */
+  /** Set while Luma itself tells the extension system a tab is gone. */
   private untracking = false;
   /** chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick }). */
   private readonly panelBehaviors = new Map<string, boolean>();
@@ -147,7 +147,7 @@ export class Extensions {
   private readonly icons = new Map<string, string | null>();
   /** The extension whose toolbar pop-up is open. */
   private popupExtension: string | null = null;
-  /** Extensions loaded while Moon Browser starts get runtime.onStartup. */
+  /** Extensions loaded while Luma starts get runtime.onStartup. */
   private starting = true;
   /** Unpacked extensions being reloaded: loading them again is an update. */
   private readonly reloading = new Set<string>();
@@ -353,9 +353,9 @@ export class Extensions {
   /**
    * chrome.runtime.onInstalled and onStartup, which Electron never fires —
    * though extensions set themselves up there (defaults, menus, first
-   * state). "install" the first time Moon Browser loads an extension,
+   * state). "install" the first time Luma loads an extension,
    * "update" when its version changed or an unpacked one was reloaded,
-   * onStartup for the others when Moon Browser starts. Delivered as soon as
+   * onStartup for the others when Luma starts. Delivered as soon as
    * the extension's service worker listens.
    */
   private lifecycleEvents(ext: Extension): void {
@@ -444,7 +444,7 @@ export class Extensions {
         glyph: "extension",
         image: icon.isEmpty() ? undefined : icon.resize({ width: 96, height: 96 }).toDataURL(),
         eyebrow: "Add extension",
-        title: `Add “${name}” to Moon Browser?`,
+        title: `Add “${name}” to Luma?`,
         message: can.length ? undefined : "It needs no special permissions.",
         list: can.length ? { label: "It can", items: can } : undefined,
         notes: [
@@ -527,7 +527,7 @@ export class Extensions {
       if (!win.isDestroyed()) win.focus();
     });
     // The library closes the pop-up when it loses the focus to another of
-    // Moon Browser's windows, but asks too early: the other window isn't
+    // Luma's windows, but asks too early: the other window isn't
     // focused yet then. So: closed when another window gets the focus.
     const closeOnFocus = (_event: unknown, focused: BrowserWindow) => {
       if (focused !== win && !popup.isDestroyed()) popup.destroy();
@@ -694,7 +694,7 @@ export class Extensions {
     const ses = this.session;
     if (!ses || !EXTENSION_ID.test(id)) return;
     if (this.unpackedEntry(id)) {
-      // The folder stays where it is; Moon Browser only forgets it.
+      // The folder stays where it is; Luma only forgets it.
       if (ses.extensions.getExtension(id)) ses.extensions.removeExtension(id);
       const prefs = this.prefs();
       prefs.unpacked = prefs.unpacked.filter((u) => u.id !== id);
@@ -1027,7 +1027,7 @@ export class Extensions {
         click: () => win.openTab({ url: internalUrl("extensions") }),
       },
       {
-        label: "Remove from Moon Browser…",
+        label: "Remove from Luma…",
         click: () => {
           void this.browser
             .ask(
@@ -1037,7 +1037,7 @@ export class Extensions {
                 image: this.largeIconOf(this.session?.extensions.getExtension(id)),
                 eyebrow: "Remove extension",
                 title: `Remove “${entry.name}”?`,
-                message: "Its data in Moon Browser is deleted with it.",
+                message: "Its data in Luma is deleted with it.",
                 buttons: [
                   { label: "Cancel", style: "secondary" },
                   { label: "Remove", style: "danger" },

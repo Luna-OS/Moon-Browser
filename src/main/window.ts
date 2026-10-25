@@ -95,7 +95,7 @@ export class MoonWindow {
   private fullscreenByPage = false;
   private updateScheduled = false;
   private softTimer: NodeJS.Timeout | null = null;
-  /** Questions asked in Moon Browser's own dialogs, one at a time. */
+  /** Questions asked in Luma's own dialogs, one at a time. */
   private readonly dialogs = new DialogQueue(() => this.dialogChanged());
   closed = false;
 
@@ -117,7 +117,7 @@ export class MoonWindow {
       minWidth: 480,
       minHeight: 320,
       show: false,
-      title: "Moon Browser",
+      title: "Luma",
       backgroundColor: this.isPrivate ? colors.privateFrame : colors.frame,
       titleBarStyle: "hidden",
       // The window buttons sit in the tab strip: drawn by the system on the
@@ -793,9 +793,7 @@ export class MoonWindow {
       this.softTimer = null;
       this.win.webContents.send(UI_CHANNELS.state, this.state());
       const title = this.activeTab?.info().title;
-      this.win.setTitle(
-        title ? `${title} – Moon Browser${this.isPrivate ? " (Private)" : ""}` : "Moon Browser",
-      );
+      this.win.setTitle(title ? `${title} – Luma${this.isPrivate ? " (Private)" : ""}` : "Luma");
     });
   }
 

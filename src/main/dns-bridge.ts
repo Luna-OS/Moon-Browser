@@ -2,7 +2,7 @@
  * The way to a plain DNS server of the user's (an IP address and port: a
  * Pi-hole or Unbound at home, a DNS server inside Netbird or Tailscale).
  * Chromium only looks names up itself from the system's DNS or over DNS
- * over HTTPS, so Moon Browser runs a small DNS-over-HTTPS server on
+ * over HTTPS, so Luma runs a small DNS-over-HTTPS server on
  * 127.0.0.1 that hands each query on to that server as it is — over UDP,
  * and over TCP for answers too long for UDP — and hands back the answer.
  *

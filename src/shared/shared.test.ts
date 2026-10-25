@@ -702,9 +702,9 @@ describe("security helpers", () => {
 
   it("quarantines downloads on macOS", () => {
     expect(quarantineMark(Date.UTC(2026, 9, 23), "A1B2")).toBe(
-      `0081;${(Date.UTC(2026, 9, 23) / 1000).toString(16)};Moon Browser;A1B2`,
+      `0081;${(Date.UTC(2026, 9, 23) / 1000).toString(16)};Luma;A1B2`,
     );
-    expect(isDangerousFile("Moon Browser.dmg")).toBe(true);
+    expect(isDangerousFile("Luma.dmg")).toBe(true);
     expect(isDangerousFile("install.pkg")).toBe(true);
   });
 

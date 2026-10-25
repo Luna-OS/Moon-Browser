@@ -1,5 +1,5 @@
 /**
- * Moon Browser's own pages live on the moon:// scheme: moon://newtab,
+ * Luma's own pages live on the moon:// scheme: moon://newtab,
  * moon://settings, … They are served from the app bundle by the main
  * process and are the only pages that get the internal page API.
  */

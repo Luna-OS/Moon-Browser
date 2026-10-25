@@ -1,7 +1,7 @@
 /**
  * Default settings and the one place that turns stored or received data
  * back into valid settings. A broken or old settings file must never keep
- * Moon Browser from starting — unknown or invalid fields fall back to the
+ * Luma from starting — unknown or invalid fields fall back to the
  * defaults, known ones are kept.
  */
 import { sanitizeCustomDns, sanitizeDnsSetting } from "./dns";

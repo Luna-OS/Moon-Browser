@@ -118,8 +118,8 @@ export function ExtensionsPage() {
       {list && list.length === 0 && (
         <Card>
           <EmptyState title="No extensions yet">
-            Open an extension in the Chrome Web Store and choose “Add to Moon Browser”. Before
-            anything is added, Moon Browser shows what the extension will be able to do.
+            Open an extension in the Chrome Web Store and choose “Add to Luma”. Before anything is
+            added, Luma shows what the extension will be able to do.
           </EmptyState>
           <div className="flex flex-wrap items-center justify-center gap-2 px-5 pb-7">
             <span className="text-xs text-(--mb-text-muted)">Password managers:</span>
@@ -183,7 +183,7 @@ export function ExtensionsPage() {
         </>
       )}
       <p className="m-0 text-center text-xs leading-relaxed text-(--mb-text-faint)">
-        Extensions are updated from the Chrome Web Store automatically. Moon Shield keeps blocking
+        Extensions are updated from the Chrome Web Store automatically. Luma Shield keeps blocking
         ads and trackers on its own — no ad-blocking extension needed.
       </p>
     </PageShell>

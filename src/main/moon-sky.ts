@@ -1,5 +1,5 @@
 /**
- * Moon Browser's starry night sky as a CSS background: a few hundred pixels
+ * Luma's starry night sky as a CSS background: a few hundred pixels
  * of tiled stars over a violet glow and a deep night-blue gradient. The
  * site looks (Perplexity, YouTube) paint it behind their pages.
  */

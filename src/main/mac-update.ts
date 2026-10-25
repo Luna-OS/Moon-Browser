@@ -1,16 +1,16 @@
 /**
  * Updates on macOS for a copy without an Apple Developer ID (ad-hoc signed).
  * macOS's own updater (Squirrel.Mac, through electron-updater) only installs
- * a new version signed with the same Developer ID, so Moon Browser does what
+ * a new version signed with the same Developer ID, so Luma does what
  * it would have done itself:
  *
  *  1. reads latest-mac.yml of the newest release on GitHub,
  *  2. downloads the zip for this Mac's architecture and checks its SHA-512
  *     against the one in latest-mac.yml,
  *  3. unpacks it with ditto (keeping the app's links and attributes) and
- *     checks the new app: a valid signature, Moon Browser's bundle ID and the
+ *     checks the new app: a valid signature, Luma's bundle ID and the
  *     version it was announced as,
- *  4. on quit, a small script waits for Moon Browser to close, puts the new
+ *  4. on quit, a small script waits for Luma to close, puts the new
  *     app in place of the old one (keeping the old one until that worked)
  *     and, for "Restart to update", opens it again.
  *
@@ -107,7 +107,7 @@ function plistValue(plist: string, key: string): Promise<string> {
 
 /**
  * Unpacks the downloaded zip into `dir` and returns the new app, after
- * checking that it is Moon Browser, at `version`, with a valid signature.
+ * checking that it is Luma, at `version`, with a valid signature.
  */
 export async function unpackAndCheck(zip: string, dir: string, version: string): Promise<string> {
   await rm(dir, { recursive: true, force: true });
@@ -117,14 +117,14 @@ export async function unpackAndCheck(zip: string, dir: string, version: string):
   const app = join(dir, apps[0]);
   const plist = join(app, "Contents", "Info.plist");
   if ((await plistValue(plist, "CFBundleIdentifier")) !== BUNDLE_ID)
-    throw new Error("The update is not Moon Browser");
+    throw new Error("The update is not Luma");
   if ((await plistValue(plist, "CFBundleShortVersionString")) !== version)
     throw new Error("The update is not the version it was announced as");
   await run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app]);
   return app;
 }
 
-/** The .app this copy runs from (…/Moon Browser.app/Contents/MacOS/Moon Browser). */
+/** The .app this copy runs from (…/Luma.app/Contents/MacOS/Luma). */
 export function appBundleOf(execPath: string): string | null {
   const bundle = dirname(dirname(dirname(execPath)));
   return bundle.endsWith(".app") ? bundle : null;
@@ -148,28 +148,33 @@ export function canReplace(bundle: string): boolean {
 
 /**
  * Waits for the process to end, then puts the new app in place of the old
- * one. The old one is set aside first and only deleted once the new one is
- * in place; if the move fails, it comes back. Arguments: pid, old app, new
- * app, "1" to open it again.
+ * one, under the new app's name. The old one is set aside first and only
+ * deleted once the new one is in place; if the move fails, it comes back.
+ * Arguments: pid, old app, new app, "1" to open it again.
  */
 export const SWAP_SCRIPT = `
 pid="$1"; old="$2"; new="$3"; relaunch="$4"
 while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
+# The new app keeps its own name ("Moon Browser.app" becomes "Luma.app"),
+# unless something else already has that name there.
+target="$(dirname "$old")/$(basename "$new")"
+if [ "$target" != "$old" ] && [ -e "$target" ]; then target="$old"; fi
 aside="$old.moon-previous"
 rm -rf "$aside"
 if mv "$old" "$aside"; then
-  if mv "$new" "$old"; then
+  if mv "$new" "$target"; then
     rm -rf "$aside"
   else
     mv "$aside" "$old"
+    target="$old"
   fi
 fi
-command -v xattr >/dev/null 2>&1 && xattr -dr com.apple.quarantine "$old" 2>/dev/null
-if [ "$relaunch" = 1 ]; then open "$old" 2>/dev/null; fi
+command -v xattr >/dev/null 2>&1 && xattr -dr com.apple.quarantine "$target" 2>/dev/null
+if [ "$relaunch" = 1 ]; then open "$target" 2>/dev/null; fi
 exit 0
 `;
 
-/** Starts the swap; it runs on after Moon Browser has quit. */
+/** Starts the swap; it runs on after Luma has quit. */
 export function startSwap(pid: number, oldApp: string, newApp: string, relaunch: boolean): void {
   const child = spawn(
     "/bin/sh",

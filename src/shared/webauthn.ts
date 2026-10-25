@@ -3,7 +3,7 @@
  *
  * Electron refuses navigator.credentials in chrome-extension:// pages, which
  * Chrome allows — password managers set up their biometric unlock with it
- * (NordPass). Moon Browser answers these requests itself through the
+ * (NordPass). Luma answers these requests itself through the
  * system's WebAuthn API, following Chrome's rules; they are kept here so the
  * tests can check them.
  */

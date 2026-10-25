@@ -115,7 +115,7 @@ describe("importing from Chromium browsers (Comet, Chrome, …)", () => {
       "Other bookmarks",
       "Mobile bookmarks",
     ]);
-    // In Moon Browser's list, the two Anime folders become one, subfolders inside.
+    // In Luma's list, the two Anime folders become one, subfolders inside.
     let n = 0;
     const { list, added } = mergeImported([], tree, (f) => ({
       id: `b${++n}`,

@@ -1,5 +1,5 @@
 /**
- * Everything Moon Browser remembers between starts, as small JSON files in
+ * Everything Luma remembers between starts, as small JSON files in
  * the profile folder. Private windows never write here.
  */
 import { cleanGroupTitle, isGroupColor, type GroupColor } from "@shared/tab-groups";
@@ -32,7 +32,7 @@ export interface ExtensionPrefs {
   developerMode: boolean;
   /** Extensions loaded from a folder in developer mode, with the ID they got. */
   unpacked: UnpackedExtension[];
-  /** The version of each extension Moon Browser last loaded (for runtime.onInstalled). */
+  /** The version of each extension Luma last loaded (for runtime.onInstalled). */
   versions: Record<string, string>;
   /** The proxy an extension set through chrome.proxy (checked again before use). */
   proxy?: { id: string; value: unknown };
@@ -255,7 +255,7 @@ interface Stats {
   hiddenTopSites: string[];
   importHintDismissed: boolean;
   defaultBrowserHintDismissed: boolean;
-  /** Moon Browser quit to install an update: restore the session on the next start. */
+  /** Luma quit to install an update: restore the session on the next start. */
   restoreAfterUpdate: boolean;
   /** Profiles from before 0.1.8 were switched to restoring their tabs once. */
   restoreByDefault: boolean;

@@ -123,17 +123,17 @@ export function describePermissions(manifest: ManifestLike): string[] {
   return out;
 }
 
-/** Things an extension asks for that Moon Browser can't give it. */
+/** Things an extension asks for that Luma can't give it. */
 export function unsupportedFeatures(manifest: ManifestLike): string[] {
   const permissions = new Set([
     ...strings(manifest.permissions),
     ...strings(manifest.optional_permissions),
   ]);
   const out: string[] = [];
-  // Chrome's chrome.userScripts needs its own developer switch, which Moon
-  // Browser doesn't have.
+  // Chrome's chrome.userScripts needs its own developer switch, which Luma
+  // doesn't have.
   if (permissions.has("userScripts"))
-    out.push("User scripts (chrome.userScripts) don't run in Moon Browser.");
+    out.push("User scripts (chrome.userScripts) don't run in Luma.");
   return out;
 }
 
@@ -204,13 +204,13 @@ export function isMessagingNoise(message: string): boolean {
 
 /**
  * What an extension's old content scripts say after it was updated or
- * reloaded: they lost their connection to it. Moon Browser updates Web
+ * reloaded: they lost their connection to it. Luma updates Web
  * Store extensions on its own, so this isn't something to fix.
  */
 const RELOAD_NOISE = ["Extension context invalidated."];
 
 /**
- * Network errors that say nothing about the extension: Moon Shield blocked
+ * Network errors that say nothing about the extension: Luma Shield blocked
  * the request (an ad or a tracker), or the computer was offline, changed
  * networks or went to sleep.
  */
@@ -229,7 +229,7 @@ const NETWORK_NOISE = [
  *   their extension only do for one's own (unpacked) extensions in developer
  *   mode, where they can help: nobody can do anything about a Web Store
  *   extension's.
- * - Requests Moon Shield blocked, or that failed because the computer was
+ * - Requests Luma Shield blocked, or that failed because the computer was
  *   offline, never do.
  * - Neither does a resource a web page couldn't load (`onWebPage`): the
  *   page asked for something of the extension (sites look for extensions

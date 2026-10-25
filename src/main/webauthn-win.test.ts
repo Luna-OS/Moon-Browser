@@ -68,7 +68,7 @@ describe.skipIf(!mock)("Windows WebAuthn binding (stand-in DLL)", () => {
         ";user=v1:070809|luna@example.com|(null)|Luna" +
         ";algs=v1:public-key/-7,v1:public-key/-257" +
         ';cd=v1:{"type":"webauthn.create"}|SHA-256' +
-        // Chrome's version and time limit (the page's is kept by Moon Browser).
+        // Chrome's version and time limit (the page's is kept by Luma).
         ";opt=v8,t=300000,cl=0,ext=0,att=1,rrk=0,uv=1,ac=1,flags=0,cancel=yes" +
         ",ex=v1:aabb/public-key/16,v1:cc/public-key/3,ea=0,lb=0,prk=1" +
         ",pm=0,prf=0,ld=none,json=0,eval=none,hints=0,tpp=0",

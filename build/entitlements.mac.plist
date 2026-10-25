@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  What Moon Browser may do under macOS' hardened runtime (electron-builder.yml),
+  What Luma may do under macOS' hardened runtime (electron-builder.yml),
   for the app and its helper processes alike.
 -->
 <plist version="1.0">

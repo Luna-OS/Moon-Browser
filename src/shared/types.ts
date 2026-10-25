@@ -51,7 +51,7 @@ export interface Settings {
   secureDns: DnsSetting;
   /** DNS servers the user added and named. */
   customDns: CustomDnsServer[];
-  /** Delete cookies and site data when Moon Browser closes. */
+  /** Delete cookies and site data when Luma closes. */
   clearOnExit: boolean;
   /** Put tabs to sleep after they were unused for a while. */
   sleepTabs: boolean;
@@ -63,7 +63,7 @@ export interface Settings {
   spellcheck: boolean;
   /** Show the frequently visited sites on the new tab page. */
   newTabShortcuts: boolean;
-  /** Look for a new version of Moon Browser every few hours. */
+  /** Look for a new version of Luma every few hours. */
   autoUpdate: boolean;
   /**
    * Sites may play protected (DRM) content — Netflix, Disney+, Spotify — with
@@ -106,7 +106,7 @@ export interface TabError {
   /**
    * "network": the page could not be loaded;
    * "https": the site has no working HTTPS — offer to continue over HTTP;
-   * "blocked": Moon Shield stopped a page on a list of dangerous or tracking sites.
+   * "blocked": Luma Shield stopped a page on a list of dangerous or tracking sites.
    */
   kind: "network" | "https" | "blocked";
   /** Chromium net error code, e.g. -105 for "name not resolved". */
@@ -149,7 +149,7 @@ export interface DialogButton {
 }
 
 /**
- * A question Moon Browser asks inside the window, in its own look, where
+ * A question Luma asks inside the window, in its own look, where
  * other browsers show the system's message box.
  */
 export interface DialogInfo {
@@ -396,7 +396,7 @@ export interface ExtensionInfo {
   hasOptions: boolean;
   /** "Read and change all your data on all websites", … */
   permissions: string[];
-  /** Features Moon Browser can't offer this extension. */
+  /** Features Luma can't offer this extension. */
   unsupported: string[];
   /** Recent errors from the extension's pages and service worker, newest last. */
   errors: ExtensionError[];

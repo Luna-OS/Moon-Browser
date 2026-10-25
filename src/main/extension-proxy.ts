@@ -94,7 +94,7 @@ export class ExtensionProxy {
         if (this.prefs.proxy?.id === id) this.forget(id);
         return undefined;
       default:
-        throw new Error(`chrome.proxy.${method} isn't available in Moon Browser`);
+        throw new Error(`chrome.proxy.${method} isn't available in Luma`);
     }
   }
 }

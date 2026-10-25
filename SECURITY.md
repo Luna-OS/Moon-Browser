@@ -1,27 +1,27 @@
 # Security
 
-Moon Browser is a web browser, so it treats every web page as hostile. This file describes how it
+Luma is a web browser, so it treats every web page as hostile. This file describes how it
 is built to stay safe, and how to report a problem.
 
 ## Reporting a vulnerability
 
 Please report security problems privately through GitHub's
 [private vulnerability reporting](https://github.com/Luna-OS/Moon-Browser/security/advisories/new)
-rather than in a public issue. Include the Moon Browser version (*Settings → About*), your system
+rather than in a public issue. Include the Luma version (*Settings → About*), your system
 and the steps to reproduce.
 
-Fixes for Chromium itself arrive with Electron updates; Moon Browser follows them closely
+Fixes for Chromium itself arrive with Electron updates; Luma follows them closely
 (Dependabot watches Electron weekly), and a release ships soon after a Chromium security fix.
 
 ## The security model
 
 ### Processes and sandboxing
 
-- Every renderer — web pages, Moon Browser's own pages and the browser UI — runs in Chromium's
+- Every renderer — web pages, Luma's own pages and the browser UI — runs in Chromium's
   **sandbox** with **context isolation** and **without Node.js**. The app-wide sandbox switch
   (`app.enableSandbox()`) is on; only an explicit `--no-sandbox` (needed for containers running
   as root) turns it off.
-- Web pages get **no preload API at all**. Moon Browser's own pages (`moon://settings`, …) get a
+- Web pages get **no preload API at all**. Luma's own pages (`moon://settings`, …) get a
   small `window.moon` API; the browser UI (`moon://ui`) gets `window.moonUI`.
 - The main process **checks every IPC message**: UI commands must come from the main frame of a
   window's own UI, internal page calls from the main frame of a tab showing that internal page,
@@ -39,7 +39,7 @@ Fixes for Chromium itself arrive with Electron updates; Moon Browser follows the
 Electron fuses are flipped at package time (`build/fuses.cjs`) — in the Linux and macOS builds. The
 Windows build keeps Electron's defaults: castLabs' EVS refuses to sign an executable with
 flipped fuses for Verified Media Path, without which Netflix and other streaming services don't
-play on Windows. There, Moon Browser can be started as a Node.js runtime
+play on Windows. There, Luma can be started as a Node.js runtime
 (`ELECTRON_RUN_AS_NODE`), takes `NODE_OPTIONS` and `--inspect`, stores cookies unencrypted (in
 the user's profile folder) and doesn't check `app.asar` against its hash.
 A cookie store written encrypted by an earlier version is unreadable then: on the first start
@@ -72,7 +72,7 @@ before its first start. Cookies are encrypted with a key kept in the macOS Keych
 
 - **HTTPS first**: `http://` addresses (except local ones) are upgraded. If the secure connection
   fails, or the site redirects back to HTTP, a warning page asks before continuing insecurely.
-- **Moon Shield** blocks ads and trackers by uBlock Origin–compatible filter lists. Pages whose
+- **Luma Shield** blocks ads and trackers by uBlock Origin–compatible filter lists. Pages whose
   whole host is on a list, or that match a `$document` rule (malware, scams, pure tracking
   hosts), are stopped before they load, with a warning page.
 - **Third-party cookies** are removed from requests and responses; **tracking parameters** are
@@ -81,25 +81,25 @@ before its first start. Cookies are encrypted with a key kept in the macOS Keych
 - **Secure DNS**: DNS over HTTPS in automatic mode by default; Quad9, Mullvad or Cloudflare can
   be chosen for strict mode, and so can a DNS server of your own. A DNS-over-HTTPS server of
   yours is used as it is. A plain one (IP address and port) is reached through a DNS-over-HTTPS
-  bridge Moon Browser runs on `127.0.0.1` for Chromium, with a certificate made at every start
+  bridge Luma runs on `127.0.0.1` for Chromium, with a certificate made at every start
   and trusted for `127.0.0.1` only, by its fingerprint; every other certificate is checked as
   always. From the bridge, lookups go to your server unencrypted (UDP, TCP for long answers),
   as plain DNS does — best at home or inside a VPN such as Netbird, which encrypts them itself.
   If your server doesn't answer, names aren't looked up elsewhere: the error page says your DNS
   server didn't answer.
 - The user agent is a plain, version-reduced Chrome user agent, and `Accept-Language` carries
-  only the preferred language, so Moon Browser doesn't stand out. Pages get Chrome's
+  only the preferred language, so Luma doesn't stand out. Pages get Chrome's
   low-entropy client hints (`Sec-CH-UA`, `-Mobile`, `-Platform`, only over HTTPS) and Chrome's
   `window.chrome` (`loadTimes`, `csi`, `app`): the same Chromium in every header and to every
   script. Google's sign-in turns away browsers that don't add up. FedCM is switched off, as
   in Firefox and Safari, because Electron has no account chooser behind it.
-- Moon Browser itself only contacts the filter-list mirror (every few days), GitHub to look for a
+- Luma itself only contacts the filter-list mirror (every few days), GitHub to look for a
   new release (every few hours; *Settings → Updates* switches it off) and, when extensions are
   installed, Google's extension update server for them. There is no telemetry, crash reporting
   or sync. Spell-check dictionaries (downloaded from Google on Linux) are only fetched if spell
   checking is switched on.
 - Protected content (DRM, which Netflix, Disney+ and Spotify need) uses Google's Widevine
-  module, which is closed source. Moon Browser is built on castLabs' Electron for Content
+  module, which is closed source. Luma is built on castLabs' Electron for Content
   Security (ECS): Electron with Widevine support, installed and kept up to date through
   Chromium's component updater from Google's servers. The module runs in its own sandboxed
   process, as in Chrome. *Settings → System → Protected content* switches it off: then the
@@ -117,37 +117,37 @@ builds aren't code-signed yet, an update is as trustworthy as the GitHub release
 
 On macOS, the system's updater (Squirrel.Mac) only installs over an app signed with an Apple
 Developer ID. A build signed with one (the release workflow does that when the repository has
-one) uses it. The Mac builds are signed ad hoc for now, so Moon Browser updates itself
+one) uses it. The Mac builds are signed ad hoc for now, so Luma updates itself
 (`src/main/mac-update.ts`):
 - it downloads the zip for the Mac's architecture named in `latest-mac.yml` (only a plain file
   name in the release, never a path) and checks its SHA-512;
 - it unpacks it with `ditto` into its temporary folder, then checks that the new app has a
-  valid signature (`codesign --verify --deep --strict`), Moon Browser's bundle ID and exactly
+  valid signature (`codesign --verify --deep --strict`), Luma's bundle ID and exactly
   the announced version;
-- once Moon Browser has quit, a script moves the old app aside, moves the new one into its
+- once Luma has quit, a script moves the old app aside, moves the new one into its
   place, and deletes the old one only after that has worked (otherwise it is put back).
 
 It only does this when the app is in a folder the user may write to; started from the disk
 image or a translocated path, *Update* opens the download page instead. As on Windows and
 Linux, an update is as trustworthy as the GitHub release it comes from.
 
-The Windows installer only removes the browser registration when Moon Browser is really
+The Windows installer only removes the browser registration when Luma is really
 uninstalled, not while an update replaces it; the profile is never deleted by the installer.
 
 ### Engine security updates
 
-Moon Browser's engine is Chromium, inside Electron — castLabs' Electron for Content Security,
+Luma's engine is Chromium, inside Electron — castLabs' Electron for Content Security,
 which is Electron with Widevine support, released for each Electron version shortly after it.
-Chromium's security fixes — the ones Chrome and Helium ship — reach Moon Browser through
+Chromium's security fixes — the ones Chrome and Helium ship — reach Luma through
 Electron's patch releases, which carry them to Electron's supported major versions (its latest
 three), usually within days, and then through castLabs' release of them. The *Security
 updates* workflow (`.github/workflows/security-updates.yml`, `scripts/security-update.mjs`)
-looks for a newer castLabs release of Moon Browser's Electron major version every six hours. It installs
+looks for a newer castLabs release of Luma's Electron major version every six hours. It installs
 it, runs all of CI with it (unit tests, the end-to-end test on Linux and Windows, packaging for
 Windows, Linux and macOS, the installer test) and, only if everything passes, puts it on `main` and releases the next patch
 version; installed copies then update themselves. A failed test or a new Electron major version
 (which can change APIs) becomes an issue for a person instead. Each run's summary compares
-Moon Browser's Electron with the Chromium version Helium builds on.
+Luma's Electron with the Chromium version Helium builds on.
 
 ### Extensions
 
@@ -162,7 +162,7 @@ Moon Browser's Electron with the Chromium version Helium builds on.
   extensions page says so and offers *Repair*: the package is downloaded from the Web Store
   again, and the old copy is only replaced once the new one has arrived. The script is compiled
   for this check, never run.
-- Before an extension is added, Moon Browser shows what it may do (the permission warnings
+- Before an extension is added, Luma shows what it may do (the permission warnings
   Chrome would show) and adds nothing without a click on *Add extension*. Optional permissions
   requested later are asked for the same way.
 - Extensions run **only in normal windows**, never in private ones, and web pages get none of
@@ -175,7 +175,7 @@ Moon Browser's Electron with the Chromium version Helium builds on.
 - The toolbar's extension buttons live in the browser UI; the only thing they can reach is the
   extension system of the normal browsing session.
 - **WebAuthn in extension pages** (Windows only; NordPass sets up Windows Hello with it):
-  Electron refuses `navigator.credentials` in `chrome-extension://` pages, so Moon Browser
+  Electron refuses `navigator.credentials` in `chrome-extension://` pages, so Luma
   answers it through Windows' own WebAuthn API (`webauthn.dll`, the system dialog Chrome uses
   too), with Chrome's rules. The main process takes the extension from the calling frame's
   origin and writes the client data itself (origin `chrome-extension://<id>`); the relying
@@ -186,7 +186,7 @@ Moon Browser's Electron with the Chromium version Helium builds on.
 
 ### Perplexity's look and Axo
 
-On `https://perplexity.ai` (and `www.`), Moon Browser adds a stylesheet that recolours the site
+On `https://perplexity.ai` (and `www.`), Luma adds a stylesheet that recolours the site
 and a script for Axo, the axolotl on the search box (`src/main/perplexity/`). The script runs in
 an isolated world: the page's own scripts can't see or call it, and it draws into a closed
 shadow root. It only reads the page's layout to place itself, sends nothing anywhere and keeps
@@ -199,7 +199,7 @@ Fullscreen, pointer lock, writing to the clipboard and similar harmless capabili
 Camera, microphone, location, notifications, reading the clipboard, opening other apps and
 pop-ups without a click are **asked for** in a bar above the page; decisions can be remembered
 per site (in private windows only until they close) and reset in *Settings → Site permissions*.
-Answers not remembered hold until Moon Browser closes. Until a site's question is answered, the
+Answers not remembered hold until Luma closes. Until a site's question is answered, the
 site sees it as undecided — `Notification.permission` is `default`, `navigator.permissions` says
 `prompt` — as in Chrome; Electron alone would say `denied`, and sites would show "blocked"
 instead of asking.
@@ -219,9 +219,9 @@ checks an app or disk image from it before it first opens.
 ### Data at rest
 
 History, bookmarks and settings are plain JSON files in the profile folder, written atomically.
-Cookies are encrypted (see fuses). Moon Browser stores **no passwords**. Private windows use an
+Cookies are encrypted (see fuses). Luma stores **no passwords**. Private windows use an
 in-memory session that is wiped when the last private window closes. Optionally, cookies and
-site data are deleted whenever Moon Browser closes.
+site data are deleted whenever Luma closes.
 
 ### Importing
 
@@ -232,26 +232,26 @@ never imported.
 
 ## Known limitations
 
-- Extensions run on Electron's extension support plus electron-chrome-extensions and Moon
-  Browser's own additions (side panel, identity, tab groups, search, debugger, proxy,
+- Extensions run on Electron's extension support plus electron-chrome-extensions and
+  Luma's own additions (side panel, identity, tab groups, search, debugger, proxy,
   `declarativeNetRequest` rules, `runtime.onInstalled` / `onStartup`), which cover the common
   APIs but not all of Chrome's: keyboard commands and moving tab groups to another window are
-  missing, and `chrome.webRequest` listeners get no events (Moon Shield handles the requests
+  missing, and `chrome.webRequest` listeners get no events (Luma Shield handles the requests
   itself).
 - `declarativeNetRequest` rules (static rulesets, dynamic and session rules) apply to requests
-  of web pages in normal windows, before Moon Shield: block, allow, allowAllRequests,
+  of web pages in normal windows, before Luma Shield: block, allow, allowAllRequests,
   upgradeScheme, redirect and modifyHeaders. Redirects and header changes need host access to
   the request's site, as in Chrome.
-- `chrome.privacy` settings can be read but not changed: Moon Browser has no password saving or
+- `chrome.privacy` settings can be read but not changed: Luma has no password saving or
   autofill of its own, so extensions (password managers turn these off) find them off already.
 - `chrome.proxy` sets the proxy of normal windows (the extension that set it last controls it,
   until it's switched off or removed); private windows always use the system's proxy. Native messaging starts the desktop apps registered for Google Chrome, only for the
   extensions those apps name, as Chrome does.
 - `chrome.debugger` (for extensions that declare it, with the install warning "Access the page
-  debugger") can attach to web pages only, never to Moon Browser's own pages.
+  debugger") can attach to web pages only, never to Luma's own pages.
 - Extension packages are checked for the right ID and come over HTTPS from Google, but their
   signature isn't verified beyond that the way Chrome does.
-- Chromium's Safe Browsing service isn't part of Electron; the Moon Shield lists (including
+- Chromium's Safe Browsing service isn't part of Electron; the Luma Shield lists (including
   uBlock Origin's *Badware risks* list) and, optionally, Quad9 DNS cover part of it.
 - The builds are not code-signed yet. The Mac app is signed ad hoc and not notarized (see *The
   shipped binary*), so it doesn't update itself.

@@ -6,7 +6,7 @@ import jsxA11y from "eslint-plugin-jsx-a11y";
 import tseslint from "typescript-eslint";
 import prettierConfig from "eslint-config-prettier";
 
-// Moon Browser ESLint configuration.
+// Luma ESLint configuration.
 //
 // Two rules here are not style preferences, they enforce a security
 // boundary: the browser UI and the internal pages never talk to the network

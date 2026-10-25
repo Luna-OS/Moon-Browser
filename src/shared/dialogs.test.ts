@@ -74,7 +74,7 @@ describe("Moon dialogs", () => {
   it("says the same in the system's message box where no window is left", () => {
     expect(
       messageBoxOptions({
-        ...spec("Add “Moon” to Moon Browser?"),
+        ...spec("Add “Moon” to Luma?"),
         eyebrow: "Add extension",
         list: { label: "It can", items: ["Read your tabs", "Store data"] },
         notes: ["Extensions run in normal windows, not in private ones."],
@@ -86,7 +86,7 @@ describe("Moon dialogs", () => {
       cancelId: 0,
       noLink: true,
       title: "Add extension",
-      message: "Add “Moon” to Moon Browser?",
+      message: "Add “Moon” to Luma?",
       detail:
         "It can:\n• Read your tabs\n• Store data\n\nExtensions run in normal windows, not in private ones.",
     });

@@ -62,7 +62,7 @@ export class Browser {
   readonly dnsBridge = new DnsBridge();
   private dnsGeneration = 0;
   readonly httpsExceptions = new Set<string>();
-  /** Hosts whose Moon Shield warning the user chose to pass, until quit. */
+  /** Hosts whose Luma Shield warning the user chose to pass, until quit. */
   readonly shieldExceptions = new Set<string>();
   /** Tabs whose current load was upgraded to HTTPS: tab id → host. */
   readonly upgraded = new Map<number, { host: string; time: number }>();
@@ -364,7 +364,7 @@ export class Browser {
 
   // ---- Protection ----
 
-  /** False when the user switched Moon Shield off for the site of `pageUrl`. */
+  /** False when the user switched Luma Shield off for the site of `pageUrl`. */
   siteProtected(pageUrl: string): boolean {
     const site = protectionSiteOf(pageUrl);
     return !!site && !this.settings.protectionAllowlist.includes(site);
@@ -547,7 +547,7 @@ export class Browser {
     win.win.focus();
   }
 
-  /** Starts Moon Browser again with the same tabs (after changing a setting that needs it). */
+  /** Starts Luma again with the same tabs (after changing a setting that needs it). */
   restart(): void {
     this.profile.stats.get().restoreAfterUpdate = true;
     this.profile.stats.changed();
@@ -561,7 +561,7 @@ export class Browser {
     this.profile.flush();
   }
 
-  /** "Delete cookies and site data when Moon Browser closes". */
+  /** "Delete cookies and site data when Luma closes". */
   async clearSiteDataOnExit(): Promise<void> {
     await this.normalSession.clearStorageData();
     await this.normalSession.clearAuthCache();

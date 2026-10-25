@@ -18,7 +18,7 @@ describe("the DNS bridge's certificate", () => {
     expect(x509.checkHost("localhost")).toBeUndefined();
     expect(new Date(x509.validFrom).getTime()).toBe(now - 3_600_000);
     expect(new Date(x509.validTo).getTime()).toBe(now + 30 * 86_400_000);
-    // The fingerprint Moon Browser trusts it by.
+    // The fingerprint Luma trusts it by.
     expect(pemFingerprint(cert)).toBe(fingerprint);
     expect(Buffer.from(x509.fingerprint256.replace(/:/g, ""), "hex").toString("base64")).toBe(
       fingerprint,

@@ -3,7 +3,7 @@
  * apps on the computer (Claude's extension to Claude Desktop and Claude
  * Code, password managers to their desktop apps).
  *
- * Moon Browser finds the apps where Chrome looks for them — the hosts the
+ * Luma finds the apps where Chrome looks for them — the hosts the
  * apps registered for Chrome — so nothing has to be set up twice. A host
  * runs only for the extensions its manifest names in "allowed_origins", and
  * only for extensions that declare "nativeMessaging". Messages are JSON,

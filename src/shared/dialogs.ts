@@ -1,5 +1,5 @@
 /**
- * The questions a window asks in Moon Browser's own dialogs, one at a time:
+ * The questions a window asks in Luma's own dialogs, one at a time:
  * each waits in line until the ones before it are answered, and every one
  * gets an answer — the dismissal one when the window goes away.
  */
@@ -69,8 +69,8 @@ export class DialogQueue {
 }
 
 /**
- * The same question as the system's message box, where no window of Moon
- * Browser's is left to ask it in.
+ * The same question as the system's message box, where no window of Luma's
+ * is left to ask it in.
  */
 export function messageBoxOptions(spec: DialogSpec): {
   type: "question" | "warning";

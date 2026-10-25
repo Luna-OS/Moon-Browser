@@ -70,7 +70,7 @@ await copyFile(
 // The extension libraries look for their preloads next to the bundle that
 // uses them (the packaged app has no node_modules). They are CommonJS: said
 // here, as the app's own package.json declares ES modules, so that they also
-// load where Moon Browser runs with --no-sandbox (only sandboxed preloads
+// load where Luma runs with --no-sandbox (only sandboxed preloads
 // ignore the module type).
 await writeFile(resolve(root, "out/main/package.json"), '{ "type": "commonjs" }\n');
 await copyFile(
@@ -98,7 +98,7 @@ await copyFile(
     // library lacks (sidePanel, identity, …), whichever preload runs first.
     ["Object.freeze(chrome);", ""],
     // chrome.privacy settings answer (callback and promise) instead of never
-    // answering: extensions await them at start-up (NordPass). Moon Browser
+    // answering: extensions await them at start-up (NordPass). Luma
     // has no password saving or autofill of its own; nothing is changeable.
     [
       `class ChromeSetting {
@@ -150,7 +150,7 @@ await copyFile(
       'onChanged: new ExtensionEvent("downloads.onChanged"),',
       'onChanged: base?.onChanged ?? new ExtensionEvent("downloads.onChanged"),',
     ],
-    // Native messaging: Moon Browser's own (src/main/native-messaging.ts)
+    // Native messaging: Luma's own (src/main/native-messaging.ts)
     // reads the hosts' messages in pieces, handles any text and .bat hosts,
     // and answers when a host is missing; it wins over the library's.
     [

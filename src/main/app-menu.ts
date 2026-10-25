@@ -1,13 +1,14 @@
 /**
  * The menu bar on macOS. Without one, macOS has no Cmd+C, Cmd+V, Cmd+Z or
  * Cmd+Q: editing in text fields and quitting go through the menu there.
- * Windows and Linux have no menu bar (the ☰ menu is Moon Browser's own).
+ * Windows and Linux have no menu bar (the ☰ menu is Luma's own).
  *
  * Keys pressed in a window are handled before they reach the menu
  * (src/shared/shortcuts.ts), so its items only act when no browser window
  * has the keyboard: with every window closed, or from DevTools.
  */
 import { app, Menu, webContents, type MenuItemConstructorOptions } from "electron";
+import { PRODUCT_NAME } from "@shared/brand";
 import { internalUrl } from "@shared/internal";
 import type { UiCommand } from "@shared/ipc";
 import type { Browser } from "./browser";
@@ -44,20 +45,22 @@ export function installAppMenu(browser: Browser): void {
 
   const template: MenuItemConstructorOptions[] = [
     {
-      label: app.name,
+      // The name people see. (app.name stays "Moon Browser", the name the
+      // profile folder and the Keychain entry go by: see package.json.)
+      label: PRODUCT_NAME,
       submenu: [
-        link("About Moon Browser", "moon://about/"),
+        link("About Luma", "moon://about/"),
         sep,
         page("Settings…", "Cmd+,", "settings"),
         page("Extensions", undefined, "extensions"),
         sep,
         { role: "services" },
         sep,
-        { role: "hide" },
+        { role: "hide", label: `Hide ${PRODUCT_NAME}` },
         { role: "hideOthers" },
         { role: "unhide" },
         sep,
-        { role: "quit" },
+        { role: "quit", label: `Quit ${PRODUCT_NAME}` },
       ],
     },
     {
@@ -162,10 +165,7 @@ export function installAppMenu(browser: Browser): void {
     },
     {
       role: "help",
-      submenu: [
-        link("Moon Browser on GitHub", HOMEPAGE),
-        link("Report a Problem", `${HOMEPAGE}/issues`),
-      ],
+      submenu: [link("Luma on GitHub", HOMEPAGE), link("Report a Problem", `${HOMEPAGE}/issues`)],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));

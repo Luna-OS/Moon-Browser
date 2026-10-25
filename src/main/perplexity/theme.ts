@@ -1,5 +1,5 @@
 /**
- * Perplexity in Moon Browser's night-sky look: Perplexity builds its colours
+ * Perplexity in Luma's night-sky look: Perplexity builds its colours
  * from two palettes of custom properties (odin: greys, shiva: the teal
  * accent), so swapping those for Moon's night and lavender recolours the
  * whole site without touching its layout. In dark mode, its base surfaces

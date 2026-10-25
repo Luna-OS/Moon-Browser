@@ -1,7 +1,7 @@
 /*
  * A stand-in for Windows' webauthn.dll, built from Microsoft's own
  * webauthn.h, for src/main/webauthn-win.test.ts: it describes every field it
- * received as text, so the test can check that Moon Browser lays out the
+ * received as text, so the test can check that Luma lays out the
  * structures exactly as Windows expects them.
  *
  *   cc -shared -fPIC -I. -o libwebauthn-mock.so mock.c

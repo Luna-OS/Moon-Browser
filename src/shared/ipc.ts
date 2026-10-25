@@ -44,10 +44,10 @@ export type UiCommand =
   | { type: "unsplit" }
   | { type: "splitRatio"; ratio: number }
   | { type: "download"; id: string; action: DownloadAction }
-  /** Continue past an HTTPS or Moon Shield warning for this tab's page. */
+  /** Continue past an HTTPS or Luma Shield warning for this tab's page. */
   | { type: "proceed"; tabId: number }
   | { type: "focusPage" }
-  /** Restart Moon Browser and install the downloaded update. */
+  /** Restart Luma and install the downloaded update. */
   | { type: "installUpdate" }
   | { type: "makeDefaultBrowser" }
   /** Show or hide an extension's button in the toolbar. */

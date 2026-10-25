@@ -168,7 +168,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
     run(cmd);
   };
   return (
-    <div role="menu" aria-label="Moon Browser menu">
+    <div role="menu" aria-label="Luma menu">
       {state.updateReady && (
         <>
           <Item
@@ -319,7 +319,7 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
       )}
       <Item
         icon={<InfoIcon size={16} />}
-        label="About Moon Browser"
+        label="About Luma"
         onClick={act({ type: "openUrl", url: "moon://about/", disposition: "foreground" })}
       />
       <Item
@@ -343,9 +343,9 @@ export function ShieldPanel({ state, onClose }: { state: WindowState; onClose: (
           <ShieldIcon size={22} off={!on} />
         </span>
         <div className="min-w-0">
-          <div className="font-semibold">Moon Shield</div>
+          <div className="font-semibold">Luma Shield</div>
           <div className="truncate text-xs text-(--mb-text-muted)">
-            {protection.site || "Moon Browser's own pages need no shield"}
+            {protection.site || "Luma's own pages need no shield"}
           </div>
         </div>
       </div>

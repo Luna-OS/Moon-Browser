@@ -1,18 +1,18 @@
 /**
- * Looks for a security update of Moon Browser's engine, for
+ * Looks for a security update of Luma's engine, for
  * .github/workflows/security-updates.yml.
  *
- * Moon Browser's engine is Chromium, inside Electron — castLabs' Electron for
+ * Luma's engine is Chromium, inside Electron — castLabs' Electron for
  * Content Security (Electron with Widevine, for Netflix and the like), which
  * castLabs releases for each Electron version shortly after it. Chromium's
  * security fixes — the ones Chrome and Helium ship — reach Electron's
  * supported versions in its patch releases, usually within days. So: is
- * there a newer castLabs release of the Electron major version Moon Browser
+ * there a newer castLabs release of the Electron major version Luma
  * is built on?
  *
  *   node scripts/security-update.mjs           what it found, as key=value lines ($GITHUB_OUTPUT)
  *   node scripts/security-update.mjs --apply   and, if there's an update, installs it and
- *                                              bumps Moon Browser's version (patch)
+ *                                              bumps Luma's version (patch)
  *   --from <version>                           pretend Electron <version> is installed (to try it)
  */
 import { execFileSync } from "node:child_process";

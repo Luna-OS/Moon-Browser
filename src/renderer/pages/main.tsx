@@ -20,7 +20,7 @@ const TITLES: Record<InternalPage, string> = {
   bookmarks: "Bookmarks",
   downloads: "Downloads",
   extensions: "Extensions",
-  about: "About Moon Browser",
+  about: "About Luma",
 };
 
 function Root({ page }: { page: InternalPage }) {

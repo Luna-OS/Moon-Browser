@@ -321,7 +321,7 @@ function install(bridge: {
       getRedirectURL: (path = "") =>
         `https://${id}.chromiumapp.org/${String(path).replace(/^\/+/, "")}`,
       launchWebAuthFlow: fn("identity.launchWebAuthFlow"),
-      getAuthToken: rejecting("Signing in with a Google account isn't available in Moon Browser."),
+      getAuthToken: rejecting("Signing in with a Google account isn't available in Luma."),
       getProfileUserInfo: () => Promise.resolve({ email: "", id: "" }),
       getAccounts: () => Promise.resolve([]),
       removeCachedAuthToken: () => Promise.resolve(),
@@ -519,7 +519,7 @@ function install(bridge: {
   }
 
   // chrome.runtime.onInstalled / onStartup: Electron never fires them, so
-  // Moon Browser does. Should Electron fire one itself, its listeners aren't
+  // Luma does. Should Electron fire one itself, its listeners aren't
   // called a second time.
   const runtimeApi = chrome.runtime as Record<string, unknown>;
   for (const [prop, name] of [
@@ -566,7 +566,7 @@ function install(bridge: {
   }
 
   // chrome.declarativeNetRequest: Electron accepts the calls but applies no
-  // rules; Moon Browser keeps and applies them instead.
+  // rules; Luma keeps and applies them instead.
   if (has("declarativeNetRequest") || has("declarativeNetRequestWithHostAccess")) {
     const native = (chrome.declarativeNetRequest ?? {}) as Record<string, unknown>;
     const api: Record<string, unknown> = {
@@ -603,7 +603,7 @@ function install(bridge: {
     }
   }
 
-  // chrome.proxy: Electron refuses the calls; Moon Browser sets the proxy.
+  // chrome.proxy: Electron refuses the calls; Luma sets the proxy.
   if (has("proxy")) {
     try {
       Object.defineProperty(chrome, "proxy", {
