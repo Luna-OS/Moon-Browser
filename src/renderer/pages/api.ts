@@ -31,6 +31,8 @@ export interface SettingsInfo {
   platform: string;
   /** A setting changed that takes effect after a restart. */
   restartNeeded: boolean;
+  /** Chromium's WebGPU status now ("enabled", "unavailable_software", …). */
+  webgpu: string;
 }
 
 export interface NewTabInfo {

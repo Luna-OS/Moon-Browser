@@ -45,6 +45,7 @@ export function defaultSettings(platform: string): Settings {
     autoUpdate: true,
     protectedContent: true,
     hardwareAcceleration: true,
+    webgpuEverywhere: false,
     perplexityLook: true,
     youtubeLook: false,
   };
@@ -135,6 +136,7 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     autoUpdate: bool(raw.autoUpdate, d.autoUpdate),
     protectedContent: bool(raw.protectedContent, d.protectedContent),
     hardwareAcceleration: bool(raw.hardwareAcceleration, d.hardwareAcceleration),
+    webgpuEverywhere: bool(raw.webgpuEverywhere, d.webgpuEverywhere),
     perplexityLook: bool(raw.perplexityLook, d.perplexityLook),
     youtubeLook: bool(raw.youtubeLook, d.youtubeLook),
   };
