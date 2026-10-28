@@ -72,6 +72,12 @@ export interface Settings {
   protectedContent: boolean;
   /** Use the graphics card to draw pages and video. Takes effect after a restart. */
   hardwareAcceleration: boolean;
+  /**
+   * WebGPU for pages also where Chromium doesn't allow it yet: graphics cards
+   * on its list and systems it hasn't shipped it for (Linux). Takes effect
+   * after a restart.
+   */
+  webgpuEverywhere: boolean;
   /** Perplexity in Moon's night-sky look, with Axo the axolotl on its search box. */
   perplexityLook: boolean;
   /** YouTube in Moon's night-sky look, with a moon on its progress bar. */

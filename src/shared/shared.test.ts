@@ -206,6 +206,12 @@ describe("settings", () => {
     );
   });
 
+  it("offers WebGPU where Chromium does, everywhere only when switched on", () => {
+    expect(defaultSettings("linux").webgpuEverywhere).toBe(false);
+    expect(sanitizeSettings({ webgpuEverywhere: true }, "win32").webgpuEverywhere).toBe(true);
+    expect(sanitizeSettings({ webgpuEverywhere: "yes" }, "win32").webgpuEverywhere).toBe(false);
+  });
+
   it("leaves YouTube as it is unless switched on", () => {
     expect(defaultSettings("win32").youtubeLook).toBe(false);
     expect(sanitizeSettings({ theme: "light" }, "linux").youtubeLook).toBe(false);

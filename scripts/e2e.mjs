@@ -1625,6 +1625,37 @@ try {
     if (result !== "ok") throw new Error(`no Widevine: ${result}`);
   });
 
+  await check("pages get WebGPU where the GPU allows it", async () => {
+    const page = await waitFor(
+      () => app.windows().find((p) => p.url() === `${base}/drm`),
+      "a web page",
+    );
+    const inPage = await page.evaluate(async () => {
+      const out = { gpu: typeof navigator.gpu };
+      try {
+        const adapter = await navigator.gpu?.requestAdapter();
+        out.adapter = adapter ? `${adapter.info.vendor} ${adapter.info.architecture}` : null;
+      } catch (err) {
+        out.error = String(err);
+      }
+      return out;
+    });
+    const engine = await app.evaluate(async ({ app: a }) => {
+      const status = a.getGPUFeatureStatus();
+      const info = await a.getGPUInfo("basic").catch(() => null);
+      return {
+        webgpu: status.webgpu,
+        webgl: status.webgl,
+        devices: info?.gpuDevice?.map((d) => `${d.vendorId}:${d.deviceId} ${d.vendorString ?? ""}`),
+      };
+    });
+    console.log(`      (WebGPU here: ${JSON.stringify({ ...engine, ...inPage })})`);
+    if (inPage.gpu !== "object") throw new Error("no navigator.gpu");
+    // Where Chromium offers WebGPU (on macOS here), pages get an adapter.
+    if (engine.webgpu?.startsWith("enabled") && !inPage.adapter)
+      throw new Error("WebGPU is on, but pages get no adapter");
+  });
+
   await check("the window survives for a while without crashing", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
@@ -1668,6 +1699,10 @@ try {
     const want = (await stripOrder()).join("|");
     await new Promise((r) => setTimeout(r, 2000));
     await app.close();
+    // Also starts with "WebGPU on every graphics card" (Settings → System).
+    const settingsFile = join(profile, "settings.json");
+    const settings = JSON.parse(await readFile(settingsFile, "utf8"));
+    await writeFile(settingsFile, JSON.stringify({ ...settings, webgpuEverywhere: true }));
 
     const again = await electron.launch({
       executablePath: require("electron"),
@@ -1699,6 +1734,23 @@ try {
       await waitFor(() => chip2.textContent().then((t) => t.includes("Kept")), "the group again");
       if ((await chip2.getAttribute("aria-label"))?.includes("2 tabs") !== true)
         throw new Error(`the group has ${await chip2.getAttribute("aria-label")}`);
+      // With it, the shown tab gets a WebGPU adapter even without a graphics
+      // card Chromium allows (here: none, on the CI machines but macOS's).
+      const adapter = await waitFor(
+        () =>
+          again.evaluate(({ webContents }) => {
+            const wc = webContents
+              .getAllWebContents()
+              .find((w) => /^http:\/\/127\.0\.0\.1:\d+\//.test(w.getURL()) && !w.isLoading());
+            return wc?.executeJavaScript(
+              "navigator.gpu.requestAdapter().then((a) => (a ? a.info.vendor || 'unnamed' : 'none'))",
+            );
+          }),
+        "a page to ask for WebGPU",
+      );
+      console.log(`      (WebGPU adapter with "on every graphics card": ${adapter})`);
+      if (process.platform !== "win32" && adapter === "none")
+        throw new Error("no WebGPU adapter with WebGPU on every graphics card");
     } finally {
       await again.close().catch(() => undefined);
     }

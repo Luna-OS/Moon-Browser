@@ -338,6 +338,9 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       theme: browser.resolvedTheme(),
       platform: process.platform,
       restartNeeded: engineSettingsChanged(browser.startedWith, browser.settings),
+      // Not in Electron's type of it, but there.
+      webgpu:
+        (app.getGPUFeatureStatus() as unknown as Record<string, string | undefined>).webgpu ?? "",
     }),
     "app.restart": () => browser.restart(),
     "settings.set": (_tab, patch) => browser.updateSettings(isObj(patch) ? patch : {}),

@@ -84,8 +84,8 @@ export class Browser {
 
   constructor() {
     this.profile = new Profile(process.platform);
-    const { protectedContent, hardwareAcceleration } = this.settings;
-    this.startedWith = { protectedContent, hardwareAcceleration };
+    const { protectedContent, hardwareAcceleration, webgpuEverywhere } = this.settings;
+    this.startedWith = { protectedContent, hardwareAcceleration, webgpuEverywhere };
     this.permissions = new Permissions(this);
     this.downloads = new Downloads(this);
     this.importer = new Importer(this.profile);

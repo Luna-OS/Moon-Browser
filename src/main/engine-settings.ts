@@ -1,6 +1,11 @@
 /**
  * Settings that change how Chromium itself starts, so they take effect after
- * a restart: hardware acceleration and protected content.
+ * a restart: hardware acceleration, WebGPU everywhere and protected content.
+ *
+ * WebGPU everywhere is Chrome's "Unsafe WebGPU Support" flag: WebGPU for
+ * pages (3D sites, games) also on graphics cards Chromium keeps it from and
+ * on Linux, where it hasn't shipped it. Off unless switched on: a driver
+ * Chromium distrusts can make such pages crash.
  *
  * Protected content is DRM (Encrypted Media Extensions with Widevine), which
  * Netflix, Disney+, Prime Video and Spotify need. Luma is built on
@@ -12,11 +17,15 @@
 import type { Settings } from "@shared/types";
 import { app, components } from "electron";
 
-export type EngineSettings = Pick<Settings, "protectedContent" | "hardwareAcceleration">;
+export type EngineSettings = Pick<
+  Settings,
+  "protectedContent" | "hardwareAcceleration" | "webgpuEverywhere"
+>;
 
 /** Must run before the app is ready. */
 export function applyEngineSettings(settings: EngineSettings): void {
   if (!settings.hardwareAcceleration) app.disableHardwareAcceleration();
+  else if (settings.webgpuEverywhere) app.commandLine.appendSwitch("enable-unsafe-webgpu");
   if (!settings.protectedContent) app.commandLine.appendSwitch("disable-component-update");
 }
 
@@ -38,6 +47,7 @@ export function prepareProtectedContent(settings: EngineSettings): void {
 export function engineSettingsChanged(started: EngineSettings, now: Settings): boolean {
   return (
     started.protectedContent !== now.protectedContent ||
-    started.hardwareAcceleration !== now.hardwareAcceleration
+    started.hardwareAcceleration !== now.hardwareAcceleration ||
+    started.webgpuEverywhere !== now.webgpuEverywhere
   );
 }

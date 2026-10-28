@@ -61,6 +61,9 @@ and their place as the default browser.
 - **Netflix, Disney+, Prime Video and Spotify** play: protected (DRM) content works with
   Google's Widevine module, through castLabs' Electron for Content Security. *Settings → System*
   switches it off, as well as hardware acceleration
+- **WebGPU** for 3D sites and games where Chromium offers it (Windows, macOS). *Settings →
+  System → WebGPU on every graphics card* also turns it on for graphics cards Chromium doesn't
+  allow yet, and on Linux
 - **Sleeping tabs** — tabs you haven't looked at for a while give their memory back and wake up
   when you return
 - **Address bar** with suggestions from your history, bookmarks and open tabs, and inline

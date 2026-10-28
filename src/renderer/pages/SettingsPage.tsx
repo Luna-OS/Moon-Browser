@@ -539,6 +539,23 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
             checked={s.hardwareAcceleration}
             onChange={(v) => set({ hardwareAcceleration: v })}
           />
+          <Toggle
+            label="WebGPU on every graphics card"
+            hint={
+              <>
+                For 3D sites and games: pages may use WebGPU also where Chromium doesn't allow it
+                yet for your graphics card{info.platform === "linux" ? " or on Linux" : ""}. A
+                graphics driver Chromium doesn't trust can make such pages crash.{" "}
+                {info.webgpu.startsWith("enabled")
+                  ? "WebGPU works here now."
+                  : !s.hardwareAcceleration
+                    ? "WebGPU needs hardware acceleration."
+                    : "WebGPU isn't available here now."}
+              </>
+            }
+            checked={s.webgpuEverywhere}
+            onChange={(v) => set({ webgpuEverywhere: v })}
+          />
           {info.restartNeeded && (
             <Row label="Restart to apply" hint="Your tabs come back after the restart.">
               <button
