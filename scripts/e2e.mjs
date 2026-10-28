@@ -1625,6 +1625,33 @@ try {
     if (result !== "ok") throw new Error(`no Widevine: ${result}`);
   });
 
+  await check("pages get WebGPU where the GPU allows it", async () => {
+    const page = await waitFor(
+      () => app.windows().find((p) => p.url() === `${base}/drm`),
+      "a web page",
+    );
+    const inPage = await page.evaluate(async () => {
+      const out = { gpu: typeof navigator.gpu };
+      try {
+        const adapter = await navigator.gpu?.requestAdapter();
+        out.adapter = adapter ? `${adapter.info.vendor} ${adapter.info.architecture}` : null;
+      } catch (err) {
+        out.error = String(err);
+      }
+      return out;
+    });
+    const engine = await app.evaluate(async ({ app: a }) => {
+      const status = a.getGPUFeatureStatus();
+      const info = await a.getGPUInfo("basic").catch(() => null);
+      return {
+        webgpu: status.webgpu,
+        webgl: status.webgl,
+        devices: info?.gpuDevice?.map((d) => `${d.vendorId}:${d.deviceId} ${d.vendorString ?? ""}`),
+      };
+    });
+    console.log(`      (WebGPU here: ${JSON.stringify({ ...engine, ...inPage })})`);
+  });
+
   await check("the window survives for a while without crashing", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
