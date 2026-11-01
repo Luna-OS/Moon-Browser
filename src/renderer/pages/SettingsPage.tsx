@@ -190,7 +190,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           {/* Sites in Luma's look, side by side. */}
           <Toggle
             label="YouTube in Luma's look"
-            hint="YouTube wears the night sky: a moonlit progress bar and a starry volume slider. Applies from the next page load."
+            hint="YouTube and YouTube Music wear the night sky: a moonlit progress bar and a starry volume slider. Applies from the next page load."
             checked={s.youtubeLook}
             onChange={(v) => set({ youtubeLook: v })}
           />
