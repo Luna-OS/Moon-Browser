@@ -192,7 +192,6 @@ export class Extensions {
     );
 
     this.api = new ElectronChromeExtensions({
-      license: "GPL-3.0",
       session: ses,
       createTab: (details) => {
         const win = this.windowFor(details.windowId);
