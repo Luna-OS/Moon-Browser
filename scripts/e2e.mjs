@@ -1656,6 +1656,80 @@ try {
       throw new Error("WebGPU is on, but pages get no adapter");
   });
 
+  await check("a page's fullscreen covers the whole screen, as for YouTube", async () => {
+    const inDrm = (js) =>
+      app.evaluate(
+        ({ webContents }, [url, code]) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL() === url)
+            ?.executeJavaScript(code, true),
+        [`${base}/drm`, js],
+      );
+    // The page's tab in front, as when someone watches a video.
+    await ui.evaluate(
+      (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "foreground" }),
+      `${base}/drm`,
+    );
+    await new Promise((r) => setTimeout(r, 500));
+    await inDrm("document.documentElement.requestFullscreen().then(() => true)");
+    const state = () =>
+      app.evaluate(({ BrowserWindow, screen }) => {
+        const win = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().startsWith("moon://ui"),
+        );
+        const bounds = win.getBounds();
+        return {
+          fullscreen: win.isFullScreen(),
+          bounds,
+          display: screen.getDisplayMatching(bounds).bounds,
+          hwnd: win.getNativeWindowHandle().toString("hex"),
+        };
+      });
+    const covers = (s) => ["x", "y", "width", "height"].every((k) => s.bounds[k] === s.display[k]);
+    await waitFor(async () => (await state()).fullscreen, "the window to go fullscreen");
+    // Over the whole display, taskbar included. (Xvfb has no window
+    // manager to make a window fullscreen: there it's only reported.)
+    const on = await waitFor(
+      async () => {
+        const s = await state();
+        return covers(s) ? s : null;
+      },
+      "the window to cover the display",
+      5000,
+    ).catch(async (err) => {
+      if (process.platform === "linux") return state();
+      throw err;
+    });
+    let shell = {};
+    if (process.platform === "win32") {
+      // What Windows itself sees: the window's frame, whether it is in
+      // front, and whether the shell counts a full-screen app as running
+      // (then the taskbar steps aside).
+      const koffi = require("koffi");
+      const user32 = koffi.load("user32.dll");
+      const shell32 = koffi.load("shell32.dll");
+      const getStyle = user32.func(
+        "intptr_t __stdcall GetWindowLongPtrW(intptr_t hWnd, int nIndex)",
+      );
+      const foreground = user32.func("intptr_t __stdcall GetForegroundWindow()");
+      const notification = shell32.func(
+        "long __stdcall SHQueryUserNotificationState(_Out_ int *pquns)",
+      );
+      const hwnd = BigInt(`0x${Buffer.from(on.hwnd, "hex").reverse().toString("hex")}`);
+      const out = [0];
+      notification(out);
+      shell = {
+        caption: (BigInt(getStyle(hwnd, -16)) & 0xc00000n) === 0xc00000n,
+        inFront: BigInt(foreground()) === hwnd,
+        notificationState: out[0],
+      };
+    }
+    console.log(`      (fullscreen: ${JSON.stringify({ ...on, hwnd: undefined, ...shell })})`);
+    await inDrm("document.exitFullscreen().then(() => true)");
+    await waitFor(async () => !(await state()).fullscreen, "the window to leave fullscreen");
+  });
+
   await check("the window survives for a while without crashing", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
