@@ -26,3 +26,10 @@ npm-debug.log*
 # Env files
 .env
 .env.local
+
+# iOS app: the Xcode project and Info.plist are generated (ios/project.yml)
+ios/*.xcodeproj/
+ios/Luma/Info.plist
+ios/build/
+ios/DerivedData/
+xcuserdata/
