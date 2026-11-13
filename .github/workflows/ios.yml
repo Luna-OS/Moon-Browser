@@ -50,5 +50,18 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build -project Luma.xcodeproj -scheme Luma -configuration Release \
-            -destination "generic/platform=iOS" \
+            -destination "generic/platform=iOS" -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO -quiet
+      # Unsigned: sign and install it with Sideloadly or AltStore and your own
+      # Apple ID, or with Xcode.
+      - name: Package the unsigned .ipa
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/Luma.app Payload/
+          zip -qry Luma-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v7
+        with:
+          name: luma-ios-unsigned
+          path: ios/Luma-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
