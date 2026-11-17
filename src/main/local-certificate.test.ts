@@ -27,6 +27,13 @@ describe("the DNS bridge's certificate", () => {
     expect(makeLocalCertificate().fingerprint).not.toBe(fingerprint);
   });
 
+  it("is well-formed whatever its random serial number starts with", () => {
+    // One serial number in 256 starts with a zero byte.
+    for (let i = 0; i < 2000; i++) {
+      expect(() => new X509Certificate(makeLocalCertificate().cert)).not.toThrow();
+    }
+  });
+
   it("works for TLS to 127.0.0.1", async () => {
     const { cert, key } = makeLocalCertificate();
     const server = createServer({ cert, key }, (socket) => socket.end("moon"));
