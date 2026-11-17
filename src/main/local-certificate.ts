@@ -25,9 +25,16 @@ const tlv = (tag: number, ...parts: Buffer[]): Buffer => {
   return Buffer.concat([Buffer.from([tag]), length(body.length), body]);
 };
 const sequence = (...parts: Buffer[]) => tlv(0x30, ...parts);
-const integer = (bytes: Buffer) =>
-  // Positive: a leading zero if the top bit is set.
-  tlv(0x02, bytes[0] & 0x80 ? Buffer.concat([Buffer.from([0]), bytes]) : bytes);
+const integer = (bytes: Buffer) => {
+  // DER wants the shortest form: no leading zero bytes, except the one that
+  // keeps a number with its top bit set positive. Random bytes start with a
+  // zero now and then, and a certificate with such a serial number is refused
+  // ("illegal padding").
+  let start = 0;
+  while (start < bytes.length - 1 && bytes[start] === 0) start++;
+  const value = bytes.subarray(start);
+  return tlv(0x02, value[0] & 0x80 ? Buffer.concat([Buffer.from([0]), value]) : value);
+};
 const oid = (dotted: string): Buffer => {
   const [a, b, ...rest] = dotted.split(".").map(Number);
   const out = [40 * a + b];
