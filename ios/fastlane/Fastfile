@@ -15,15 +15,46 @@ platform :ios do
       key_content: ENV.fetch("ASC_KEY_P8"),
       in_house: false
     )
-    # A keychain for this run only.
-    setup_ci
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key: ENV.fetch("ASC_KEY_P8")
+    )
+    distribution = lambda do
+      Spaceship::ConnectAPI::Certificate.all(filter: { certificateType: "DISTRIBUTION" })
+    end
 
-    certificate_id = nil
+    # Certificates a failed run left behind, named when starting the workflow.
+    leftovers = ENV.fetch("REVOKE_CERTIFICATES", "").split(/[\s,]+/).reject(&:empty?)
+    distribution.call.each do |certificate|
+      next unless leftovers.include?(certificate.id)
+      certificate.delete!
+      UI.message("Revoked the leftover certificate #{certificate.id}.")
+    end
+
+    # A keychain for this run only.
+    keychain_password = "luma-ci"
+    create_keychain(
+      name: "luma-ci",
+      password: keychain_password,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      add_to_search_list: true
+    )
+    keychain_path = File.expand_path("~/Library/Keychains/luma-ci-db")
+
+    before = distribution.call.map(&:id)
     begin
       # No certificate is kept in the repository's secrets: each run makes a
       # distribution certificate, signs with it and revokes it again below.
       # Builds already uploaded are not affected by that.
-      get_certificates(api_key: api_key, generate_apple_certs: true, keychain_password: "")
+      get_certificates(
+        api_key: api_key,
+        generate_apple_certs: true,
+        keychain_path: keychain_path,
+        keychain_password: keychain_password
+      )
       certificate_id = lane_context[SharedValues::CERT_CERTIFICATE_ID]
 
       get_provisioning_profile(
@@ -56,14 +87,11 @@ platform :ios do
 
       upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
     ensure
-      if certificate_id
-        Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
-          key_id: ENV.fetch("ASC_KEY_ID"),
-          issuer_id: ENV.fetch("ASC_ISSUER_ID"),
-          key: ENV.fetch("ASC_KEY_P8")
-        )
-        Spaceship::ConnectAPI::Certificate.get(certificate_id: certificate_id).delete!
-        UI.message("Revoked this run's distribution certificate.")
+      # Whatever this run added goes again, also when it failed halfway.
+      distribution.call.each do |certificate|
+        next if before.include?(certificate.id)
+        certificate.delete!
+        UI.message("Revoked this run's distribution certificate #{certificate.id}.")
       end
     end
   end
