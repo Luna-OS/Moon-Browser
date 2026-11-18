@@ -33,3 +33,7 @@ ios/Luma/Info.plist
 ios/build/
 ios/DerivedData/
 xcuserdata/
+
+# fastlane
+ios/fastlane/report.xml
+ios/fastlane/README.md

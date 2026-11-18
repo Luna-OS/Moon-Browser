@@ -1,0 +1,70 @@
+# Luma for iPhone and iPad: sign with the developer account and upload to
+# TestFlight. Run by the "iOS TestFlight" workflow (fastlane ios beta) with
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID, BUILD_NUMBER
+default_platform(:ios)
+
+BUNDLE_ID = "io.lunaos.moonbrowser.ios"
+PROFILE_NAME = "Luma TestFlight CI"
+
+platform :ios do
+  desc "Build, sign and upload to TestFlight"
+  lane :beta do
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_content: ENV.fetch("ASC_KEY_P8"),
+      in_house: false
+    )
+    # A keychain for this run only.
+    setup_ci
+
+    certificate_id = nil
+    begin
+      # No certificate is kept in the repository's secrets: each run makes a
+      # distribution certificate, signs with it and revokes it again below.
+      # Builds already uploaded are not affected by that.
+      get_certificates(api_key: api_key, generate_apple_certs: true, keychain_password: "")
+      certificate_id = lane_context[SharedValues::CERT_CERTIFICATE_ID]
+
+      get_provisioning_profile(
+        api_key: api_key,
+        app_identifier: BUNDLE_ID,
+        cert_id: certificate_id,
+        provisioning_name: PROFILE_NAME,
+        force: true
+      )
+
+      build_app(
+        project: "Luma.xcodeproj",
+        scheme: "Luma",
+        configuration: "Release",
+        export_method: "app-store",
+        output_directory: "build",
+        output_name: "Luma.ipa",
+        xcargs: [
+          "DEVELOPMENT_TEAM=#{ENV.fetch('APPLE_TEAM_ID')}",
+          "CODE_SIGN_STYLE=Manual",
+          "CODE_SIGN_IDENTITY='Apple Distribution'",
+          "PROVISIONING_PROFILE_SPECIFIER='#{PROFILE_NAME}'",
+          "CURRENT_PROJECT_VERSION=#{ENV.fetch('BUILD_NUMBER')}"
+        ].join(" "),
+        export_options: {
+          signingStyle: "manual",
+          provisioningProfiles: { BUNDLE_ID => PROFILE_NAME }
+        }
+      )
+
+      upload_to_testflight(api_key: api_key, skip_waiting_for_build_processing: true)
+    ensure
+      if certificate_id
+        Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(
+          key_id: ENV.fetch("ASC_KEY_ID"),
+          issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+          key: ENV.fetch("ASC_KEY_P8")
+        )
+        Spaceship::ConnectAPI::Certificate.get(certificate_id: certificate_id).delete!
+        UI.message("Revoked this run's distribution certificate.")
+      end
+    end
+  end
+end
