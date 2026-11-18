@@ -2236,7 +2236,9 @@ try {
         "the window to be maximized",
       );
     }
-    await inDrm("document.documentElement.requestFullscreen().then(() => true)");
+    // Not waiting for the page's promise: it only settles once the window
+    // has finished going fullscreen, which macOS on CI may never do.
+    await inDrm("document.documentElement.requestFullscreen().catch(() => null), true");
     const state = () =>
       app.evaluate(({ BrowserWindow, screen }) => {
         const win = BrowserWindow.getAllWindows().find((w) =>
@@ -2252,9 +2254,24 @@ try {
         };
       });
     const covers = (s) => ["x", "y", "width", "height"].every((k) => s.bounds[k] === s.display[k]);
-    await waitFor(async () => (await state()).fullscreen, "the window to go fullscreen");
-    // Over the whole display, taskbar included. (Xvfb has no window
-    // manager to make a window fullscreen: there it's only reported.)
+    // The point is Windows, where the taskbar must step aside; elsewhere
+    // (no window manager under Xvfb, a macOS runner without a display
+    // session) the result is only reported.
+    const went = await waitFor(
+      async () => (await state()).fullscreen,
+      "the window to go fullscreen",
+    )
+      .then(() => true)
+      .catch((err) => {
+        if (windows) throw err;
+        return false;
+      });
+    if (!went) {
+      console.log(`      (fullscreen didn't happen here: ${JSON.stringify(await state())})`);
+      await inDrm("document.exitFullscreen().catch(() => null), true");
+      return;
+    }
+    // Over the whole display, taskbar included.
     const on = await waitFor(
       async () => {
         const s = await state();
@@ -2263,7 +2280,7 @@ try {
       "the window to cover the display",
       5000,
     ).catch(async (err) => {
-      if (process.platform === "linux") return state();
+      if (!windows) return state();
       throw err;
     });
     let shell = {};
@@ -2324,8 +2341,12 @@ try {
       }
     }
     console.log(`      (fullscreen: ${JSON.stringify({ ...on, hwnd: undefined, ...shell })})`);
-    await inDrm("document.exitFullscreen().then(() => true)");
-    await waitFor(async () => !(await state()).fullscreen, "the window to leave fullscreen");
+    await inDrm("document.exitFullscreen().catch(() => null), true");
+    await waitFor(
+      async () => !(await state()).fullscreen,
+      "the window to leave fullscreen",
+      20_000,
+    );
     // …and comes back as it was.
     if (windows) await waitFor(async () => (await state()).maximized, "the window maximized again");
   });
