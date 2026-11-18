@@ -1745,6 +1745,10 @@ try {
         inFront: BigInt(foreground()) === hwnd,
         notificationState: out[0],
       };
+      // Not maximized underneath: Windows and tools that manage windows
+      // (custom taskbars) move maximized windows into the work area.
+      if (shell.maximizedStyle)
+        throw new Error(`fullscreen window still maximized underneath: ${JSON.stringify(shell)}`);
       // A bar that claims the top of the screen as Windows' taskbar does
       // (an app bar) changes the work area. Windows then moves maximized
       // windows into the new work area: a fullscreen window must stay over
