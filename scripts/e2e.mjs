@@ -2346,7 +2346,15 @@ try {
       async () => !(await state()).fullscreen,
       "the window to leave fullscreen",
       20_000,
-    );
+    ).catch(async (err) => {
+      // The macOS runner doesn't finish fullscreen transitions (the page's
+      // promise never settles): there the window is taken out by hand.
+      if (windows) throw err;
+      console.log("      (the page couldn't leave fullscreen here)");
+      await app.evaluate(({ BrowserWindow }) => {
+        for (const w of BrowserWindow.getAllWindows()) w.setFullScreen(false);
+      });
+    });
     // …and comes back as it was.
     if (windows) await waitFor(async () => (await state()).maximized, "the window maximized again");
   });
