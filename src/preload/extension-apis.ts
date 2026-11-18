@@ -686,7 +686,10 @@ function install(bridge: {
   }
 }
 
-if (inExtension()) {
+// Not in an offscreen document: Chromium makes those by itself, without an
+// isolated world for this script (Electron 45 runs it there all the same).
+// Copying from one is seen to in src/main/extension-apis.ts.
+if (process.contextIsolated && inExtension()) {
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>();
   ipcRenderer.on(EVENT, (_event, name: string, ...args: unknown[]) => {
     for (const listener of listeners.get(name) ?? []) listener(...args);
