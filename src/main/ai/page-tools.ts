@@ -2,9 +2,19 @@
  * Runs the assistant's tools in a window's tabs. Only web pages (http and
  * https) are read or acted on — never Luma's own pages, an extension's, or
  * the side panel. Page scripts run in an isolated world of their own.
+ *
+ * The tab strip is another matter: any tab, whatever it shows, can be
+ * grouped, moved or closed, as the person can do it by hand.
  */
-import { hostOf, isSensitiveField, type AiToolCall } from "@shared/ai-tools";
+import {
+  groupName,
+  hostOf,
+  isSensitiveField,
+  type AiToolCall,
+  type ToolTargetText,
+} from "@shared/ai-tools";
 import { isNewTabUrl } from "@shared/internal";
+import type { TabGroupInfo } from "@shared/tab-groups";
 import { withTimeout } from "@shared/timeout";
 import type { Tab } from "../tab";
 import type { MoonWindow } from "../window";
@@ -17,6 +27,8 @@ const MAX_TEXT = 16_000;
 const MAX_ELEMENTS = 150;
 const SCRIPT_TIMEOUT = 8_000;
 const LOAD_TIMEOUT = 12_000;
+/** How long close_tabs waits for the tabs to be gone (a page may ask whether to leave). */
+const CLOSE_TIMEOUT = 3_000;
 
 export interface ToolOutcome {
   text: string;
@@ -24,14 +36,9 @@ export interface ToolOutcome {
 }
 
 /** What a tool call is aimed at, for the approval card and the chat's rows. */
-export interface ToolTarget {
-  label: string;
-  role: string;
-  sensitive: boolean;
-  /** The site it happens on ("example.com"). */
+export interface ToolTarget extends ToolTargetText {
+  /** The site it happens on ("example.com"); empty for the tab strip. */
   site: string;
-  /** For switch_tab: the tab's title. */
-  title?: string;
 }
 
 const isWebUrl = (url: string) => /^https?:\/\//i.test(url);
@@ -54,6 +61,11 @@ export async function askPage(tab: Tab, request: PageRequest): Promise<PageReply
   } catch {
     return { ok: false, error: "The page could not be reached (it may still be loading)." };
   }
+}
+
+/** A group as the tools' results name it: `group 7 “Reading” (blue)`. */
+function describeGroup(g: TabGroupInfo): string {
+  return `group ${g.id} ${g.title ? `“${g.title}”` : "(unnamed)"} (${g.color})`;
 }
 
 function describeElement(e: PageElement): string {
@@ -87,6 +99,60 @@ export class PageTools {
     if (!tab.sleeping) return;
     tab.wake();
     await this.settled(tab, signal);
+  }
+
+  /**
+   * The tabs a call names, in the order of the tab strip. A reason instead
+   * if one of them doesn't exist: then nothing is done to the others either.
+   */
+  private tabsOf(ids: readonly number[]): Tab[] | string {
+    const missing = ids.filter((id) => !this.win.tab(id));
+    if (missing.length)
+      return (
+        `There is no tab ${missing.join(", ")} in this window. ` +
+        "Nothing was changed; call list_tabs for the tabs there are."
+      );
+    return this.win.tabs.filter((t) => ids.includes(t.id));
+  }
+
+  private noGroup(id: number): string {
+    return `There is no group ${id} in this window. Call list_tabs for the groups there are.`;
+  }
+
+  /**
+   * Why a call to manage the tabs can't run at all, or null. Asked before
+   * the person is: nobody should be asked to allow what won't happen.
+   */
+  objection(call: AiToolCall): string | null {
+    switch (call.name) {
+      case "group_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        if (typeof tabs === "string") return tabs;
+        return call.groupId !== undefined && !this.win.group(call.groupId)
+          ? this.noGroup(call.groupId)
+          : null;
+      }
+      case "ungroup_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        return typeof tabs === "string" ? tabs : null;
+      }
+      case "close_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        if (typeof tabs === "string") return tabs;
+        // Without a tab left, the window would close (and this chat with it).
+        return tabs.length === this.win.tabs.length
+          ? "These are all the tabs of the window, and closing the last one would close the " +
+              "window. Nothing was closed. Leave at least one tab open, and tell the user " +
+              "that you can't close the window."
+          : null;
+      }
+      case "move_tab":
+        return this.win.tab(call.tabId) ? null : `There is no tab ${call.tabId}.`;
+      case "rename_group":
+        return this.win.group(call.groupId) ? null : this.noGroup(call.groupId);
+      default:
+        return null;
+    }
   }
 
   private where(tab: Tab): string {
@@ -126,6 +192,33 @@ export class PageTools {
             }
           : null;
       }
+      case "group_tabs":
+      case "ungroup_tabs":
+      case "close_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        if (typeof tabs === "string") return null;
+        const group = call.name === "group_tabs" ? this.win.group(call.groupId ?? null) : undefined;
+        return {
+          label: "",
+          role: "tab",
+          sensitive: false,
+          site: "",
+          titles: tabs.map((t) => t.title),
+          ...(group ? { group: groupName(group) } : {}),
+        };
+      }
+      case "move_tab": {
+        const tab = this.win.tab(call.tabId);
+        return tab
+          ? { label: "", role: "tab", sensitive: false, site: "", title: tab.title }
+          : null;
+      }
+      case "rename_group": {
+        const group = this.win.group(call.groupId);
+        return group
+          ? { label: "", role: "group", sensitive: false, site: "", group: groupName(group) }
+          : null;
+      }
       default:
         return null;
     }
@@ -133,18 +226,39 @@ export class PageTools {
 
   async run(call: AiToolCall, signal: AbortSignal): Promise<ToolOutcome> {
     if (this.win.closed) return failed("The window is closed.");
+    // The tabs may have changed while the person was asked.
+    const objection = this.objection(call);
+    if (objection) return failed(objection);
     switch (call.name) {
-      case "list_tabs":
+      case "list_tabs": {
+        if (!this.win.tabs.length) return done("No tabs are open.");
+        const tabs = this.win.tabs.map((t) => {
+          const marks = [
+            ...(t.id === this.win.activeId ? ["shown"] : []),
+            ...(t.pinned ? ["pinned"] : []),
+            ...(t.groupId !== null ? [`group ${t.groupId}`] : []),
+          ];
+          const about = marks.length ? ` (${marks.join(", ")})` : "";
+          return isWebUrl(t.url)
+            ? `[${t.id}]${about} “${t.title || "untitled"}” — ${t.url}`
+            : `[${t.id}]${about} a page of the browser itself (you can't read it, ` +
+                "but you can group, move or close its tab)";
+        });
+        const groups = this.win.groups.map((g) => {
+          const count = this.win.tabs.filter((t) => t.groupId === g.id).length;
+          return (
+            `${describeGroup(g)}: ${count === 1 ? "1 tab" : `${count} tabs`}` +
+            (g.collapsed ? ", collapsed" : "")
+          );
+        });
         return done(
-          this.win.tabs
-            .map((t) => {
-              const shown = t.id === this.win.activeId ? " (shown)" : "";
-              return isWebUrl(t.url)
-                ? `[${t.id}]${shown} “${t.title || "untitled"}” — ${t.url}`
-                : `[${t.id}]${shown} a page of the browser itself (not available to you)`;
-            })
-            .join("\n") || "No tabs are open.",
+          [
+            "Tabs, in the order of the tab strip:",
+            ...tabs,
+            ...(groups.length ? ["Tab groups:", ...groups] : ["There are no tab groups."]),
+          ].join("\n"),
         );
+      }
 
       case "read_page": {
         const tab = this.tabOf(call.tabId);
@@ -291,6 +405,78 @@ export class PageTools {
             ? `Tab ${tab.id} is shown now. ${this.where(tab)}`
             : `Tab ${tab.id} is shown now; it is a page of the browser itself, which you can't read.`,
         );
+      }
+
+      case "group_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        if (typeof tabs === "string") return failed(tabs);
+        const id = this.win.groupTabs(tabs, call.groupId, call.title);
+        if (call.color) this.win.updateGroup(id, { color: call.color });
+        const group = this.win.group(id);
+        const members = this.win.tabs.filter((t) => t.groupId === id).map((t) => t.id);
+        return done(
+          `${group ? describeGroup(group) : `group ${id}`} now holds ` +
+            `${members.length === 1 ? "tab" : "tabs"} ${members.join(", ")}, side by side.`,
+        );
+      }
+
+      case "ungroup_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        if (typeof tabs === "string") return failed(tabs);
+        const grouped = tabs.filter((t) => t.groupId !== null);
+        if (!grouped.length)
+          return done(
+            tabs.length === 1 ? "This tab is in no group." : "None of these tabs is in a group.",
+          );
+        this.win.ungroupTabs(grouped);
+        return done(
+          `${grouped.length === 1 ? "Tab" : "Tabs"} ${grouped.map((t) => t.id).join(", ")} ` +
+            `${grouped.length === 1 ? "is" : "are"} in no group now.`,
+        );
+      }
+
+      case "close_tabs": {
+        const tabs = this.tabsOf(call.tabIds);
+        if (typeof tabs === "string") return failed(tabs);
+        for (const tab of tabs) tab.close();
+        // A page may ask whether to leave it; its tab closes once that is answered.
+        const end = Date.now() + CLOSE_TIMEOUT;
+        const open = () => tabs.filter((t) => this.win.tab(t.id));
+        while (!signal.aborted && Date.now() < end && open().length) await sleep(60);
+        const left = open().map((t) => t.id);
+        const closed = tabs.length - left.length;
+        return done(
+          `Closed ${closed === 1 ? "1 tab" : `${closed} tabs`}.` +
+            (left.length
+              ? ` ${left.length === 1 ? "Tab" : "Tabs"} ${left.join(", ")} ` +
+                `${left.length === 1 ? "is" : "are"} still closing (a page may be asking the ` +
+                "user whether to leave it)."
+              : ""),
+        );
+      }
+
+      case "move_tab": {
+        const tab = this.win.tab(call.tabId);
+        if (!tab) return failed(`There is no tab ${call.tabId}.`);
+        // Where it may go is the window's business: pinned tabs first, groups in one piece.
+        this.win.moveTab(tab.id, call.position - 1);
+        const position = this.win.tabs.indexOf(tab) + 1;
+        const group = this.win.group(tab.groupId);
+        return done(
+          `Tab ${tab.id} is now at position ${position} of ${this.win.tabs.length}` +
+            (position === call.position
+              ? ""
+              : ` (as near to ${call.position} as the tab strip allows)`) +
+            `, ${group ? `in ${describeGroup(group)}` : "in no group"}` +
+            `${tab.pinned ? ", pinned" : ""}.`,
+        );
+      }
+
+      case "rename_group": {
+        const group = this.win.updateGroup(call.groupId, { title: call.title, color: call.color });
+        return group
+          ? done(`It is ${describeGroup(group)} now.`)
+          : failed(this.noGroup(call.groupId));
       }
     }
   }
