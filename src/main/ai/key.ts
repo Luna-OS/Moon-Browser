@@ -20,12 +20,18 @@ export class AiKeyStore {
   /** The key once read or set; undefined until first asked for. */
   private key: string | null | undefined;
 
-  /** Whether the system encrypts for real (not with Chromium's built-in stand-in password). */
+  /**
+   * Whether the system encrypts for real (not with Chromium's built-in
+   * stand-in password). Windows (DPAPI) and macOS (the Keychain) always do —
+   * and macOS is not asked: asking opens the Keychain, which may stop and ask
+   * the person for their password, just for looking at Settings.
+   */
   private canEncrypt(): boolean {
+    if (process.platform !== "linux") return true;
     try {
-      if (!safeStorage.isEncryptionAvailable()) return false;
       return (
-        process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text"
+        safeStorage.isEncryptionAvailable() &&
+        safeStorage.getSelectedStorageBackend() !== "basic_text"
       );
     } catch {
       return false;
@@ -48,20 +54,28 @@ export class AiKeyStore {
     return this.key;
   }
 
+  /** Without reading the key: a stored one is only decrypted when a chat needs it. */
   status(): AiKeyStatus {
-    return { hasKey: this.get() !== null, persistent: this.canEncrypt() };
+    const hasKey = this.key !== undefined ? this.key !== null : existsSync(this.file);
+    return { hasKey, persistent: this.canEncrypt() };
   }
 
   set(key: string): AiKeyStatus {
     if (!isPlausibleApiKey(key)) throw new Error("This doesn't look like an Anthropic API key.");
     this.key = key;
+    let stored = false;
     if (this.canEncrypt()) {
-      mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(this.file, safeStorage.encryptString(key), { mode: 0o600 });
-    } else {
-      rmSync(this.file, { force: true });
+      try {
+        mkdirSync(dirname(this.file), { recursive: true });
+        writeFileSync(this.file, safeStorage.encryptString(key), { mode: 0o600 });
+        stored = true;
+      } catch (err) {
+        // The Keychain was refused, for one: the key then lasts until Luma closes.
+        console.warn("[moon] the API key can't be stored:", err);
+      }
     }
-    return this.status();
+    if (!stored) rmSync(this.file, { force: true });
+    return { hasKey: true, persistent: stored };
   }
 
   remove(): AiKeyStatus {

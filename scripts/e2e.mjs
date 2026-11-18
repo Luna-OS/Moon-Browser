@@ -375,6 +375,9 @@ if (process.platform === "linux") {
 
 const args = [root];
 if (process.platform === "linux") args.push("--no-sandbox");
+// The API key of Luma AI is encrypted with the Keychain on macOS; a test
+// run must not stop at a Keychain question nobody is there to answer.
+if (process.platform === "darwin") args.push("--use-mock-keychain");
 const app = await electron.launch({
   executablePath: require("electron"),
   args,
