@@ -14,6 +14,7 @@ export const INTERNAL_PAGES = [
   "downloads",
   "extensions",
   "about",
+  "ai",
 ] as const;
 
 export type InternalPage = (typeof INTERNAL_PAGES)[number];

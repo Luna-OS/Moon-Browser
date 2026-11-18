@@ -10,6 +10,7 @@ import {
   PuzzleIcon,
   ReloadIcon,
   ShieldIcon,
+  SparkleIcon,
   SplitIcon,
   UpdateIcon,
 } from "@theme/icons";
@@ -22,7 +23,14 @@ import { MoonDialog } from "./Dialog";
 import { useBrowserActions } from "./extension-actions";
 import { ExtensionButtons, ExtensionsMenu } from "./Extensions";
 import { useOverlay } from "./overlay";
-import { DownloadsPanel, MainMenu, Popover, ShieldPanel, type PopoverKind } from "./Popovers";
+import {
+  AssistantMenu,
+  DownloadsPanel,
+  MainMenu,
+  Popover,
+  ShieldPanel,
+  type PopoverKind,
+} from "./Popovers";
 import { keys, onUiEvent, ui, useWindowState } from "./store";
 import { GroupEditor } from "./TabGroups";
 import { TabStrip } from "./TabStrip";
@@ -233,6 +241,18 @@ function Browser({ state }: { state: WindowState }) {
             >
               <SplitIcon />
             </button>
+            {state.ai.showButton && (
+              <button
+                type="button"
+                className="mb-icon-btn"
+                aria-label="Luma AI"
+                title={`Luma AI: your assistant next to the page (${keys("ai")})`}
+                aria-pressed={!!state.sidePanel?.assistant}
+                onClick={() => void ui.command({ type: "toggleAi" })}
+              >
+                <SparkleIcon />
+              </button>
+            )}
             {state.downloads.length > 0 && (
               <button
                 type="button"
@@ -316,7 +336,15 @@ function Browser({ state }: { state: WindowState }) {
       )}
 
       <div ref={content} className="relative flex min-h-0 flex-1 flex-col">
-        <ContentArea state={state} snapshots={snapshots} onDividerDrag={setDragging} />
+        <ContentArea
+          state={state}
+          snapshots={snapshots}
+          onDividerDrag={setDragging}
+          assistantMenuOpen={popover?.kind === "ai"}
+          onAssistantMenu={(anchor) =>
+            setPopover((p) => (p?.kind === "ai" ? null : { kind: "ai", anchor }))
+          }
+        />
       </div>
 
       {findOpen && !state.fullscreen && <FindBar state={state} onClose={() => setFindTab(null)} />}
@@ -368,10 +396,22 @@ function Browser({ state }: { state: WindowState }) {
           />
         </Popover>
       )}
+      {popover?.kind === "ai" && state.sidePanel?.assistant && (
+        <Popover
+          anchor={popover.anchor}
+          align="left"
+          width={240}
+          label="Assistants"
+          onClose={closePopover}
+        >
+          <AssistantMenu state={state} onClose={closePopover} />
+        </Popover>
+      )}
       {popover &&
         popover.kind !== "group" &&
         popover.kind !== "bookmarkFolder" &&
-        popover.kind !== "bookmark" && (
+        popover.kind !== "bookmark" &&
+        popover.kind !== "ai" && (
           <Popover
             anchor={popover.anchor}
             width={

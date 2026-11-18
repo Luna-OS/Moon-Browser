@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { OverlaySnapshot } from "@shared/ipc";
 import { SIDE_PANEL_HEADER, sidePanelRects, splitRects, SPLIT_GAP } from "@shared/layout";
 import type { Rect, TabInfo, WindowState } from "@shared/types";
-import { CloseIcon, PuzzleIcon } from "@theme/icons";
+import { ChevronDownIcon, CloseIcon, PuzzleIcon, ReloadIcon, SendPageIcon } from "@theme/icons";
 import { MoonPhase } from "@theme/MoonPhase";
 import { describeError } from "./errors";
-import { ui } from "./store";
+import { AssistantMark } from "./Popovers";
+import { keys, ui } from "./store";
 
 /** Calls `send` with the latest value at most once per frame (pointer moves come faster). */
 function perFrame<T>(send: (value: T) => void) {
@@ -115,19 +116,49 @@ function PagePanel({ tab, rect }: { tab: TabInfo; rect: Rect }) {
   return null;
 }
 
+/** An assistant's site icon; its initial where the site has none (or none that loads). */
+function AssistantIcon({
+  icon,
+  name,
+  kind,
+}: {
+  icon: string | null;
+  name: string;
+  kind: "web" | "api";
+}) {
+  const [broken, setBroken] = useState(false);
+  if (!icon || broken) return <AssistantMark name={name} kind={kind} />;
+  return (
+    <img
+      src={icon}
+      width={16}
+      height={16}
+      alt=""
+      className="shrink-0 rounded-[3px] object-contain"
+      draggable={false}
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
 /**
  * The page area. Pages themselves are native views above it; this draws
- * what isn't a page: error and crash panels, the split view divider, and
- * the page snapshots while a menu is open.
+ * what isn't a page: error and crash panels, the split view divider, the
+ * side panel's title bar, and the page snapshots while a menu is open.
  */
 export function ContentArea({
   state,
   snapshots,
   onDividerDrag,
+  assistantMenuOpen,
+  onAssistantMenu,
 }: {
   state: WindowState;
   snapshots: OverlaySnapshot[] | null;
   onDividerDrag: (dragging: boolean) => void;
+  /** The AI panel's switcher is open (it is drawn by the window, above the pages). */
+  assistantMenuOpen: boolean;
+  onAssistantMenu: (anchor: DOMRect) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -258,12 +289,56 @@ export function ContentArea({
               height: SIDE_PANEL_HEADER,
             }}
           >
-            {state.sidePanel.icon ? (
-              <img src={state.sidePanel.icon} width={16} height={16} alt="" />
+            {state.sidePanel.assistant ? (
+              <>
+                <button
+                  type="button"
+                  className="mb-side-panel-switch"
+                  aria-label={`${state.sidePanel.name}: choose another assistant`}
+                  title="Choose another assistant"
+                  aria-haspopup="menu"
+                  aria-expanded={assistantMenuOpen}
+                  onClick={(e) => onAssistantMenu(e.currentTarget.getBoundingClientRect())}
+                >
+                  <AssistantIcon
+                    key={state.sidePanel.icon}
+                    icon={state.sidePanel.icon}
+                    name={state.sidePanel.name}
+                    kind={state.sidePanel.assistant.kind}
+                  />
+                  <span className="min-w-0 truncate">{state.sidePanel.name}</span>
+                  <ChevronDownIcon size={13} />
+                </button>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  className="mb-icon-btn h-7! w-7!"
+                  aria-label="Send this page to the assistant"
+                  title={`Put this page's title, address and selected text into the message box (${keys("aiSendPage")})`}
+                  onClick={() => void ui.command({ type: "aiSendPage" })}
+                >
+                  <SendPageIcon size={15} />
+                </button>
+                <button
+                  type="button"
+                  className="mb-icon-btn h-7! w-7!"
+                  aria-label="Reload the assistant"
+                  title="Reload the assistant"
+                  onClick={() => void ui.command({ type: "aiReload" })}
+                >
+                  <ReloadIcon size={14} />
+                </button>
+              </>
             ) : (
-              <PuzzleIcon size={16} />
+              <>
+                {state.sidePanel.icon ? (
+                  <img src={state.sidePanel.icon} width={16} height={16} alt="" />
+                ) : (
+                  <PuzzleIcon size={16} />
+                )}
+                <span className="min-w-0 flex-1 truncate">{state.sidePanel.name}</span>
+              </>
             )}
-            <span className="min-w-0 flex-1 truncate">{state.sidePanel.name}</span>
             <button
               type="button"
               className="mb-icon-btn h-7! w-7!"

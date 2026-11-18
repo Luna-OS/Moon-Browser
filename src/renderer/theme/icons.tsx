@@ -386,3 +386,44 @@ export const MoreIcon = ({ size = 15 }: P) => (
     <circle cx="12" cy="19" r="1.2" />
   </Svg>
 );
+
+/** Luma AI: a four-pointed star with a small one beside it. */
+export const SparkleIcon = ({ size = 16 }: P) => (
+  <Svg size={size}>
+    <path d="M10 3c.7 4.2 2.8 6.3 7 7-4.2.7-6.3 2.8-7 7-.7-4.2-2.8-6.3-7-7 4.2-.7 6.3-2.8 7-7Z" />
+    <path d="M18 14c.4 2 1 3 3 3-2 0-2.6 1-3 3-.4-2-1-3-3-3 2 0 2.6-1 3-3Z" />
+  </Svg>
+);
+
+/** Send the page to the assistant: a page with an arrow leaving it. */
+export const SendPageIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <path d="M12 4H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-2" />
+    <path d="M11 11h10M17 7l4 4-4 4" />
+  </Svg>
+);
+
+export const SendIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Svg>
+);
+
+export const StopIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <rect x="7" y="7" width="10" height="10" rx="2" />
+  </Svg>
+);
+
+export const CheckIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <path d="m5 12 5 5 9-10" />
+  </Svg>
+);
+
+export const KeyIcon = ({ size = 15 }: P) => (
+  <Svg size={size}>
+    <circle cx="8" cy="15" r="4" />
+    <path d="m11 12 9-9M16 7l3 3" />
+  </Svg>
+);
