@@ -56,7 +56,7 @@ and their place as the default browser.
   Code's pixel axolotl, sitting on the search box: it introduces itself, shows how the search works and
   has tips when you click it (*Settings → Search* switches it off). On an answer, Axo sits beside it
   and says it — the answer becomes its speech bubble — and follows you through the conversation
-- **YouTube in Luma's look** (optional, *Settings → Appearance*) — the night sky on YouTube, a
+- **YouTube in Luma's look** (optional, *Settings → Appearance*) — the night sky on YouTube and YouTube Music, a
   glowing moon on the progress bar and a sparkle on the volume slider
 - **Netflix, Disney+, Prime Video and Spotify** play: protected (DRM) content works with
   Google's Widevine module, through castLabs' Electron for Content Security. *Settings → System*

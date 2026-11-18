@@ -80,7 +80,7 @@ export interface Settings {
   webgpuEverywhere: boolean;
   /** Perplexity in Moon's night-sky look, with Axo the axolotl on its search box. */
   perplexityLook: boolean;
-  /** YouTube in Moon's night-sky look, with a moon on its progress bar. */
+  /** YouTube and YouTube Music in Moon's night-sky look, with a moon on the progress bar. */
   youtubeLook: boolean;
 }
 

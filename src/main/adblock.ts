@@ -153,8 +153,16 @@ export class Adblocker {
         });
         if (!active) return;
         if (styles.length > 0) void event.sender.insertCSS(styles, { cssOrigin: "user" });
+        // Scriptlets go into the frame that asked, not into the tab's page:
+        // an embedded frame's would otherwise run in the page a second time.
+        // And each in a block of its own, since the lists' scriptlets share
+        // helpers (`class JSONPath`) that may be declared only once per scope —
+        // the second one would not run at all. YouTube's Shorts lost their
+        // buttons to that.
+        const frame = event.senderFrame;
+        if (!frame) return;
         for (const script of scripts) {
-          event.sender.executeJavaScript(script, true).catch(() => {
+          frame.executeJavaScript(`{\n${script}\n}`, true).catch(() => {
             // A scriptlet failing on one page must not affect anything else.
           });
         }

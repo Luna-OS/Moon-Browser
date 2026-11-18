@@ -15,7 +15,7 @@ import { axoScript } from "./perplexity/axo";
 import { isPerplexity, PERPLEXITY_CSS } from "./perplexity/theme";
 import { MAX_FAVICON_LENGTH, type SavedTab } from "./profile";
 import type { MoonWindow } from "./window";
-import { isYouTube, YOUTUBE_CSS } from "./youtube/theme";
+import { youtubeLook } from "./youtube/theme";
 
 const ZOOM_STEPS = [25, 33, 50, 67, 75, 80, 90, 100, 110, 125, 150, 175, 200, 250, 300, 400, 500];
 const GESTURE_WINDOW = 5_000;
@@ -503,11 +503,13 @@ export class Tab {
         .executeJavaScriptInIsolatedWorld(AXO_WORLD, [{ code: axoScript() }])
         .catch(() => undefined);
     });
-    // YouTube in Luma's look (Settings → Appearance). It is a single-page app,
-    // so the style stays for every video it then shows.
+    // YouTube and YouTube Music in Luma's look (Settings → Appearance). Each
+    // is a single-page app, so the style stays for every video it then shows.
     wc.on("dom-ready", () => {
-      if (!browser.settings.youtubeLook || !isYouTube(wc.getURL())) return;
-      void wc.insertCSS(YOUTUBE_CSS, { cssOrigin: "author" }).catch(() => undefined);
+      if (!browser.settings.youtubeLook) return;
+      const css = youtubeLook(wc.getURL());
+      if (!css) return;
+      void wc.insertCSS(css, { cssOrigin: "author" }).catch(() => undefined);
     });
     wc.on("did-navigate-in-page", (_event, url, isMainFrame) => {
       if (!isMainFrame) return;

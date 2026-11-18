@@ -11,6 +11,11 @@
  * are swapped here; the hashed names are those of YouTube's build at the time
  * of writing, and a later build that renames them merely loses part of the
  * palette, never the layout. The video picture itself is left alone.
+ *
+ * YouTube Music, dark in every theme, wears the night always: the same moon
+ * and sparkle on its player bar, the emblem before "Music" in its logo, and
+ * Moon's palette in place of its blacks and reds. It gets a style of its own,
+ * since it shares nothing with YouTube's page but the player's CSS names.
  */
 
 /** An SVG as a CSS url(). */
@@ -147,12 +152,6 @@ ytd-thumbnail-overlay-resume-playback-renderer #progress {
   background-image: ${MOON_FACE} !important;
   box-shadow: ${MOON_GLOW} !important;
 }
-
-/* YouTube Music's player bar. */
-ytmusic-player-bar {
-  --paper-slider-active-color: #b9aefb !important;
-  --paper-slider-knob-color: #dcdae6 !important;
-}
 `;
 
 /**
@@ -216,17 +215,20 @@ html:root[dark] ytd-topbar-logo-renderer > #country-code {
 }
 `;
 
-/** A few stars in the top bar, over the night. */
-const TOP_BAR_STARS = `
+/** A few stars, for a top bar. */
+const STARS = `
   radial-gradient(1.5px 1.5px at 8% 30%, rgb(255 255 255 / 0.7), transparent),
   radial-gradient(1px 1px at 19% 72%, rgb(214 207 253 / 0.8), transparent),
   radial-gradient(1.5px 1.5px at 34% 22%, rgb(255 255 255 / 0.5), transparent),
   radial-gradient(1px 1px at 61% 78%, rgb(255 255 255 / 0.6), transparent),
   radial-gradient(1.5px 1.5px at 73% 26%, rgb(214 207 253 / 0.85), transparent),
   radial-gradient(1px 1px at 88% 64%, rgb(255 255 255 / 0.6), transparent),
-  radial-gradient(2px 2px at 95% 20%, rgb(255 255 255 / 0.8), transparent),
-  linear-gradient(180deg, #141030, #0d0a23)
+  radial-gradient(2px 2px at 95% 20%, rgb(255 255 255 / 0.8), transparent)
 `;
+/** The night behind a top bar, a shade lighter at the top. */
+const TOP_BAR_NIGHT = "linear-gradient(180deg, #141030, #0d0a23)";
+/** The stars in the top bar, over the night. */
+const TOP_BAR_STARS = `${STARS}, ${TOP_BAR_NIGHT}`;
 
 /** Moon's night palette in place of YouTube's dark greys and blue. */
 const DARK = `
@@ -341,6 +343,176 @@ html:root[dark] .ytSearchboxComponentSearchButtonDark {
 
 export const YOUTUBE_CSS = PLAYER_CSS + LOGO_CSS + PAGE_CSS;
 
+/*
+ * YouTube Music names its colours as `--ytmusic-color-*` (the paint) and
+ * `--ytmusic-*` roles that read them; a newer build (`music-web-color-
+ * migration`) sets the roles to plain colours instead, so both are swapped.
+ */
+const MUSIC_PALETTE = `
+  --ytmusic-color-white1: #f4f1ff !important;
+  --ytmusic-color-grey2: #b3abd6 !important;
+  --ytmusic-color-grey3: #a097c9 !important;
+  --ytmusic-color-grey4: #786f9e !important;
+  --ytmusic-color-grey5: #5e5589 !important;
+  --ytmusic-color-black1: #1a1540 !important;
+  --ytmusic-color-black2: #1a1540 !important;
+  --ytmusic-color-black4: #0d0a23 !important;
+  --ytmusic-color-lightred: #b9aefb !important;
+  --ytmusic-color-youtubered: #9d8ff5 !important;
+  --ytmusic-color-mediumred: #7f6fe0 !important;
+  --ytmusic-color-mediumred-alpha90: rgb(127 111 224 / 0.9) !important;
+  --ytmusic-color-lightblue: #b9aefb !important;
+  --ytmusic-color-blue-1: #7f6fe0 !important;
+  --ytmusic-color-navyblue: #211a4c !important;
+  --ytmusic-color-white1-alpha10: rgb(185 174 251 / 0.12) !important;
+  --ytmusic-color-white1-alpha15: rgb(185 174 251 / 0.16) !important;
+  --ytmusic-color-white1-alpha20: rgb(185 174 251 / 0.22) !important;
+  --ytmusic-color-white1-alpha25: rgb(185 174 251 / 0.27) !important;
+  --ytmusic-color-white1-alpha30: rgb(185 174 251 / 0.32) !important;
+  --ytmusic-opalescence-dark-grey: #211a4c !important;
+
+  --ytmusic-background: #0d0a23 !important;
+  --ytmusic-general-background-a: #1a1540 !important;
+  --ytmusic-general-background-c: #0d0a23 !important;
+  --ytmusic-brand-background-solid: #1a1540 !important;
+  --ytmusic-nav-bar: #0d0a23 !important;
+  --ytmusic-player-bar-background: #1a1540 !important;
+  --ytmusic-player-page-background: #0d0a23 !important;
+  --ytmusic-menu-popup-background: #211a4c !important;
+  --ytmusic-dropdown-background: #211a4c !important;
+  --ytmusic-dropdown-item-hover-background: #2c2460 !important;
+  --ytmusic-dialog-background-color: #211a4c !important;
+  --ytmusic-alert-with-actions-background: #1a1540 !important;
+  --ytmusic-item-section-info-panel-overview-background: #211a4c !important;
+  --ytmusic-search-background: #0d0a23 !important;
+  --ytmusic-search-border: #352c6e !important;
+  --ytmusic-search-bar-background-bauhaus: rgb(185 174 251 / 0.14) !important;
+  --ytmusic-search-bar-border-bauhaus: rgb(185 174 251 / 0.2) !important;
+  --ytmusic-search-suggestion-focus-active: #b9aefb !important;
+  --ytmusic-text-primary: #f4f1ff !important;
+  --ytmusic-text-secondary: #b3abd6 !important;
+  --ytmusic-text-disabled: #786f9e !important;
+  --ytmusic-text-primary-inverse: #0d0a23 !important;
+  --ytmusic-icon-inactive: #b3abd6 !important;
+  --ytmusic-icon-disabled: #786f9e !important;
+  --ytmusic-color-close-button: #b3abd6 !important;
+  --ytmusic-divider: rgb(185 174 251 / 0.2) !important;
+  --ytmusic-guide-divider: rgb(185 174 251 / 0.2) !important;
+  --ytmusic-color-input-border: rgb(185 174 251 / 0.3) !important;
+  --ytmusic-ten-percent-layer: rgb(185 174 251 / 0.12) !important;
+  --ytmusic-badge-chip-background: rgb(185 174 251 / 0.12) !important;
+  --ytmusic-badge-chip-inactive-hover: rgb(185 174 251 / 0.22) !important;
+  --ytmusic-explore-chip-background: rgb(185 174 251 / 0.16) !important;
+  --ytmusic-brand-link-text: #b9aefb !important;
+  --ytmusic-static-brand-red: #9d8ff5 !important;
+  --ytmusic-playback-progress-color: #9d8ff5 !important;
+  --ytmusic-player-bar-container-color: rgb(185 174 251 / 0.3) !important;
+  --ytmusic-player-bar-disabled-secondary-color: #b3abd6 !important;
+  --ytmusic-player-bar-repeat-disabled: #5e5589 !important;
+  --ytmusic-player-controls-button-disabled: #5e5589 !important;
+`;
+
+/*
+ * The sliders are Polymer's paper-slider in YouTube's build without shadow
+ * DOM, so their track, fill and knob are plain elements. The player bar has
+ * the song's progress and the volume; the player page's controls have the
+ * same, under the same names.
+ */
+const MUSIC_PROGRESS = ":is(ytmusic-player-bar, ytmusic-player-controls) #progress-bar";
+const MUSIC_VOLUME =
+  ":is(ytmusic-player-bar, ytmusic-player-controls) :is(#volume-slider, #expand-volume-slider)";
+
+const MUSIC_CSS = `
+html { ${MUSIC_PALETTE} }
+html, body {
+  background-color: #0d0a23 !important;
+  scrollbar-color: #4a3f8f transparent;
+}
+
+/*
+ * The stars sit on the top bar itself, which is clear; the night behind it
+ * (a separate piece, shown once the page scrolls) is one shade lighter.
+ */
+ytmusic-nav-bar {
+  background: ${STARS} !important;
+}
+ytmusic-app-layout > #nav-bar-background {
+  background: ${TOP_BAR_NIGHT} !important;
+}
+
+/* The track, what is loaded, and the played trail, ending in the moon. */
+${MUSIC_PROGRESS} #progressContainer {
+  background: rgb(200 190 255 / 0.2) !important;
+}
+${MUSIC_PROGRESS} #secondaryProgress {
+  background: rgb(214 207 253 / 0.38) !important;
+}
+${MUSIC_PROGRESS} #primaryProgress {
+  background: ${TRAIL} !important;
+  box-shadow: 0 0 6px rgb(185 174 251 / 0.65);
+}
+/* YouTube Music shows the knob only under the pointer; the moon is always out. */
+${MUSIC_PROGRESS} .slider-knob-inner {
+  background-color: #c9c7d4 !important;
+  background-image: ${MOON_FACE} !important;
+  border-color: transparent !important;
+  box-shadow: ${MOON_GLOW} !important;
+}
+
+/* The volume slider: a lavender fill up to a sparkle. */
+${MUSIC_VOLUME} #progressContainer {
+  background: rgb(214 207 253 / 0.25) !important;
+}
+${MUSIC_VOLUME} #primaryProgress {
+  background: ${TRAIL} !important;
+}
+${MUSIC_VOLUME} .slider-knob-inner {
+  background: ${SPARKLE} center / 100% 100% no-repeat !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  transform: scale(1.5) !important;
+  filter: drop-shadow(0 0 1.5px rgb(255 255 255 / 0.9)) drop-shadow(0 0 3px rgb(185 174 251 / 0.85));
+}
+
+/* The page's loading bar. */
+#progress.yt-page-navigation-progress {
+  background: ${TRAIL} !important;
+}
+
+/* The logo: the emblem before "Music", in YouTube's own font. */
+ytmusic-logo > a {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  text-decoration: none !important;
+}
+ytmusic-logo > a > * {
+  display: none !important;
+}
+ytmusic-logo > a::before {
+  content: "";
+  flex: none;
+  width: 30px;
+  height: 21px;
+  background: ${EMBLEM} center / contain no-repeat;
+  filter: drop-shadow(0 0 6px rgb(157 143 245 / 0.45));
+}
+ytmusic-logo > a::after {
+  content: "Music";
+  font: 700 19px / 24px "YouTube Sans", Roboto, Arial, sans-serif;
+  letter-spacing: -0.6px;
+  white-space: nowrap;
+  color: #f4f1ff;
+}
+
+::selection {
+  background: rgb(185 174 251 / 0.35);
+}
+`;
+
+export const YOUTUBE_MUSIC_CSS = MUSIC_CSS;
+
 /** The sites that get the look. */
 export function isYouTube(url: string): boolean {
   try {
@@ -355,4 +527,10 @@ export function isYouTube(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** The look for the page at `url`: YouTube's, YouTube Music's, or none. */
+export function youtubeLook(url: string): string | undefined {
+  if (!isYouTube(url)) return undefined;
+  return new URL(url).hostname === "music.youtube.com" ? YOUTUBE_MUSIC_CSS : YOUTUBE_CSS;
 }

@@ -1,0 +1,67 @@
+name: iOS
+
+# Luma for iPhone and iPad (ios/): generate the Xcode project, run the unit
+# tests in a simulator and build for a real device, unsigned.
+on:
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v5
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Unit tests (iPhone simulator)
+        run: |
+          set -o pipefail
+          # The newest iPhone simulator this runner has.
+          udid="$(xcrun simctl list devices available -j | python3 -c '
+          import json, re, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          best = None
+          for runtime, devices in runtimes.items():
+              m = re.search(r"iOS-(\d+)-(\d+)", runtime)
+              phones = [d for d in devices if d["name"].startswith("iPhone")]
+              if m and phones:
+                  version = (int(m.group(1)), int(m.group(2)))
+                  if best is None or version > best[0]:
+                      best = (version, phones[0]["udid"])
+          print(best[1])
+          ')"
+          xcodebuild test -project Luma.xcodeproj -scheme Luma \
+            -destination "platform=iOS Simulator,id=$udid" \
+            CODE_SIGNING_ALLOWED=NO -quiet
+      - name: Build for iPhone and iPad (device, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Luma.xcodeproj -scheme Luma -configuration Release \
+            -destination "generic/platform=iOS" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO -quiet
+      # Unsigned: sign and install it with Sideloadly or AltStore and your own
+      # Apple ID, or with Xcode.
+      - name: Package the unsigned .ipa
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/Luma.app Payload/
+          zip -qry Luma-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v7
+        with:
+          name: luma-ios-unsigned
+          path: ios/Luma-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

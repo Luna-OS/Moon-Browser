@@ -8,3 +8,6 @@ e2e-screenshots
 
 # Markdown is reviewed by hand; Prettier's table padding makes noisy diffs.
 *.md
+
+# The iOS app is Swift; its YAML and JSON are not Prettier's.
+ios

@@ -1,0 +1,48 @@
+name: iOS TestFlight
+
+# Builds Luma for iPhone and iPad, signs it with the Apple Developer account
+# behind the App Store Connect API key and uploads it to TestFlight
+# (ios/fastlane/Fastfile). Started by hand. Secrets it needs (ios/README.md):
+#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8, APPLE_TEAM_ID
+on:
+  workflow_dispatch:
+    inputs:
+      revoke_certificates:
+        description: "IDs of distribution certificates a failed run left behind, to revoke first"
+        required: false
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ios
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      BUILD_NUMBER: ${{ github.run_number }}
+      REVOKE_CERTIFICATES: ${{ github.event.inputs.revoke_certificates }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the secrets
+        run: |
+          for name in ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID ASC_KEY_P8; do
+            if [ -z "${!name}" ]; then echo "::error::The secret $name is missing."; exit 1; fi
+          done
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Sign and upload to TestFlight
+        run: |
+          command -v fastlane > /dev/null || brew install fastlane
+          fastlane ios beta
+        env:
+          FASTLANE_SKIP_UPDATE_CHECK: "1"
+          FASTLANE_HIDE_CHANGELOG: "1"
