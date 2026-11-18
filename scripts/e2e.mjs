@@ -54,7 +54,8 @@ const PAGES = {
 /**
  * A small stand-in for Anthropic's Messages API (Luma is pointed at it with
  * MOON_AI_BASE_URL): it answers like a model that reads the page, clicks
- * the "Light the lantern" button it found there, and reports.
+ * the "Light the lantern" button it found there, and reports. Asked about
+ * tabs, it lists them and groups two of them (or closes them, asked to close).
  */
 const AI_KEY = "sk-ant-api03-e2e-test-key-0123456789abcdef";
 /** The requests it got: their headers and bodies. */
@@ -83,9 +84,39 @@ function answerAsClaude(req, res) {
       .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
       .filter((b) => b.type === "tool_result")
       .map((b) => (typeof b.content === "string" ? b.content : JSON.stringify(b.content)));
+    // What the chat began with decides what it is about.
+    const first = body.messages.find((m) => m.role === "user")?.content;
+    const asked = Array.isArray(first)
+      ? first.map((b) => (b.type === "text" ? b.text : "")).join(" ")
+      : String(first);
     /** @type {{ text: string, tool?: { name: string, input: object } }} */
     let turn;
-    if (results.length === 0) {
+    if (/\btabs\b/i.test(asked)) {
+      const closing = /\bclose\b/i.test(asked);
+      if (results.length === 0) {
+        turn = { text: "I'll look at your tabs first.", tool: { name: "list_tabs", input: {} } };
+      } else if (results.length === 1) {
+        // The two pages of the test, by their titles in what list_tabs said.
+        const ids = ["Moon lantern", "Second page"]
+          .map((title) => new RegExp(`^\\[(\\d+)\\][^“\\n]*“${title}”`, "m").exec(results[0])?.[1])
+          .filter(Boolean)
+          .map(Number);
+        turn =
+          ids.length < 2
+            ? { text: "I can't find the two tabs." }
+            : closing
+              ? { text: "", tool: { name: "close_tabs", input: { tab_ids: ids } } }
+              : {
+                  text: "",
+                  tool: {
+                    name: "group_tabs",
+                    input: { tab_ids: ids, name: "Reading", color: "cyan" },
+                  },
+                };
+      } else {
+        turn = { text: closing ? "I left the tabs open." : "Done: both are in **Reading**." };
+      }
+    } else if (results.length === 0) {
       turn = { text: "I'll read the page first.", tool: { name: "read_page", input: {} } };
     } else if (results.length === 1) {
       const ref = /\[(e\d+)\] button "Light the lantern"/.exec(results[0])?.[1];
@@ -2014,7 +2045,7 @@ try {
       problems.push("system not cached");
     if (!/untrusted/i.test(body.system?.[0]?.text ?? ""))
       problems.push("pages not called untrusted");
-    if (body.tools?.length !== 9 || !body.tools.every((t) => t.eager_input_streaming === true))
+    if (body.tools?.length !== 14 || !body.tools.every((t) => t.eager_input_streaming === true))
       problems.push("tools");
     if (problems.length) throw new Error(`the request is off: ${problems.join(", ")}`);
     const read = sent[1].body.messages.at(-1).content[0];
@@ -2064,6 +2095,112 @@ try {
       throw new Error("a row tells of a click that was neither made nor refused");
     if ((await inPage(`${base}/lantern`, "document.body.dataset.lantern")) === "lit")
       throw new Error("a click happened after Stop");
+  });
+
+  await check("Claude groups tabs under a name, once allowed", async () => {
+    const chat = app.windows().find((p) => p.url().startsWith("moon://ai"));
+    // A second page to sort, next to the lantern's.
+    await ui.evaluate(
+      (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "foreground" }),
+      `${base}/second`,
+    );
+    await waitFor(async () => (await tabs()).some((t) => t.title === "Second page"), "the page");
+    const tabId = (title) =>
+      ui.locator(`[role="tab"][title="${title}"]`).first().getAttribute("data-tab-id");
+    const lantern = await tabId("Moon lantern");
+    const second = await tabId("Second page");
+    const chip = ui.locator("[data-group-chip]").filter({ hasText: "Reading" });
+
+    await chat.getByRole("button", { name: "New chat" }).click();
+    const message = chat.getByRole("textbox", { name: "Message" });
+    const before = aiRequests.length;
+    await message.fill("Please sort my tabs into groups.");
+    await message.press("Enter");
+    // Looking at the tabs needs no permission; grouping them is asked about first.
+    const card = chat.getByRole("region", { name: "Claude asks to act" });
+    await waitFor(() => card.isVisible(), "the question before grouping");
+    const question = await card.textContent();
+    if (!/Group 2 tabs as “Reading”: “(Moon lantern|Second page)” and “/.test(question))
+      throw new Error(`the card asks: ${question}`);
+    await waitFor(
+      () => chat.getByText("Looked at the open tabs", { exact: true }).isVisible(),
+      "the row for listing the tabs",
+    );
+    if (await chip.count()) throw new Error("the tabs were grouped before it was allowed");
+    await new Promise((r) => setTimeout(r, 500));
+    await shot("09h-ai-group-tabs");
+    await card.getByRole("button", { name: "Allow once" }).click();
+
+    // The window really has the group: its label, and both tabs under it, side by side.
+    await waitFor(() => chip.count().then((n) => n === 1), "the group's label");
+    const groupId = await chip.getAttribute("data-group-chip");
+    const members = await ui
+      .locator(`[role="tab"][data-group-id="${groupId}"]`)
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-tab-id")));
+    if (members.length !== 2 || !members.includes(lantern) || !members.includes(second))
+      throw new Error(`the group holds the tabs ${members} instead of ${lantern} and ${second}`);
+    const order = await stripIds();
+    if (Math.abs(order.indexOf(lantern) - order.indexOf(second)) !== 1)
+      throw new Error(`the group's tabs aren't side by side: ${order}`);
+    await waitFor(
+      () => chat.getByText("Grouped 2 tabs as “Reading”").isVisible(),
+      "the row for grouping",
+    );
+    await waitFor(() => chat.getByText("both are in").isVisible(), "Claude's report");
+    await waitFor(() => chat.getByRole("button", { name: "Send" }).isVisible(), "the turn to end");
+
+    const sent = aiRequests.slice(before);
+    if (sent.length !== 3) throw new Error(`${sent.length} requests instead of 3`);
+    const listed = sent[1].body.messages.at(-1).content[0];
+    if (listed.is_error || !listed.content.includes("There are no tab groups."))
+      throw new Error(`list_tabs answered ${JSON.stringify(listed).slice(0, 400)}`);
+    // Luma's own pages are in the list as tabs, without what they show.
+    if (listed.content.includes("moon://"))
+      throw new Error(`list_tabs gave away an internal page: ${listed.content}`);
+    const grouped = sent[2].body.messages.at(-1).content[0];
+    if (grouped.is_error || !grouped.content.includes(`group ${groupId} “Reading” (cyan)`))
+      throw new Error(`group_tabs answered ${JSON.stringify(grouped)}`);
+
+    // The group goes again: the checks further down start without one.
+    for (const id of members)
+      await ui.evaluate(
+        (tab) => window.moonUI.command({ type: "ungroupTab", tabId: tab }),
+        Number(id),
+      );
+    await waitFor(() => chip.count().then((n) => n === 0), "the group to go");
+  });
+
+  await check("a declined close_tabs closes nothing", async () => {
+    const chat = app.windows().find((p) => p.url().startsWith("moon://ai"));
+    const open = await stripIds();
+    await chat.getByRole("button", { name: "New chat" }).click();
+    const message = chat.getByRole("textbox", { name: "Message" });
+    await message.fill("Close the tabs I am done with.");
+    await message.press("Enter");
+    const card = chat.getByRole("region", { name: "Claude asks to act" });
+    await waitFor(() => card.isVisible(), "the question before closing");
+    const question = await card.textContent();
+    if (!/Close 2 tabs: “(Moon lantern|Second page)” and “/.test(question))
+      throw new Error(`the card asks: ${question}`);
+    const before = aiRequests.length;
+    await card.getByRole("button", { name: "Don't allow" }).click();
+    await waitFor(
+      () => chat.getByText(/Not allowed: Close 2 tabs/).isVisible(),
+      "the declined row",
+    );
+    await waitFor(() => aiRequests.length > before, "the answer to go back to the model");
+    const result = aiRequests.at(-1).body.messages.at(-1).content[0];
+    if (!result.is_error || !/did not allow/.test(result.content))
+      throw new Error(`the model was told ${JSON.stringify(result)}`);
+    await waitFor(() => chat.getByText("I left the tabs open.").isVisible(), "Claude's answer");
+    await waitFor(() => chat.getByRole("button", { name: "Send" }).isVisible(), "the turn to end");
+    // A tab on its way out would be gone by now.
+    await new Promise((r) => setTimeout(r, 500));
+    const after = await stripIds();
+    if (after.join() !== open.join())
+      throw new Error(`the tabs were ${open} and are ${after} after the declined close`);
+    if (!(await tabs()).some((t) => t.title === "Moon lantern"))
+      throw new Error("the lantern's page is gone");
   });
 
   await check(
