@@ -33,6 +33,7 @@
     "test:e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
     "@eslint/js": "^9.39.5",
     "@ghostery/adblocker": "^2.20.3",
     "@ghostery/adblocker-electron-preload": "^2.20.3",

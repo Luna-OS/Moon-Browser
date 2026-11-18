@@ -19,10 +19,12 @@ import {
   MoonIcon,
   SearchIcon,
   ShieldIcon,
+  SparkleIcon,
   TabIcon,
   TrashIcon,
   UpdateIcon,
 } from "@theme/icons";
+import { AiSettings } from "./AiSettings";
 import { api, useLive, type SettingsInfo } from "./api";
 import { DnsSettings } from "./DnsSettings";
 import { Card, Row, Segmented, Toggle } from "./ui";
@@ -31,6 +33,7 @@ import { UpdateRow } from "./UpdateRow";
 const SECTIONS: { id: string; label: string; icon: ReactNode }[] = [
   { id: "appearance", label: "Appearance", icon: <MoonIcon /> },
   { id: "search", label: "Search", icon: <SearchIcon size={16} /> },
+  { id: "ai", label: "Luma AI", icon: <SparkleIcon /> },
   { id: "import", label: "Import", icon: <FolderIcon size={16} /> },
   { id: "privacy", label: "Privacy & Shield", icon: <ShieldIcon /> },
   { id: "permissions", label: "Site permissions", icon: <GlobeIcon /> },
@@ -288,6 +291,7 @@ export function SettingsPage({ info }: { info: SettingsInfo }) {
           )}
         </Card>
 
+        <AiSettings settings={s} platform={info.platform} set={set} />
         <ImportCard />
 
         <Card id="privacy" title="Privacy & Luma Shield">

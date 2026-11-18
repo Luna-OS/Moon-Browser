@@ -15,9 +15,22 @@ import {
   WebContentsView,
   type WebPreferences,
 } from "electron";
-import { DIALOG_SCRIM, FRAME_COLORS, mixColors, TAB_STRIP_HEIGHT } from "@shared/chrome-colors";
-import { internalUrl, isNewTabUrl, NEWTAB_URL, type InternalPage } from "@shared/internal";
 import {
+  DIALOG_SCRIM,
+  FRAME_COLORS,
+  mixColors,
+  PAGE_BACKGROUND,
+  TAB_STRIP_HEIGHT,
+} from "@shared/chrome-colors";
+import {
+  internalUrl,
+  isInternalUrl,
+  isNewTabUrl,
+  NEWTAB_URL,
+  type InternalPage,
+} from "@shared/internal";
+import {
+  INTERNAL_EVENT_CHANNEL,
   UI_CHANNELS,
   type Disposition,
   type OverlaySnapshot,
@@ -33,6 +46,15 @@ import {
   splitRects,
   type Insets,
 } from "@shared/layout";
+import {
+  AI_PAGE_URL,
+  assistantList,
+  defaultAssistant,
+  findAssistant,
+  MAX_SELECTION,
+  pagePrompt,
+  type Assistant,
+} from "@shared/ai";
 import { descendantsOf, folderChoices } from "@shared/bookmarks";
 import { type DialogAnswer, DialogQueue, type DialogSpec } from "@shared/dialogs";
 import { resolveInput } from "@shared/omnibox";
@@ -48,6 +70,8 @@ import {
 } from "@shared/tab-groups";
 import { protectionSiteOf } from "@shared/sites";
 import type { BookmarkFolderChoice, FindState, Rect, SplitState, WindowState } from "@shared/types";
+import { AiChat } from "./ai/chat";
+import { askPage } from "./ai/page-tools";
 import type { Browser } from "./browser";
 import { internalPreload, uiPreload, windowIcon } from "./paths";
 import type { SavedWindow } from "./profile";
@@ -71,6 +95,53 @@ export function isOpenableUrl(url: string): boolean {
   return /^(https?|file|moon|view-source):/i.test(url) || url === "about:blank";
 }
 
+/** What the side panel holds: one extension's page, or one assistant. */
+interface SidePanel {
+  view: WebContentsView;
+  url: string;
+  extensionId: string | null;
+  assistant: Assistant | null;
+  /** The assistant's site icon, once its page offered one. */
+  icon: string | null;
+  /** When the person last clicked or typed in it (pop-ups without that are refused). */
+  lastGesture: number;
+}
+
+/** The isolated world Luma looks for an assistant's message box in. */
+const ASSISTANT_WORLD = 1079;
+
+/**
+ * Finds the message box of an assistant's page — the last visible text
+ * area, editable element or text input — and puts the cursor at its end.
+ */
+const FOCUS_COMPOSER = `(() => {
+  const boxes = [...document.querySelectorAll(
+    'textarea, [contenteditable=""], [contenteditable="true"], [contenteditable="plaintext-only"], ' +
+    'input[type="text"], input[type="search"], input:not([type])'
+  )].filter((el) => {
+    if (el.disabled || el.readOnly || el.getClientRects().length === 0) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== "hidden" && style.display !== "none";
+  });
+  const box = boxes.at(-1);
+  if (!box) return false;
+  box.focus();
+  if ("value" in box) {
+    try { box.setSelectionRange(box.value.length, box.value.length); } catch {}
+  } else {
+    const range = document.createRange();
+    range.selectNodeContents(box);
+    range.collapse(false);
+    const selection = getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  return true;
+})()`;
+
+/** How long after a click or key a page may open a window, as for tabs. */
+const PANEL_GESTURE_WINDOW = 5_000;
+
 export class MoonWindow {
   readonly win: BrowserWindow;
   readonly isPrivate: boolean;
@@ -89,8 +160,10 @@ export class MoonWindow {
   /** Tab groups; IDs are unique across windows (extensions see them). */
   groups: TabGroupInfo[] = [];
   private static nextGroupId = 1;
-  /** An extension's side panel next to the tabs. */
-  private sidePanel: { extensionId: string; url: string; view: WebContentsView } | null = null;
+  /** The side panel next to the tabs: an extension's page or an AI assistant. */
+  private sidePanel: SidePanel | null = null;
+  /** The chat with "Claude (API key)", once it was opened; none in private windows. */
+  private aiChat: AiChat | null = null;
   private sidePanelWidth = SIDE_PANEL_WIDTH;
   private fullscreenByPage = false;
   private updateScheduled = false;
@@ -217,7 +290,11 @@ export class MoonWindow {
       this.tabs = [];
       const panel = this.sidePanel;
       this.sidePanel = null;
-      if (panel && !panel.view.webContents.isDestroyed()) panel.view.webContents.close();
+      if (panel) {
+        browser.unregisterPanel(panel.view.webContents.id);
+        if (!panel.view.webContents.isDestroyed()) panel.view.webContents.close();
+      }
+      this.aiChat?.stop();
       browser.windowClosed(this);
     });
 
@@ -311,7 +388,7 @@ export class MoonWindow {
   }
 
   /** A page the opener created itself (window.open, links with a target). */
-  adoptTab(webContents: WebContents, options: { openerId: number; url: string }): Tab {
+  adoptTab(webContents: WebContents, options: { openerId: number | null; url: string }): Tab {
     const tab = new Tab(this, { webContents, openerId: options.openerId, url: options.url });
     this.insertTab(tab);
     this.activate(tab.id, { focusPage: false });
@@ -661,6 +738,7 @@ export class MoonWindow {
     const url = this.browser.extensions.panelUrl(extensionId, this.activeTab?.wc?.id);
     if (!url) return false;
     if (this.sidePanel?.extensionId === extensionId) return true;
+    // One panel at a time: an assistant on show gives way.
     this.closeSidePanel();
     const view = new WebContentsView({
       webPreferences: {
@@ -686,7 +764,7 @@ export class MoonWindow {
       if (/^https?:/i.test(details.url)) this.openTab({ url: details.url });
     });
     wc.on("render-process-gone", () => this.closeSidePanel(extensionId));
-    this.sidePanel = { extensionId, url, view };
+    this.sidePanel = { extensionId, url, view, assistant: null, icon: null, lastGesture: 0 };
     wc.loadURL(url).catch(() => undefined);
     this.browser.extensions.panelOpened(this, extensionId, url);
     this.layout();
@@ -699,11 +777,14 @@ export class MoonWindow {
     if (!panel || (extensionId && panel.extensionId !== extensionId)) return;
     this.sidePanel = null;
     this.detach(panel.view);
+    this.browser.unregisterPanel(panel.view.webContents.id);
     if (!panel.view.webContents.isDestroyed()) panel.view.webContents.close();
-    this.browser.extensions.panelClosed(this, panel.extensionId, panel.url);
+    if (panel.extensionId) this.browser.extensions.panelClosed(this, panel.extensionId, panel.url);
     if (this.closed) return;
     this.layout();
     this.update();
+    // The keyboard goes back to the page it was taken from.
+    if (panel.assistant) this.activeTab?.focus();
   }
 
   toggleSidePanel(extensionId: string): void {
@@ -714,12 +795,224 @@ export class MoonWindow {
   /** Follows chrome.sidePanel.setOptions: another page for this tab, or none. */
   refreshSidePanel(): void {
     const panel = this.sidePanel;
-    if (!panel) return;
+    if (!panel?.extensionId) return;
     const url = this.browser.extensions.panelUrl(panel.extensionId, this.activeTab?.wc?.id);
     if (!url) this.closeSidePanel();
     else if (url !== panel.url) {
       panel.url = url;
       panel.view.webContents.loadURL(url).catch(() => undefined);
+    }
+  }
+
+  // ---- Luma AI: an assistant in the side panel ----
+
+  /**
+   * Shows an assistant in the side panel: the given one, or the one chosen
+   * in Settings. A web assistant is its own website, loaded in this
+   * window's session like a tab — a sign-in there is the same one the tabs
+   * have. "Claude (API key)" is Luma's chat page.
+   */
+  openAssistant(id?: string): boolean {
+    if (this.closed) return false;
+    const settings = this.browser.settings;
+    const assistant =
+      (id ? findAssistant(id, settings.aiAssistants, this.isPrivate) : null) ??
+      defaultAssistant(settings.aiAssistant, settings.aiAssistants, this.isPrivate);
+    if (this.sidePanel?.assistant?.id === assistant.id) {
+      this.sidePanel.view.webContents.focus();
+      return true;
+    }
+    this.closeSidePanel();
+
+    const api = assistant.kind === "api";
+    const view = new WebContentsView({
+      webPreferences: {
+        ...this.tabPreferences(),
+        // Only Luma's own chat page gets the internal page API.
+        preload: api ? internalPreload : undefined,
+      },
+    });
+    view.setBackgroundColor(api ? PAGE_BACKGROUND[this.browser.resolvedTheme()] : "#ffffff");
+    const wc = view.webContents;
+    const panel: SidePanel = {
+      view,
+      url: assistant.url,
+      extensionId: null,
+      assistant,
+      icon: null,
+      lastGesture: 0,
+    };
+
+    // Browser shortcuts work with the keyboard in the panel too.
+    wc.on("before-input-event", (event, input) => {
+      if (input.type === "keyDown" || input.type === "rawKeyDown") panel.lastGesture = Date.now();
+      const command = this.browser.shortcut(input);
+      if (command) {
+        event.preventDefault();
+        this.command(command);
+      }
+    });
+    wc.on("input-event", (_event, input) => {
+      if (input.type === "mouseDown" || input.type === "touchStart" || input.type === "gestureTap")
+        panel.lastGesture = Date.now();
+    });
+    wc.on("render-process-gone", () => {
+      if (this.sidePanel === panel) this.closeSidePanel();
+    });
+
+    if (api) {
+      // The chat page stays the chat page; its links open as tabs.
+      wc.on("will-navigate", (event) => event.preventDefault());
+      wc.setWindowOpenHandler(({ url }) => {
+        if (/^https?:/i.test(url)) this.openTab({ url });
+        return { action: "deny" };
+      });
+    } else {
+      this.wireWebAssistant(panel);
+    }
+
+    this.sidePanel = panel;
+    this.browser.registerPanel(wc.id, this);
+    wc.loadURL(assistant.url).catch(() => undefined);
+    this.layout();
+    this.update();
+    wc.focus();
+    return true;
+  }
+
+  /**
+   * A web assistant behaves like a page in a tab: it may go wherever its
+   * sign-in sends it (redirects to the identity provider and back stay in
+   * the panel), and the windows it opens — "Continue with Google", a link
+   * to a source — become tabs. Opened by the page's script, such a tab keeps
+   * its tie to the panel (window.opener), which sign-in pop-ups need to
+   * report back.
+   */
+  private wireWebAssistant(panel: SidePanel): void {
+    const wc = panel.view.webContents;
+    // Never to Luma's own pages, as for tabs.
+    wc.on("will-frame-navigate", (details) => {
+      if (isInternalUrl(details.url)) details.preventDefault();
+    });
+    wc.on("will-redirect", (details) => {
+      if (isInternalUrl(details.url)) details.preventDefault();
+    });
+    wc.setWindowOpenHandler((details) => {
+      const { url, disposition } = details;
+      if (!/^(https?|about|blob):/i.test(url)) return { action: "deny" };
+      // A link opened in a new tab (target=_blank, a middle click): a tab of its own.
+      if (disposition === "background-tab" || disposition === "foreground-tab") {
+        if (/^https?:/i.test(url))
+          this.openTab({ url, background: disposition === "background-tab" });
+        return { action: "deny" };
+      }
+      // A window the page opens by itself, without a click or key: refused.
+      if (Date.now() - panel.lastGesture > PANEL_GESTURE_WINDOW) return { action: "deny" };
+      return {
+        action: "allow",
+        outlivesOpener: true,
+        createWindow: (options) => {
+          const child = (options as { webContents?: WebContents }).webContents;
+          const tab = child ? this.adoptTab(child, { openerId: null, url }) : this.openTab({ url });
+          return tab.wc!;
+        },
+      };
+    });
+    wc.on("page-favicon-updated", (_event, icons) => {
+      const icon = icons.find((i) => /^https?:/i.test(i) && i.length <= 2048) ?? null;
+      if (icon === panel.icon) return;
+      panel.icon = icon;
+      this.update();
+    });
+    // The essentials of a right-click: editing, and links as tabs.
+    wc.on("context-menu", (_event, params) => {
+      const items: MenuItemConstructorOptions[] = [];
+      if (/^https?:/i.test(params.linkURL)) {
+        items.push(
+          { label: "Open link in new tab", click: () => this.openTab({ url: params.linkURL }) },
+          { label: "Copy link address", click: () => void clipboard.writeText(params.linkURL) },
+          { type: "separator" },
+        );
+      }
+      if (params.isEditable) {
+        items.push(
+          { role: "cut", enabled: params.editFlags.canCut },
+          { role: "copy", enabled: params.editFlags.canCopy },
+          { role: "paste", enabled: params.editFlags.canPaste },
+          { role: "selectAll" },
+        );
+      } else if (params.selectionText.trim()) {
+        items.push({ role: "copy" });
+      }
+      while (items.at(-1)?.type === "separator") items.pop();
+      if (items.length) Menu.buildFromTemplate(items).popup({ window: this.win });
+    });
+  }
+
+  /** The toolbar button and its shortcut: the assistant panel, on and off. */
+  toggleAssistant(): void {
+    if (this.sidePanel?.assistant) this.closeSidePanel();
+    else this.openAssistant();
+  }
+
+  /** The assistant a page is the panel of, for the checks of who is calling. */
+  assistantPanel(webContentsId: number): Assistant | null {
+    const panel = this.sidePanel;
+    return panel?.assistant && panel.view.webContents.id === webContentsId ? panel.assistant : null;
+  }
+
+  /**
+   * Puts the page on show into the assistant's message box: its title and
+   * address, and the selected text if there is some. The text is inserted
+   * the way typing is, into the last visible text box of the assistant's
+   * page; sending it is left to the person.
+   */
+  async sendPageToAssistant(): Promise<boolean> {
+    const tab = this.activeTab;
+    if (!tab) return false;
+    if (!this.sidePanel?.assistant && !this.openAssistant()) return false;
+    const panel = this.sidePanel;
+    if (!panel?.assistant) return false;
+    // Of Luma's own pages, only what the tab strip shows anyway.
+    let selection = "";
+    if (/^https?:/i.test(tab.url)) {
+      const reply = await askPage(tab, { op: "selection", max: MAX_SELECTION + 1 });
+      if (reply.ok) selection = reply.text ?? "";
+    }
+    const text = pagePrompt({ title: tab.title, url: tab.url, selection });
+    const wc = panel.view.webContents;
+    // A page still loading (the panel was just opened) gets a moment.
+    for (let tries = 0; tries < 40; tries++) {
+      if (this.sidePanel !== panel || wc.isDestroyed()) return false;
+      const found: unknown = await wc
+        .executeJavaScriptInIsolatedWorld(ASSISTANT_WORLD, [{ code: FOCUS_COMPOSER }])
+        .catch(() => false);
+      if (found === true) {
+        wc.focus();
+        await wc.insertText(text);
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  }
+
+  /** The chat with "Claude (API key)" of this window; none in private windows. */
+  assistantChat(): AiChat | null {
+    if (this.isPrivate || this.closed) return null;
+    this.aiChat ??= new AiChat(this, this.browser.aiKey, () => this.notifyAi());
+    return this.aiChat;
+  }
+
+  /** Tells this window's chat pages that the chat changed. */
+  notifyAi(): void {
+    if (this.closed) return;
+    const panel = this.sidePanel;
+    const pages = this.tabs.map((t) => t.wc);
+    if (panel?.assistant?.kind === "api") pages.push(panel.view.webContents);
+    for (const wc of pages) {
+      if (wc && !wc.isDestroyed() && wc.getURL().startsWith(AI_PAGE_URL))
+        wc.send(INTERNAL_EVENT_CHANNEL, "ai");
     }
   }
 
@@ -884,6 +1177,13 @@ export class MoonWindow {
       extensions: this.isPrivate ? [] : this.browser.extensions.entries(active?.url ?? ""),
       extensionPopup: this.isPrivate ? null : this.browser.extensions.openPopup(),
       sidePanel: this.sidePanelState(),
+      ai: {
+        showButton: settings.showAiButton,
+        defaultId: defaultAssistant(settings.aiAssistant, settings.aiAssistants, this.isPrivate).id,
+        assistants: assistantList(settings.aiAssistants, this.isPrivate).map(
+          ({ id, name, kind }) => ({ id, name, kind }),
+        ),
+      },
       groups: this.groups,
       dialog: this.dialogs.current(),
     };
@@ -892,9 +1192,20 @@ export class MoonWindow {
   private sidePanelState(): WindowState["sidePanel"] {
     const panel = this.sidePanel;
     if (!panel) return null;
-    const entry = this.browser.extensions.entry(panel.extensionId);
+    if (panel.assistant) {
+      const { id, kind, name } = panel.assistant;
+      return {
+        extensionId: null,
+        assistant: { id, kind },
+        name,
+        icon: panel.icon,
+        width: this.sidePanelWidth,
+      };
+    }
+    const entry = panel.extensionId ? this.browser.extensions.entry(panel.extensionId) : undefined;
     return {
       extensionId: panel.extensionId,
+      assistant: null,
       name: entry?.name ?? "Extension",
       icon: entry?.icon ?? null,
       width: this.sidePanelWidth,
@@ -1351,6 +1662,21 @@ export class MoonWindow {
         break;
       case "sidePanelClose":
         this.closeSidePanel();
+        break;
+      case "toggleAi":
+        this.toggleAssistant();
+        break;
+      case "aiOpen":
+        this.openAssistant(cmd.assistantId);
+        break;
+      case "aiReload":
+        if (this.sidePanel?.assistant) this.sidePanel.view.webContents.reload();
+        break;
+      case "aiSendPage":
+        void this.sendPageToAssistant();
+        break;
+      case "aiManage":
+        this.openInternal("settings", "ai");
         break;
       case "groupTab": {
         const tab = this.tab(cmd.tabId);

@@ -34,6 +34,10 @@ export type ShortcutCommand =
   | { type: "devtools" }
   | { type: "viewSource" }
   | { type: "toggleBookmarksBar" }
+  /** Luma AI: show or hide the side panel with the default assistant. */
+  | { type: "toggleAi" }
+  /** Put the page (title, address, selection) into the assistant's message box. */
+  | { type: "aiSendPage" }
   | { type: "quit" };
 
 export interface KeyInput {
@@ -134,6 +138,11 @@ export function shortcutFor(input: KeyInput, platform: string): ShortcutCommand 
           return mac ? { type: "home" } : null;
         case "b":
           return { type: "toggleBookmarksBar" };
+        // Chrome keeps both for itself (tab search, profiles), so no site uses them.
+        case "a":
+          return { type: "toggleAi" };
+        case "m":
+          return { type: "aiSendPage" };
         case "Delete":
         case "Backspace":
           return { type: "clearData" };
@@ -253,6 +262,8 @@ export type ShortcutHint =
   | "fullscreen"
   | "devtools"
   | "settings"
+  | "ai"
+  | "aiSendPage"
   | "quit";
 
 /** Windows and Linux, then macOS (in Apple's order: ⌃ ⌥ ⇧ ⌘). */
@@ -276,6 +287,8 @@ const HINTS: Record<ShortcutHint, [string, string]> = {
   fullscreen: ["F11", "⌃⌘F"],
   devtools: ["F12", "⌥⌘I"],
   settings: ["Ctrl+,", "⌘,"],
+  ai: ["Ctrl+Shift+A", "⇧⌘A"],
+  aiSendPage: ["Ctrl+Shift+M", "⇧⌘M"],
   quit: ["Ctrl+Shift+Q", "⌘Q"],
 };
 

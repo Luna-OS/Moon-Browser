@@ -6,6 +6,7 @@ import { Sky } from "@theme/Sky";
 import { useDocumentTheme } from "@theme/useTheme";
 import { api, useLive } from "./api";
 import { AboutPage } from "./AboutPage";
+import { AiPage } from "./AiPage";
 import { BookmarksPage } from "./BookmarksPage";
 import { DownloadsPage } from "./DownloadsPage";
 import { ExtensionsPage } from "./ExtensionsPage";
@@ -21,6 +22,7 @@ const TITLES: Record<InternalPage, string> = {
   downloads: "Downloads",
   extensions: "Extensions",
   about: "About Luma",
+  ai: "Luma AI",
 };
 
 function Root({ page }: { page: InternalPage }) {
@@ -53,6 +55,16 @@ function Root({ page }: { page: InternalPage }) {
     case "about":
       body = <AboutPage />;
       break;
+    case "ai":
+      // The chat fills the side panel: no moon behind it, and no page scroll.
+      return (
+        <div className="mb-night relative h-screen overflow-hidden">
+          <Sky moon={false} />
+          <div className="relative z-10 h-full">
+            <AiPage />
+          </div>
+        </div>
+      );
   }
 
   return (

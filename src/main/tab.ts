@@ -364,6 +364,11 @@ export class Tab {
     this.changedSoon();
   }
 
+  /** Something the person asked for is about to happen in the page (the assistant's click). */
+  markGesture(): void {
+    this.lastGesture = Date.now();
+  }
+
   hadRecentGesture(): boolean {
     return Date.now() - this.lastGesture < GESTURE_WINDOW;
   }
