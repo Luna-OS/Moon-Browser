@@ -24,7 +24,15 @@ import {
   type PermissionState,
 } from "@shared/ipc";
 
-if (typeof window !== "undefined") contextBridge.executeInMainWorld({ func: completeChromeObject });
+/**
+ * Pages Chromium makes by itself — an extension's offscreen document — have
+ * no isolated world, and Electron 45 runs this script in them all the same.
+ * There is nothing for it to do there, and the context bridge refuses.
+ */
+const isolated = process.contextIsolated;
+
+if (isolated && typeof window !== "undefined")
+  contextBridge.executeInMainWorld({ func: completeChromeObject });
 
 /** Whether a permission of this page is still to be asked for (see permissions.ts). */
 function permissionState(name: string): PermissionState {
@@ -66,7 +74,7 @@ function undecidedPermissions(state: typeof permissionState): void {
   );
 }
 
-if (typeof window !== "undefined")
+if (isolated && typeof window !== "undefined")
   contextBridge.executeInMainWorld({ func: undecidedPermissions, args: [permissionState] });
 
 function quietBadges(): void {
@@ -91,7 +99,7 @@ function quietBadges(): void {
   }
 }
 
-contextBridge.executeInMainWorld({ func: quietBadges });
+if (isolated) contextBridge.executeInMainWorld({ func: quietBadges });
 
 /** Asks the browser and waits for the answer, as the real dialogs make the page wait. */
 function askBrowser(kind: PageDialogKind, message: string, value: string): PageDialogReply {
@@ -136,5 +144,5 @@ function moonDialogs(ask: typeof askBrowser): void {
   wrap("prompt");
 }
 
-if (typeof window !== "undefined")
+if (isolated && typeof window !== "undefined")
   contextBridge.executeInMainWorld({ func: moonDialogs, args: [askBrowser] });

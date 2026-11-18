@@ -55,6 +55,11 @@ export type UiCommand =
   /** The ⋮ menu of an extension (options, pin, remove, …). */
   | { type: "extensionMenu"; extensionId: string; x: number; y: number }
   | { type: "sidePanelToggle"; extensionId: string }
+  /** Show an AI assistant in the side panel (switching from another one). */
+  | { type: "aiOpen"; assistantId: string }
+  | { type: "aiReload" }
+  /** Settings → Luma AI. */
+  | { type: "aiManage" }
   | { type: "sidePanelClose" }
   | { type: "sidePanelWidth"; width: number }
   /** Put a tab into a group (a new one without groupId). */
@@ -153,6 +158,15 @@ export type InternalMethod =
   | "import.choose"
   | "import.run"
   | "import.dismissHint"
+  | "ai.keyStatus"
+  | "ai.setKey"
+  | "ai.removeKey"
+  | "ai.state"
+  | "ai.send"
+  | "ai.stop"
+  | "ai.reset"
+  | "ai.approve"
+  | "ai.setModel"
   | "openUrl";
 
 const COMMON: InternalMethod[] = ["settings.get", "navigate", "openUrl"];
@@ -187,6 +201,10 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "import.detect",
     "import.choose",
     "import.run",
+    // The API key is set and removed here too; the chat itself is the AI page's alone.
+    "ai.keyStatus",
+    "ai.setKey",
+    "ai.removeKey",
   ],
   history: [...COMMON, "history.query", "history.remove", "data.clear"],
   bookmarks: [
@@ -212,6 +230,20 @@ export const PAGE_METHODS: Record<InternalPage, readonly InternalMethod[]> = {
     "extensions.repair",
   ],
   about: [...COMMON, "about.info", "update.status", "update.check", "update.install"],
+  // Luma's chat with Claude (the side panel's page). It stays where it is: no
+  // "navigate" or "openUrl" — its links open as tabs like any page's.
+  ai: [
+    "settings.get",
+    "ai.keyStatus",
+    "ai.setKey",
+    "ai.removeKey",
+    "ai.state",
+    "ai.send",
+    "ai.stop",
+    "ai.reset",
+    "ai.approve",
+    "ai.setModel",
+  ],
 };
 
 export const INTERNAL_CHANNEL = "moon:invoke";
@@ -239,4 +271,4 @@ export const PERMISSION_STATE_CHANNEL = "moon:permission-state";
 export type PermissionState = "allow" | "deny" | "ask";
 
 export type InternalEvent =
-  "settings" | "downloads" | "bookmarks" | "history" | "adblock" | "extensions" | "update";
+  "settings" | "downloads" | "bookmarks" | "history" | "adblock" | "extensions" | "update" | "ai";

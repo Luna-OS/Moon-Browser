@@ -4,6 +4,13 @@
  * Luma from starting — unknown or invalid fields fall back to the
  * defaults, known ones are kept.
  */
+import {
+  AI_MODEL_IDS,
+  DEFAULT_AI_MODEL,
+  DEFAULT_ASSISTANT_ID,
+  defaultAssistant,
+  sanitizeCustomAssistants,
+} from "./ai";
 import { sanitizeCustomDns, sanitizeDnsSetting } from "./dns";
 import { isValidCustomSearchUrl, SEARCH_ENGINES } from "./engines";
 import type { SearchEngineId, Settings } from "./types";
@@ -48,6 +55,11 @@ export function defaultSettings(platform: string): Settings {
     webgpuEverywhere: false,
     perplexityLook: true,
     youtubeLook: false,
+    showAiButton: true,
+    aiAssistant: DEFAULT_ASSISTANT_ID,
+    aiAssistants: [],
+    aiModel: DEFAULT_AI_MODEL,
+    aiAskBeforeActing: true,
   };
 }
 
@@ -101,6 +113,7 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
 
   const sleep = Number(raw.sleepAfterMinutes);
   const customDns = sanitizeCustomDns(raw.customDns);
+  const aiAssistants = sanitizeCustomAssistants(raw.aiAssistants);
 
   return {
     theme: oneOf(raw.theme, ["dark", "light", "system"] as const, d.theme),
@@ -139,6 +152,15 @@ export function sanitizeSettings(input: unknown, platform: string): Settings {
     webgpuEverywhere: bool(raw.webgpuEverywhere, d.webgpuEverywhere),
     perplexityLook: bool(raw.perplexityLook, d.perplexityLook),
     youtubeLook: bool(raw.youtubeLook, d.youtubeLook),
+    showAiButton: bool(raw.showAiButton, d.showAiButton),
+    // An assistant that was removed (or never existed) gives way to Claude.
+    aiAssistant: defaultAssistant(
+      typeof raw.aiAssistant === "string" ? raw.aiAssistant : d.aiAssistant,
+      aiAssistants,
+    ).id,
+    aiAssistants,
+    aiModel: oneOf(raw.aiModel, AI_MODEL_IDS, d.aiModel),
+    aiAskBeforeActing: bool(raw.aiAskBeforeActing, d.aiAskBeforeActing),
   };
 }
 

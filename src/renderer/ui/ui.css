@@ -523,6 +523,47 @@ body {
   border-left: 1px solid var(--mb-border);
 }
 
+/* The AI panel's name: a button that opens the list of assistants. */
+.mb-side-panel-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  height: 28px;
+  margin-left: -0.4rem;
+  padding: 0 0.45rem 0 0.4rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--mb-text);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--mb-motion);
+}
+.mb-side-panel-switch:hover,
+.mb-side-panel-switch[aria-expanded="true"] {
+  background: var(--mb-hover);
+}
+.mb-side-panel-switch > svg:last-child {
+  color: var(--mb-text-faint);
+}
+
+/* An assistant without an icon of its own: its initial on a small moonlit disc. */
+.mb-ai-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-night-950);
+  background: linear-gradient(135deg, var(--color-moon-100), var(--color-lavender-400));
+}
+
 /* A downloaded update, waiting for a restart. */
 .mb-update-pill {
   display: inline-flex;

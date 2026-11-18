@@ -3,6 +3,7 @@ import { formatBytes, formatNumber } from "@shared/format";
 import type { DownloadInfo, WindowState } from "@shared/types";
 import {
   BookmarksIcon,
+  CheckIcon,
   CloseIcon,
   CodeIcon,
   DownloadIcon,
@@ -22,6 +23,7 @@ import {
   PuzzleIcon,
   SettingsIcon,
   ShieldIcon,
+  SparkleIcon,
   SplitIcon,
   StarIcon,
   TabIcon,
@@ -32,7 +34,7 @@ import type { UiCommand } from "@shared/ipc";
 import { keys, ui } from "./store";
 
 export type PopoverKind =
-  "menu" | "shield" | "downloads" | "extensions" | "group" | "bookmarkFolder" | "bookmark";
+  "menu" | "shield" | "downloads" | "extensions" | "group" | "bookmarkFolder" | "bookmark" | "ai";
 
 const run = (cmd: UiCommand) => void ui.command(cmd);
 
@@ -242,6 +244,12 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
         label="Extensions"
         onClick={act({ type: "openPage", page: "extensions" })}
       />
+      <Item
+        icon={<SparkleIcon />}
+        label={state.sidePanel?.assistant ? "Close Luma AI" : "Luma AI"}
+        keys={keys("ai")}
+        onClick={act({ type: "toggleAi" })}
+      />
       <Sep />
       <div className="flex h-9 items-center gap-1 px-2">
         <span className="flex-1 pl-0.5">Zoom</span>
@@ -327,6 +335,50 @@ export function MainMenu({ state, onClose }: { state: WindowState; onClose: () =
         label="Quit"
         keys={keys("quit")}
         onClick={act({ type: "quit" })}
+      />
+    </div>
+  );
+}
+
+/** An assistant's mark where it has no icon of its own: its initial, or the sparkle for Luma's chat. */
+export function AssistantMark({ name, kind }: { name: string; kind: "web" | "api" }) {
+  return (
+    <span className="mb-ai-mark" aria-hidden="true">
+      {kind === "api" ? <SparkleIcon size={12} /> : name.trim().charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+/** The switcher of the AI panel: every assistant, and the way to Settings. */
+export function AssistantMenu({ state, onClose }: { state: WindowState; onClose: () => void }) {
+  const current = state.sidePanel?.assistant?.id;
+  return (
+    <div role="menu" aria-label="Assistants">
+      {state.ai.assistants.map((a) => (
+        <button
+          key={a.id}
+          type="button"
+          role="menuitemradio"
+          aria-checked={a.id === current}
+          className="mb-menu-item"
+          onClick={() => {
+            onClose();
+            run({ type: "aiOpen", assistantId: a.id });
+          }}
+        >
+          <AssistantMark name={a.name} kind={a.kind} />
+          <span className="min-w-0 flex-1 truncate">{a.name}</span>
+          {a.id === current && <CheckIcon size={14} />}
+        </button>
+      ))}
+      <Sep />
+      <Item
+        icon={<SettingsIcon />}
+        label="Manage…"
+        onClick={() => {
+          onClose();
+          run({ type: "aiManage" });
+        }}
       />
     </div>
   );

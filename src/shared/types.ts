@@ -3,6 +3,7 @@
  * pages. Everything here crosses an IPC boundary, so it is plain data only.
  */
 
+import type { AiModelId, CustomAssistant } from "./ai";
 import type { CustomDnsServer, DnsSetting } from "./dns";
 import type { TabGroupInfo } from "./tab-groups";
 
@@ -82,6 +83,16 @@ export interface Settings {
   perplexityLook: boolean;
   /** YouTube and YouTube Music in Moon's night-sky look, with a moon on the progress bar. */
   youtubeLook: boolean;
+  /** The Luma AI button in the toolbar. */
+  showAiButton: boolean;
+  /** The assistant the button opens: a built-in one's ID or one of `aiAssistants`. */
+  aiAssistant: string;
+  /** Assistants the user added: a name and an address. */
+  aiAssistants: CustomAssistant[];
+  /** The model of "Claude (API key)". */
+  aiModel: AiModelId;
+  /** The API assistant asks before it clicks, types or opens pages. */
+  aiAskBeforeActing: boolean;
 }
 
 export interface TabInfo {
@@ -299,8 +310,10 @@ export interface WindowState {
   extensions: ExtensionEntry[];
   /** The extension whose toolbar pop-up is open, if any. */
   extensionPopup: string | null;
-  /** An extension's page shown next to the tabs, like Chrome's side panel. */
+  /** An extension's page or an AI assistant next to the tabs; one at a time. */
   sidePanel: SidePanelState | null;
+  /** Luma AI: the toolbar button and the assistants to choose from. */
+  ai: AiToolbarState;
   /** The window's tab groups; their tabs sit next to each other in `tabs`. */
   groups: TabGroupInfo[];
   /** The question the window asks right now, over everything else. */
@@ -323,11 +336,22 @@ export interface ExtensionEntry {
 }
 
 export interface SidePanelState {
-  extensionId: string;
+  /** The extension whose page it shows (chrome.sidePanel), or null. */
+  extensionId: string | null;
+  /** The AI assistant it shows, or null. */
+  assistant: { id: string; kind: "web" | "api" } | null;
   name: string;
+  /** The extension's icon (a data: URL) or the assistant's site icon. */
   icon: string | null;
   /** Width of the panel in pixels. */
   width: number;
+}
+
+export interface AiToolbarState {
+  showButton: boolean;
+  /** The assistant the button opens. */
+  defaultId: string;
+  assistants: { id: string; name: string; kind: "web" | "api" }[];
 }
 
 export interface SiteSettingsEntry {

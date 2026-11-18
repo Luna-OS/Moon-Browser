@@ -28,14 +28,134 @@ const PAGES = {
   "/second": `<!doctype html><title>Second page</title><body style="padding:2rem"><h1>Second</h1></body>`,
   "/folder-page": `<!doctype html><title>From a folder</title><body style="padding:2rem"><h1>Kept in a folder</h1></body>`,
   "/permissions": `<!doctype html><title>Permissions page</title><body style="padding:2rem"><h1>May I?</h1></body>`,
+  // A stand-in for an AI assistant's website: a message box in a form. Sending
+  // the form would change the title, which Luma must never do by itself.
+  "/assistant": `<!doctype html><title>Test assistant</title><body style="font:15px sans-serif;margin:0;padding:1.25rem;background:#faf9fc">
+    <h1 style="font-size:1.1rem">Test assistant</h1><p>How can I help?</p>
+    <input type="search" placeholder="Search chats" style="width:100%;box-sizing:border-box;margin-bottom:.75rem">
+    <form onsubmit="document.title='SUBMITTED';return false">
+      <textarea id="composer" rows="9" placeholder="Message" style="width:100%;box-sizing:border-box"></textarea>
+      <button>Send</button></form>
+    <p><button id="signin" onclick="window.open('/signin', 'signin', 'width=420,height=520')">Continue with an account</button>
+      <a id="source" href="/second" target="_blank">A source</a></p>
+    <script>addEventListener("message", (e) => { document.body.dataset.signedIn = e.data; });</script></body>`,
+  // The window a sign-in opens: it reports back to the page that opened it, and closes.
+  "/signin": `<!doctype html><title>Sign-in window</title><body style="padding:2rem"><h1>Signing in…</h1>
+    <script>setTimeout(() => { opener?.postMessage("yes", "*"); setTimeout(() => close(), 300); }, 600);</script></body>`,
+  // A page for the API assistant to read and act on.
+  "/lantern": `<!doctype html><title>Moon lantern</title><body style="font:16px sans-serif;padding:2rem">
+    <h1>The moon lantern</h1><p id="story">A paper lantern waits by the window for the moon to rise.</p>
+    <label>Password <input type="password" id="secret" value="hunter2-do-not-read"></label>
+    <p><button id="light" onclick="document.body.dataset.lantern='lit';this.textContent='The lantern is lit'">Light the lantern</button></p></body>`,
   "/dialogs": `<!doctype html><title>Dialog test page</title><body style="font:16px sans-serif;padding:2rem">
     <h1>Pages ask questions</h1><p>alert(), confirm() and prompt() answer here.</p></body>`,
 };
+
+/**
+ * A small stand-in for Anthropic's Messages API (Luma is pointed at it with
+ * MOON_AI_BASE_URL): it answers like a model that reads the page, clicks
+ * the "Light the lantern" button it found there, and reports.
+ */
+const AI_KEY = "sk-ant-api03-e2e-test-key-0123456789abcdef";
+/** The requests it got: their headers and bodies. */
+const aiRequests = [];
+function answerAsClaude(req, res) {
+  let raw = "";
+  req.on("data", (chunk) => (raw += chunk));
+  req.on("end", () => {
+    const body = JSON.parse(raw);
+    aiRequests.push({ headers: req.headers, body });
+    // The SDK sends the key as a bearer token (x-api-key with older API versions).
+    const key =
+      req.headers["x-api-key"] ?? String(req.headers.authorization).replace(/^Bearer /, "");
+    if (key !== AI_KEY) {
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          type: "error",
+          error: { type: "authentication_error", message: "invalid x-api-key" },
+        }),
+      );
+      return;
+    }
+    // What the tools answered so far decides the next step.
+    const results = body.messages
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+      .filter((b) => b.type === "tool_result")
+      .map((b) => (typeof b.content === "string" ? b.content : JSON.stringify(b.content)));
+    /** @type {{ text: string, tool?: { name: string, input: object } }} */
+    let turn;
+    if (results.length === 0) {
+      turn = { text: "I'll read the page first.", tool: { name: "read_page", input: {} } };
+    } else if (results.length === 1) {
+      const ref = /\[(e\d+)\] button "Light the lantern"/.exec(results[0])?.[1];
+      turn = ref
+        ? { text: "", tool: { name: "click", input: { ref } } }
+        : { text: "I can't find the lantern's button." };
+    } else {
+      turn = { text: "Done: **the lantern is lit**." };
+    }
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+    const send = (event) => res.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
+    send({
+      type: "message_start",
+      message: {
+        id: `msg_e2e_${aiRequests.length}`,
+        type: "message",
+        role: "assistant",
+        model: body.model,
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 1 },
+      },
+    });
+    let index = 0;
+    if (turn.text) {
+      send({ type: "content_block_start", index, content_block: { type: "text", text: "" } });
+      // In pieces, as a model's words arrive.
+      for (const piece of turn.text.match(/.{1,9}/gs))
+        send({ type: "content_block_delta", index, delta: { type: "text_delta", text: piece } });
+      send({ type: "content_block_stop", index: index++ });
+    }
+    if (turn.tool) {
+      send({
+        type: "content_block_start",
+        index,
+        content_block: {
+          type: "tool_use",
+          id: `toolu_e2e_${aiRequests.length}`,
+          name: turn.tool.name,
+          input: {},
+        },
+      });
+      const json = JSON.stringify(turn.tool.input);
+      for (const piece of json.match(/.{1,5}/gs))
+        send({
+          type: "content_block_delta",
+          index,
+          delta: { type: "input_json_delta", partial_json: piece },
+        });
+      send({ type: "content_block_stop", index: index++ });
+    }
+    send({
+      type: "message_delta",
+      delta: { stop_reason: turn.tool ? "tool_use" : "end_turn", stop_sequence: null },
+      usage: { output_tokens: 20 },
+    });
+    send({ type: "message_stop" });
+    res.end();
+  });
+}
 
 /** The request headers the test page last came with. */
 let pageHeaders = {};
 const server = createServer((req, res) => {
   if (req.url === "/") pageHeaders = req.headers;
+  if (req.method === "POST" && req.url?.startsWith("/v1/messages")) {
+    answerAsClaude(req, res);
+    return;
+  }
   // For the extension's declarativeNetRequest rules.
   const dnr = {
     "/dnr-blocked": "not blocked",
@@ -255,6 +375,9 @@ if (process.platform === "linux") {
 
 const args = [root];
 if (process.platform === "linux") args.push("--no-sandbox");
+// The API key of Luma AI is encrypted with the Keychain on macOS; a test
+// run must not stop at a Keychain question nobody is there to answer.
+if (process.platform === "darwin") args.push("--use-mock-keychain");
 const app = await electron.launch({
   executablePath: require("electron"),
   args,
@@ -262,6 +385,8 @@ const app = await electron.launch({
     ...process.env,
     ...(webauthnMock ? { MOON_WEBAUTHN_LIBRARY: webauthnMock } : {}),
     MOON_BROWSER_PROFILE: profile,
+    // "Claude (API key)" talks to the stand-in above instead of Anthropic.
+    MOON_AI_BASE_URL: base,
     ...configEnv,
   },
 });
@@ -301,8 +426,56 @@ async function shot(name) {
       `from PIL import ImageGrab; ImageGrab.grab(xdisplay="${process.env.DISPLAY}").save("${join(shotsDir, name)}.png")`,
     ]);
   } catch {
+    // No screen grabber (Windows, macOS): the window is put together from
+    // its parts — the browser UI, and over it the pages on show, which are
+    // views of their own that a screenshot of the UI leaves out.
     const page = app.windows().find((p) => p.url().startsWith("moon://ui"));
-    await page?.screenshot({ path: join(shotsDir, `${name}.png`) });
+    const file = join(shotsDir, `${name}.png`);
+    try {
+      const parts = await app.evaluate(async ({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows().find(
+          (w) => !w.isDestroyed() && w.webContents.getURL().startsWith("moon://ui"),
+        );
+        const png = (image) => `data:image/png;base64,${image.toPNG().toString("base64")}`;
+        const views = [];
+        for (const view of win.contentView.children) {
+          if (!view.webContents || view.webContents.isDestroyed() || !view.getVisible()) continue;
+          const image = await view.webContents.capturePage();
+          if (!image.isEmpty()) views.push({ rect: view.getBounds(), url: png(image) });
+        }
+        return { ui: png(await win.webContents.capturePage()), views };
+      });
+      const dataUrl = await page.evaluate(async ({ ui, views }) => {
+        const load = (url) =>
+          new Promise((done, fail) => {
+            const image = new Image();
+            image.onload = () => done(image);
+            image.onerror = fail;
+            image.src = url;
+          });
+        const base = await load(ui);
+        const canvas = document.createElement("canvas");
+        canvas.width = base.width;
+        canvas.height = base.height;
+        const scale = base.width / window.innerWidth;
+        const context = canvas.getContext("2d");
+        context.drawImage(base, 0, 0);
+        for (const view of views) {
+          const { x, y, width, height } = view.rect;
+          context.drawImage(
+            await load(view.url),
+            x * scale,
+            y * scale,
+            width * scale,
+            height * scale,
+          );
+        }
+        return canvas.toDataURL("image/png");
+      }, parts);
+      await writeFile(file, Buffer.from(dataUrl.split(",")[1], "base64"));
+    } catch {
+      await page?.screenshot({ path: file });
+    }
   }
 }
 
@@ -1574,6 +1747,379 @@ try {
       );
     }
   });
+
+  // ---- Luma AI ----
+
+  /** Evaluates `code` in the page whose address starts with `prefix` (a tab or the side panel). */
+  const inPage = (prefix, code) =>
+    app.evaluate(
+      ({ webContents }, [start, js]) =>
+        webContents
+          .getAllWebContents()
+          .find((w) => !w.isDestroyed() && w.getURL().startsWith(start))
+          ?.executeJavaScript(js),
+      [prefix, code],
+    );
+  const settingsPage = async () => {
+    await ui.evaluate(() => window.moonUI.command({ type: "aiManage" }));
+    await waitFor(() => inPage("moon://settings", "!!window.moon"), "the settings page");
+  };
+
+  await check("Luma AI shows your own assistant in the side panel", async () => {
+    await settingsPage();
+    await waitFor(
+      () => inPage("moon://settings", "location.hash === '#ai' && !!document.getElementById('ai')"),
+      "Settings → Luma AI",
+    );
+    const saved = await inPage(
+      "moon://settings",
+      `window.moon.invoke('settings.set', {
+        aiAssistants: [
+          { id: 'own-test', name: 'Test assistant', url: '${base}/assistant' },
+          { id: 'own-bad', name: 'Not an assistant', url: 'javascript:alert(1)' },
+        ],
+        aiAssistant: 'own-test',
+      }).then((s) => [s.aiAssistant, s.aiAssistants.map((a) => a.id).join()])`,
+    );
+    if (saved.join("|") !== "own-test|own-test") throw new Error(`settings kept ${saved}`);
+
+    // A page to talk about, in a tab of its own.
+    await ui.evaluate(
+      (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "foreground" }),
+      `${base}/lantern`,
+    );
+    await waitFor(async () => (await tabs()).some((t) => t.title === "Moon lantern"), "the page");
+
+    await ui.getByRole("button", { name: "Luma AI", exact: true }).click();
+    await waitFor(
+      () => inPage(`${base}/assistant`, "document.readyState === 'complete'"),
+      "the assistant's page",
+    );
+    const head = ui.getByRole("button", { name: /Test assistant: choose another assistant/ });
+    await waitFor(() => head.isVisible(), "the panel's title bar");
+    // It is the side panel's page, not a tab.
+    if ((await stripOrder()).includes("Test assistant"))
+      throw new Error("the assistant opened as a tab");
+    if (
+      (await ui
+        .getByRole("button", { name: "Luma AI", exact: true })
+        .getAttribute("aria-pressed")) !== "true"
+    )
+      throw new Error("the toolbar button doesn't show the panel as open");
+    await new Promise((r) => setTimeout(r, 700));
+    await shot("09a-ai-web-assistant");
+  });
+
+  await check("the page is put into the assistant's message box, and not sent", async () => {
+    const box = () => inPage(`${base}/assistant`, "document.getElementById('composer').value");
+    await ui.getByRole("button", { name: "Send this page to the assistant" }).click();
+    await waitFor(
+      async () => (await box())?.includes(`URL: ${base}/lantern`),
+      "the page's address",
+    );
+    const first = await box();
+    if (first !== `Page: Moon lantern\nURL: ${base}/lantern\n\n`)
+      throw new Error(`the message box holds ${JSON.stringify(first)}`);
+
+    // With a selection, by the keyboard shortcut: the selected text comes along.
+    await inPage(`${base}/assistant`, "document.getElementById('composer').value = ''");
+    await inPage(
+      `${base}/lantern`,
+      "getSelection().selectAllChildren(document.getElementById('story'))",
+    );
+    await press("M", [MOD, "shift"]);
+    await waitFor(async () => (await box())?.includes("Selected text:"), "the selected text");
+    const second = await box();
+    if (!second.includes("A paper lantern waits by the window for the moon to rise."))
+      throw new Error(`the message box holds ${JSON.stringify(second)}`);
+    if (second.includes("hunter2")) throw new Error("the password field's value was sent along");
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("09b-ai-send-page");
+
+    // Nothing was sent: the form's submit handler would have changed the title.
+    const title = await inPage(`${base}/assistant`, "document.title");
+    if (title !== "Test assistant") throw new Error(`the form was sent (title: ${title})`);
+  });
+
+  await check("an assistant's sign-in window and links open as tabs; the panel stays", async () => {
+    /** A real click (the kind a pop-up needs) on an element of the assistant's page. */
+    const clickInPanel = (selector) =>
+      app.evaluate(
+        async ({ webContents }, [url, sel]) => {
+          const wc = webContents.getAllWebContents().find((w) => w.getURL() === url);
+          const { x, y } = await wc.executeJavaScript(
+            `(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) }; })()`,
+          );
+          for (const type of ["mouseDown", "mouseUp"])
+            wc.sendInputEvent({ type, x, y, button: "left", clickCount: 1 });
+        },
+        [`${base}/assistant`, selector],
+      );
+    const count = (await stripIds()).length;
+    // "Continue with …": the window it opens is a tab that can talk to the panel.
+    await clickInPanel("#signin");
+    await waitFor(
+      () => inPage(`${base}/assistant`, "document.body.dataset.signedIn === 'yes'"),
+      "the sign-in window to report back to the assistant",
+    );
+    await waitFor(
+      async () => (await stripIds()).length === count,
+      "the sign-in tab to close itself",
+    );
+    // A link to a source opens as a tab; the assistant stays in the panel.
+    await clickInPanel("#source");
+    await waitFor(async () => (await stripIds()).length === count + 1, "the link's tab");
+    if (!(await tabs()).some((t) => t.url === `${base}/assistant`))
+      throw new Error("the panel left the assistant");
+    // A window without a click is refused.
+    await new Promise((r) => setTimeout(r, 5200));
+    await inPage(
+      `${base}/assistant`,
+      "window.open('/second', 'unasked', 'width=300,height=300'); 0",
+    );
+    await new Promise((r) => setTimeout(r, 700));
+    if ((await stripIds()).length !== count + 1) throw new Error("an unasked pop-up opened");
+    // Going elsewhere (a sign-in on another origin) stays in the panel; Luma's own pages are out of reach.
+    const elsewhere = `${base.replace("127.0.0.1", "localhost")}/assistant`;
+    await inPage(`${base}/assistant`, "location.href = 'moon://settings/'; 0");
+    await new Promise((r) => setTimeout(r, 500));
+    await inPage(`${base}/assistant`, `location.href = ${JSON.stringify(elsewhere)}; 0`);
+    await waitFor(
+      () => inPage(elsewhere, "document.readyState === 'complete'"),
+      "the other origin",
+    );
+    if ((await stripIds()).length !== count + 1) throw new Error("the redirect opened a tab");
+    await inPage(elsewhere, `location.href = ${JSON.stringify(`${base}/assistant`)}; 0`);
+    await waitFor(() => inPage(`${base}/assistant`, "document.readyState === 'complete'"), "back");
+    // Back on the page the assistant talks about.
+    const lantern = await ui
+      .locator('[role="tab"][title="Moon lantern"]')
+      .getAttribute("data-tab-id");
+    await ui.evaluate(
+      (id) => window.moonUI.command({ type: "activate", tabId: id }),
+      Number(lantern),
+    );
+  });
+
+  await check("the switcher lists the assistants, and the panel closes again", async () => {
+    await ui.getByRole("button", { name: /Test assistant: choose another assistant/ }).click();
+    const menu = ui.getByRole("menu", { name: "Assistants" });
+    await waitFor(() => menu.isVisible(), "the list of assistants");
+    const names = await menu.getByRole("menuitemradio").locator("span.truncate").allTextContents();
+    const want = "Claude|ChatGPT|Gemini|Perplexity|Le Chat|Claude (API key)|Test assistant";
+    if (names.join("|") !== want) throw new Error(`the list has ${names.join("|")}`);
+    if (
+      (await menu
+        .getByRole("menuitemradio", { checked: true })
+        .locator("span.truncate")
+        .textContent()) !== "Test assistant"
+    )
+      throw new Error("the open assistant isn't the checked one");
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("09c-ai-switcher");
+    await ui.keyboard.press("Escape");
+    await ui.getByRole("button", { name: "Close side panel" }).click();
+    await waitFor(
+      () =>
+        app.evaluate(
+          ({ webContents }, url) =>
+            webContents.getAllWebContents().every((w) => w.getURL() !== url),
+          `${base}/assistant`,
+        ),
+      "the panel to close",
+    );
+    // The shortcut opens it again, and closes it.
+    await press("A", [MOD, "shift"]);
+    await waitFor(() => inPage(`${base}/assistant`, "true"), "the panel by Ctrl+Shift+A");
+    await press("A", [MOD, "shift"]);
+    await waitFor(async () => !(await inPage(`${base}/assistant`, "true")), "it to close again");
+  });
+
+  await check("Claude with an API key reads the page and clicks, once allowed", async () => {
+    await ui.evaluate(() => window.moonUI.command({ type: "aiOpen", assistantId: "claude-api" }));
+    const chat = await waitFor(
+      () => app.windows().find((p) => p.url().startsWith("moon://ai")),
+      "the chat page",
+    );
+    // First run: no key yet. A wrong one is told apart from a right one by Anthropic.
+    const keyBox = chat.getByPlaceholder("sk-ant-…");
+    await waitFor(() => keyBox.isVisible(), "the place to paste the key");
+    if (!(await chat.getByText(/only possible on claude\.ai/).isVisible()))
+      throw new Error("the first run doesn't say where a subscription works");
+    await new Promise((r) => setTimeout(r, 500));
+    await shot("09d-ai-first-run");
+    await keyBox.fill("sk-ant-api03-e2e-wrong-key-0123456789abcdef");
+    await chat.getByRole("button", { name: "Save key" }).click();
+    const message = chat.getByRole("textbox", { name: "Message" });
+    await waitFor(() => message.isVisible(), "the message box");
+    await message.fill("Hello?");
+    await message.press("Enter");
+    await waitFor(
+      () => chat.getByText(/Anthropic did not accept this API key/).isVisible(),
+      "the wrong key to be reported",
+    );
+    await chat.getByRole("button", { name: "Set API key" }).click();
+    await keyBox.fill(AI_KEY);
+    await chat.getByRole("button", { name: "Save key" }).click();
+    await waitFor(() => message.isVisible(), "the message box again");
+    await chat.getByRole("button", { name: "New chat" }).click();
+
+    const before = aiRequests.length;
+    await message.fill("Please light the lantern on this page.");
+    await message.press("Enter");
+    // Reading needs no permission; the click is asked about first.
+    const card = chat.getByRole("region", { name: "Claude asks to act" });
+    await waitFor(() => card.isVisible(), "the question before the click");
+    const question = await card.textContent();
+    if (!question.includes("Click “Light the lantern”") || !question.includes("127.0.0.1"))
+      throw new Error(`the card asks: ${question}`);
+    await waitFor(
+      () => chat.getByText("Read the page", { exact: true }).isVisible(),
+      "the row for reading",
+    );
+    if ((await inPage(`${base}/lantern`, "document.body.dataset.lantern")) === "lit")
+      throw new Error("the click happened before it was allowed");
+    await new Promise((r) => setTimeout(r, 500));
+    await shot("09e-ai-approval");
+    await card.getByRole("button", { name: "Allow once" }).click();
+    await waitFor(
+      () => inPage(`${base}/lantern`, "document.body.dataset.lantern === 'lit'"),
+      "the lantern to be lit",
+    );
+    await waitFor(() => chat.getByText("the lantern is lit").isVisible(), "Claude's report");
+    await waitFor(
+      () => chat.getByText("Clicked “Light the lantern”").isVisible(),
+      "the click's row",
+    );
+    // Markdown became elements, and the Stop button gave way to Send again.
+    if ((await chat.locator(".mb-ai-text strong").textContent()) !== "the lantern is lit")
+      throw new Error("the answer's Markdown isn't rendered");
+    await waitFor(() => chat.getByRole("button", { name: "Send" }).isVisible(), "the turn to end");
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("09f-ai-done");
+
+    // What went to the API: the SDK's request, as the chat was meant to make it.
+    const sent = aiRequests.slice(before);
+    if (sent.length !== 3) throw new Error(`${sent.length} requests instead of 3`);
+    const { headers, body } = sent[0];
+    const problems = [];
+    if (!String(headers["anthropic-beta"]).includes("server-side-fallback-2026-07-01"))
+      problems.push(`anthropic-beta: ${headers["anthropic-beta"]}`);
+    if (body.model !== "claude-opus-5-5") problems.push(`model ${body.model}`);
+    if (body.fallbacks !== "default") problems.push("no refusal fallback");
+    if (body.thinking?.type !== "adaptive") problems.push("thinking");
+    if (body.stream !== true) problems.push("not streaming");
+    if (body.tool_choice && body.tool_choice.type !== "auto") problems.push("forced tool_choice");
+    if (body.system?.at(-1)?.cache_control?.type !== "ephemeral")
+      problems.push("system not cached");
+    if (!/untrusted/i.test(body.system?.[0]?.text ?? ""))
+      problems.push("pages not called untrusted");
+    if (body.tools?.length !== 9 || !body.tools.every((t) => t.eager_input_streaming === true))
+      problems.push("tools");
+    if (problems.length) throw new Error(`the request is off: ${problems.join(", ")}`);
+    const read = sent[1].body.messages.at(-1).content[0];
+    if (read.type !== "tool_result" || !read.content.includes("A paper lantern waits"))
+      throw new Error(`read_page answered ${JSON.stringify(read).slice(0, 300)}`);
+    if (!read.content.includes("value hidden") || read.content.includes("hunter2"))
+      throw new Error("the password field's value went to the model");
+    const clicked = sent[2].body.messages.at(-1).content[0];
+    if (clicked.is_error || !clicked.content.includes('Clicked the button "Light the lantern"'))
+      throw new Error(`click answered ${JSON.stringify(clicked)}`);
+  });
+
+  await check("a declined action doesn't happen, and Stop ends the turn", async () => {
+    const chat = app.windows().find((p) => p.url().startsWith("moon://ai"));
+    // The lantern goes out again, for another try.
+    await inPage(
+      `${base}/lantern`,
+      "delete document.body.dataset.lantern; document.getElementById('light').textContent = 'Light the lantern'",
+    );
+    await chat.getByRole("button", { name: "New chat" }).click();
+    const message = chat.getByRole("textbox", { name: "Message" });
+    await message.fill("Light it again.");
+    await message.press("Enter");
+    const card = chat.getByRole("region", { name: "Claude asks to act" });
+    await waitFor(() => card.isVisible(), "the question");
+    const before = aiRequests.length;
+    await card.getByRole("button", { name: "Don't allow" }).click();
+    await waitFor(() => chat.getByText(/Not allowed: Click/).isVisible(), "the declined row");
+    await waitFor(() => aiRequests.length > before, "the answer to go back to the model");
+    const result = aiRequests.at(-1).body.messages.at(-1).content[0];
+    if (!result.is_error || !/did not allow/.test(result.content))
+      throw new Error(`the model was told ${JSON.stringify(result)}`);
+    if ((await inPage(`${base}/lantern`, "document.body.dataset.lantern")) === "lit")
+      throw new Error("the declined click happened");
+
+    // Stop while a question is open: the turn ends and nothing is clicked.
+    await waitFor(() => chat.getByRole("button", { name: "Send" }).isVisible(), "the turn to end");
+    await chat.getByRole("button", { name: "New chat" }).click();
+    await message.fill("And once more.");
+    await message.press("Enter");
+    await waitFor(() => card.isVisible(), "the question again");
+    await chat.getByRole("button", { name: "Stop" }).click();
+    await waitFor(async () => !(await card.isVisible()), "the question to go away");
+    await waitFor(() => chat.getByRole("button", { name: "Send" }).isVisible(), "the turn to end");
+    await waitFor(() => chat.getByText("Stopped.", { exact: true }).isVisible(), "“Stopped.”");
+    if (await chat.getByText(/Click “Light the lantern”/).count())
+      throw new Error("a row tells of a click that was neither made nor refused");
+    if ((await inPage(`${base}/lantern`, "document.body.dataset.lantern")) === "lit")
+      throw new Error("a click happened after Stop");
+  });
+
+  await check(
+    "the API key stays in the main process, and only the chat page may chat",
+    async () => {
+      const state = await inPage(
+        "moon://ai",
+        "window.moon.invoke('ai.state').then(JSON.stringify)",
+      );
+      if (!state.includes('"hasKey":true')) throw new Error(`state: ${state.slice(0, 200)}`);
+      if (state.includes("sk-ant-")) throw new Error("the chat's state holds the API key");
+      const settings = await readFile(join(profile, "settings.json"), "utf8").catch(() => "");
+      if (settings.includes("sk-ant-")) throw new Error("settings.json holds the API key");
+      // Encrypted where the system has a keyring; otherwise not on disk at all.
+      const { persistent } = JSON.parse(state);
+      const stored = await readFile(join(profile, "ai-key.bin")).catch(() => null);
+      if (persistent !== (stored !== null))
+        throw new Error(`persistent ${persistent}, file ${!!stored}`);
+      if (stored?.includes(AI_KEY)) throw new Error("the key is on disk unencrypted");
+
+      const refused = (prefix, call) =>
+        inPage(prefix, `window.moon.invoke(${call}).then(() => 'allowed', () => 'refused')`);
+      await settingsPage();
+      for (const call of ["'ai.state'", "'ai.send', 'hi'", "'ai.approve', 1, 'once'", "'ai.reset'"])
+        if ((await refused("moon://settings", call)) !== "refused")
+          throw new Error(`the settings page could call ${call}`);
+      if ((await refused("moon://ai", "'settings.set', { adblock: false }")) !== "refused")
+        throw new Error("the chat page could change settings");
+      if ((await refused("moon://ai", "'history.query', {}")) !== "refused")
+        throw new Error("the chat page could read the history");
+      // A web page has no such API at all.
+      if ((await inPage(`${base}/lantern`, "typeof window.moon")) !== "undefined")
+        throw new Error("a web page got the internal API");
+
+      await waitFor(
+        () => inPage("moon://settings", "document.body.innerText.includes('A key is set.')"),
+        "Settings to say a key is set",
+      );
+      await inPage("moon://settings", "document.getElementById('ai').scrollIntoView()");
+      await new Promise((r) => setTimeout(r, 600));
+      await shot("09g-ai-settings");
+
+      // Removing the key in Settings takes it away for the chat too.
+      await inPage("moon://settings", "window.moon.invoke('ai.removeKey')");
+      await waitFor(
+        () => inPage("moon://ai", "window.moon.invoke('ai.state').then((s) => !s.hasKey)"),
+        "the key to be gone",
+      );
+      if (existsSync(join(profile, "ai-key.bin"))) throw new Error("the key's file is still there");
+      await ui.getByRole("button", { name: "Close side panel" }).click();
+      await inPage(
+        "moon://settings",
+        "window.moon.invoke('settings.set', { aiAssistants: [], aiAssistant: 'claude' })",
+      );
+    },
+  );
 
   await check("the menu opens above the page", async () => {
     await ui.getByRole("button", { name: "Menu" }).click();
