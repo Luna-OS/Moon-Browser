@@ -93,6 +93,8 @@ export class MoonWindow {
   private sidePanel: { extensionId: string; url: string; view: WebContentsView } | null = null;
   private sidePanelWidth = SIDE_PANEL_WIDTH;
   private fullscreenByPage = false;
+  /** Maximized before it went fullscreen (Windows): maximized again after. */
+  private maximizedBeforeFullscreen = false;
   private updateScheduled = false;
   private softTimer: NodeJS.Timeout | null = null;
   /** Questions asked in Luma's own dialogs, one at a time. */
@@ -184,6 +186,10 @@ export class MoonWindow {
     });
     this.win.on("leave-full-screen", () => {
       this.fullscreenByPage = false;
+      if (this.maximizedBeforeFullscreen) {
+        this.maximizedBeforeFullscreen = false;
+        this.win.maximize();
+      }
       if (this.htmlFullscreen?.wc)
         this.htmlFullscreen.wc
           .executeJavaScript("document.exitFullscreen?.()", true)
@@ -296,6 +302,9 @@ export class MoonWindow {
       plugins: true,
       autoplayPolicy: "document-user-activation-required",
       enableWebSQL: false,
+      // A page's fullscreen goes through setHtmlFullscreen (on Windows, the
+      // window leaves the maximized state first), not Electron's own resize.
+      disableHtmlFullscreenWindowResize: process.platform === "win32",
     };
   }
 
@@ -735,15 +744,30 @@ export class MoonWindow {
       this.htmlFullscreen = tab;
       if (!this.win.isFullScreen()) {
         this.fullscreenByPage = true;
-        this.win.setFullScreen(true);
+        this.setFullScreen(true);
       }
     } else if (this.htmlFullscreen === tab) {
       this.htmlFullscreen = null;
-      if (this.fullscreenByPage && this.win.isFullScreen()) this.win.setFullScreen(false);
+      if (this.fullscreenByPage && this.win.isFullScreen()) this.setFullScreen(false);
       this.fullscreenByPage = false;
     }
     this.layout();
     this.update();
+  }
+
+  /**
+   * Fullscreen over the whole display. On Windows a maximized window stays
+   * maximized underneath, and Windows moves maximized windows into the work
+   * area whenever that changes, as when a bar at the screen's edge (a custom
+   * taskbar) claims its space: the fullscreen window ended up under the bar.
+   * So it leaves the maximized state first and gets it back afterwards.
+   */
+  private setFullScreen(on: boolean): void {
+    if (on && process.platform === "win32" && this.win.isMaximized()) {
+      this.maximizedBeforeFullscreen = true;
+      this.win.unmaximize();
+    }
+    this.win.setFullScreen(on);
   }
 
   async openOverlay(): Promise<OverlaySnapshot[]> {
@@ -1316,7 +1340,7 @@ export class MoonWindow {
         tab?.wc?.print();
         break;
       case "fullscreen":
-        this.win.setFullScreen(!this.win.isFullScreen());
+        this.setFullScreen(!this.win.isFullScreen());
         break;
       case "devtools":
         if (tab?.wc) {
