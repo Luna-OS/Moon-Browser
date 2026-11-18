@@ -20,6 +20,19 @@ paid Apple Developer Program).
 
 The project file is generated and not checked in — after adding or removing files, run `xcodegen generate` again.
 
+## TestFlight
+
+The **iOS TestFlight** workflow (started by hand under _Actions_) signs the app and uploads it to TestFlight —
+no Mac and no cable needed. It wants an app record for the bundle ID `io.lunaos.moonbrowser.ios` in App Store
+Connect and four repository secrets:
+
+| Secret          | What                                                                             |
+| --------------- | -------------------------------------------------------------------------------- |
+| `ASC_KEY_ID`    | Key ID of an App Store Connect API key (role Admin, so it may sign in the cloud)  |
+| `ASC_ISSUER_ID` | Issuer ID shown above the list of API keys                                       |
+| `ASC_KEY_P8`    | The whole content of the downloaded `AuthKey_….p8` file                          |
+| `APPLE_TEAM_ID` | The team ID from the developer account's membership page                         |
+
 ## What is where
 
 | Folder               | What                                                                                  |
