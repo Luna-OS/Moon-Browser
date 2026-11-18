@@ -114,6 +114,9 @@ export function installAppMenu(browser: Browser): void {
       submenu: [
         item("Show or Hide Bookmarks Bar", "Shift+Cmd+B", { type: "toggleBookmarksBar" }),
         sep,
+        item("Show or Hide Luma AI", "Shift+Cmd+A", { type: "toggleAi" }),
+        item("Send Page to Luma AI", "Shift+Cmd+M", { type: "aiSendPage" }),
+        sep,
         item("Reload", "Cmd+R", { type: "reload" }),
         item("Reload Without Cache", "Shift+Cmd+R", { type: "hardReload" }),
         sep,

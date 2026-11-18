@@ -3,6 +3,7 @@
  * decides per page which of these calls are allowed.
  */
 import { useEffect, useState } from "react";
+import type { AiApprovalAnswer, AiChatState, AiKeyStatus, AiModelId } from "@shared/ai";
 import type { Bang } from "@shared/bangs";
 import type { SearchEngine } from "@shared/engines";
 import type { Disposition, InternalEvent } from "@shared/ipc";
@@ -104,6 +105,17 @@ export const api = {
   runImport: (path: string, what: { bookmarks: boolean; history: boolean }) =>
     m().invoke("import.run", path, what) as Promise<ImportResult>,
   dismissImportHint: () => m().invoke("import.dismissHint") as Promise<void>,
+  // Luma AI. The key goes in and never comes back: pages only learn whether one is set.
+  aiKeyStatus: () => m().invoke("ai.keyStatus") as Promise<AiKeyStatus>,
+  aiSetKey: (key: string) => m().invoke("ai.setKey", key) as Promise<AiKeyStatus>,
+  aiRemoveKey: () => m().invoke("ai.removeKey") as Promise<AiKeyStatus>,
+  aiState: () => m().invoke("ai.state") as Promise<AiChatState>,
+  aiSend: (text: string) => m().invoke("ai.send", text) as Promise<void>,
+  aiStop: () => m().invoke("ai.stop") as Promise<void>,
+  aiReset: () => m().invoke("ai.reset") as Promise<void>,
+  aiApprove: (id: number, answer: AiApprovalAnswer) =>
+    m().invoke("ai.approve", id, answer) as Promise<void>,
+  aiSetModel: (model: AiModelId) => m().invoke("ai.setModel", model) as Promise<void>,
 };
 
 /**

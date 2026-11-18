@@ -28,6 +28,7 @@ import { originOf } from "@shared/sites";
 import type { PermissionKind, PermissionPrompt } from "@shared/types";
 import type { Browser } from "./browser";
 import type { Tab } from "./tab";
+import type { MoonWindow } from "./window";
 
 type Decision = "allow" | "deny";
 
@@ -62,6 +63,16 @@ const PAGE_PERMISSIONS: Record<string, PermissionKind> = {
   video_capture: "camera",
   audio_capture: "microphone",
   clipboard_read: "clipboard-read",
+};
+
+/** What a web assistant in the side panel asks for, in the dialog's words. */
+const PANEL_REQUESTS: Record<string, string> = {
+  microphone: "use your microphone",
+  camera: "use your camera",
+  "camera+microphone": "use your camera and microphone",
+  "clipboard-read": "read your clipboard",
+  notifications: "show notifications",
+  geolocation: "know your location",
 };
 
 /** The extension a page or worker belongs to, from its origin. */
@@ -109,9 +120,10 @@ export class Permissions {
   private pageState(wc: WebContents, url: string, name: unknown): PermissionState {
     const kind = typeof name === "string" ? PAGE_PERMISSIONS[name] : undefined;
     const tab = this.browser.tabFor(wc.id);
-    const origin = originOf(url || tab?.url || "");
-    if (!kind || !tab || !/^https?:\/\//.test(origin)) return "deny";
-    return this.decision(origin, kind, tab.window.isPrivate) ?? "ask";
+    const win = tab?.window ?? this.browser.panelWindow(wc.id);
+    const origin = originOf(url || tab?.url || wc.getURL());
+    if (!kind || !win || !/^https?:\/\//.test(origin)) return "deny";
+    return this.decision(origin, kind, win.isPrivate) ?? "ask";
   }
 
   install(ses: Session, isPrivate: boolean): void {
@@ -268,7 +280,15 @@ export class Permissions {
       if (forExtension !== null) return forExtension;
     }
     const tab = this.browser.tabFor(wc.id);
-    if (!tab || tab.window.isPrivate !== isPrivate) return false;
+    if (!tab) {
+      const panel = this.browser.panelWindow(wc.id);
+      return (
+        !!panel &&
+        panel.isPrivate === isPrivate &&
+        this.onPanelRequest(panel, wc, permission, details)
+      );
+    }
+    if (tab.window.isPrivate !== isPrivate) return false;
     if (ALWAYS_ALLOWED.has(permission)) return true;
     const origin = originOf(details.requestingUrl || tab.url);
     if (!/^https?:\/\//.test(origin)) return false;
@@ -311,6 +331,65 @@ export class Permissions {
     }
   }
 
+  /**
+   * A web assistant in the side panel asks like a page in a tab does, only
+   * that its question shows in a dialog (the bar above the page belongs to
+   * the tabs): the microphone for dictating, the camera, reading the
+   * clipboard. The answer holds for that site until Luma closes; one given
+   * and remembered in a tab counts here too.
+   */
+  private async onPanelRequest(
+    win: MoonWindow,
+    wc: WebContents,
+    permission: string,
+    details: PermissionRequest,
+  ): Promise<boolean> {
+    if (ALWAYS_ALLOWED.has(permission)) return true;
+    const origin = originOf(details.requestingUrl || wc.getURL());
+    if (!/^https?:\/\//.test(origin)) return false;
+    let kinds: PermissionKind[];
+    switch (permission) {
+      case "media": {
+        const types = (details as { mediaTypes?: string[] }).mediaTypes ?? [];
+        kinds = [
+          ...(types.includes("video") ? (["camera"] as const) : []),
+          ...(types.includes("audio") ? (["microphone"] as const) : []),
+        ];
+        break;
+      }
+      case "clipboard-read":
+      case "notifications":
+      case "geolocation":
+        kinds = [permission];
+        break;
+      case "mediaKeySystem":
+        return this.browser.startedWith.protectedContent;
+      default:
+        return false;
+    }
+    if (!kinds.length) return false;
+    const stored = kinds.map((kind) => this.decision(origin, kind, win.isPrivate));
+    if (stored.every((d) => d !== undefined)) return stored.every((d) => d === "allow");
+    const response = await win.ask({
+      tone: "calm",
+      glyph: "permission",
+      eyebrow: "Luma AI",
+      title: `${origin.replace(/^https?:\/\//, "")} wants to ${PANEL_REQUESTS[kinds.join("+")] ?? "use a permission"}`,
+      message:
+        "The assistant in the side panel asks for this. Your answer holds until Luma closes.",
+      buttons: [
+        { label: "Don't allow", style: "secondary" },
+        { label: "Allow", style: "primary" },
+      ],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    const decision: Decision = response === 1 ? "allow" : "deny";
+    for (const kind of kinds)
+      this.sessionDecisions.set(`${win.isPrivate ? "p" : "n"} ${origin} ${kind}`, decision);
+    return decision === "allow";
+  }
+
   private onCheck(
     wc: WebContents | null,
     permission: string,
@@ -323,8 +402,7 @@ export class Permissions {
       if (forExtension !== null) return forExtension;
     }
     if (!wc) return false;
-    const tab = this.browser.tabFor(wc.id);
-    if (!tab) return false;
+    if (!this.browser.tabFor(wc.id) && !this.browser.panelWindow(wc.id)) return false;
     if (ALWAYS_ALLOWED.has(permission)) return true;
     const origin = originOf(requestingOrigin);
     switch (permission) {

@@ -24,6 +24,7 @@ import { protectionSiteOf } from "@shared/sites";
 import type { ClearDataOptions, ResolvedTheme, Settings } from "@shared/types";
 import { acceptLanguages, cleanUserAgent } from "@shared/useragent";
 import { Adblocker } from "./adblock";
+import { AiKeyStore } from "./ai/key";
 import { DefaultBrowser } from "./default-browser";
 import { DnsBridge } from "./dns-bridge";
 import type { EngineSettings } from "./engine-settings";
@@ -57,6 +58,8 @@ export class Browser {
     this.updateAllWindows();
     this.notifyInternal("settings");
   });
+  /** The API key of "Claude (API key)", encrypted in the profile. */
+  readonly aiKey = new AiKeyStore();
   readonly windows = new Set<MoonWindow>();
   /** The way to a plain DNS server of the user's (see dns-bridge.ts). */
   readonly dnsBridge = new DnsBridge();
@@ -71,6 +74,8 @@ export class Browser {
   private privateSes: Session | null = null;
   private privateGeneration = 0;
   private readonly tabsByContents = new Map<number, Tab>();
+  /** The windows' AI assistant panels, by their page (webContents id). */
+  private readonly panelsByContents = new Map<number, MoonWindow>();
   private closedTabs: ClosedTab[] = [];
   private lastFocused: MoonWindow | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
@@ -303,6 +308,20 @@ export class Browser {
     this.tabsByContents.delete(webContentsId);
   }
 
+  registerPanel(webContentsId: number, window: MoonWindow): void {
+    this.panelsByContents.set(webContentsId, window);
+  }
+
+  unregisterPanel(webContentsId: number): void {
+    this.panelsByContents.delete(webContentsId);
+  }
+
+  /** The window a page is the AI assistant panel of, if it is one. */
+  panelWindow(webContentsId: number): MoonWindow | undefined {
+    const win = this.panelsByContents.get(webContentsId);
+    return win && !win.closed && win.assistantPanel(webContentsId) ? win : undefined;
+  }
+
   tabFor(webContentsId: number): Tab | undefined {
     return this.tabsByContents.get(webContentsId);
   }
@@ -466,7 +485,8 @@ export class Browser {
 
   private sendInternal(event: InternalEvent): void {
     for (const wc of webContents.getAllWebContents()) {
-      if (wc.isDestroyed() || !this.tabFor(wc.id)) continue;
+      // Tabs, and the chat page in a side panel (it follows the theme too).
+      if (wc.isDestroyed() || !(this.tabFor(wc.id) || this.panelWindow(wc.id))) continue;
       if (isInternalUrl(wc.getURL())) wc.send(INTERNAL_EVENT_CHANNEL, event);
     }
   }

@@ -5,6 +5,13 @@
  * the methods listed for it in PAGE_METHODS.
  */
 import { app, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
+import {
+  AI_APPROVAL_ANSWERS,
+  AI_MODEL_IDS,
+  type AiApprovalAnswer,
+  type AiChatState,
+  type AiModelId,
+} from "@shared/ai";
 import { BANGS } from "@shared/bangs";
 import { folderChoices } from "@shared/bookmarks";
 import { SEARCH_ENGINES } from "@shared/engines";
@@ -28,7 +35,7 @@ import type { AboutInfo, ClearDataOptions, PermissionKind, Suggestion } from "@s
 import type { Browser } from "./browser";
 import { engineSettingsChanged } from "./engine-settings";
 import type { Tab } from "./tab";
-import { isOpenableUrl } from "./window";
+import { isOpenableUrl, type MoonWindow } from "./window";
 
 const DISPOSITIONS: Disposition[] = ["current", "foreground", "background", "window", "private"];
 const DOWNLOAD_ACTIONS: DownloadAction[] = ["open", "show", "cancel", "pause", "resume", "remove"];
@@ -83,7 +90,13 @@ export function validateCommand(raw: unknown): UiCommand | null {
     case "focusPage":
     case "installUpdate":
     case "makeDefaultBrowser":
+    case "toggleAi":
+    case "aiSendPage":
+    case "aiReload":
+    case "aiManage":
       return { type: c.type } as UiCommand;
+    case "aiOpen":
+      return isStr(c.assistantId, 64) ? { type: "aiOpen", assistantId: c.assistantId } : null;
     case "selectTab":
       return isNum(c.index) ? { type: "selectTab", index: c.index } : null;
     case "openPage":
@@ -306,10 +319,13 @@ export function registerIpc(browser: Browser): void {
   // ---- Internal pages ----
 
   const methods = internalMethods(browser);
+  const windowMethods = internalWindowMethods(browser);
   ipcMain.handle(INTERNAL_CHANNEL, (event, method: unknown, ...args: unknown[]) => {
     const tab = browser.tabFor(event.sender.id);
+    // The chat page of "Claude (API key)" lives in the side panel, not in a tab.
+    const win = tab?.window ?? browser.panelWindow(event.sender.id);
     const frame = event.senderFrame;
-    if (!tab || !frame || frame !== event.sender.mainFrame) throw new Error("Not allowed");
+    if (!win || !frame || frame !== event.sender.mainFrame) throw new Error("Not allowed");
     const page = internalPageOf(frame.url);
     if (
       !page ||
@@ -318,20 +334,54 @@ export function registerIpc(browser: Browser): void {
     ) {
       throw new Error("Not allowed");
     }
-    return methods[method as InternalMethod](tab, ...args);
+    const name = method as InternalMethod;
+    if ((WINDOW_METHODS as readonly InternalMethod[]).includes(name))
+      return windowMethods[name as WindowMethod](win, ...args);
+    // Everything else is for pages in tabs.
+    if (!tab) throw new Error("Not allowed");
+    return methods[name as TabMethod](tab, ...args);
   });
 }
 
 type Handler = (tab: Tab, ...args: unknown[]) => unknown;
+type WindowHandler = (win: MoonWindow, ...args: unknown[]) => unknown;
 
-const SYSTEM_NAMES: Partial<Record<NodeJS.Platform, string>> = {
-  win32: "Windows",
-  darwin: "macOS",
-  linux: "Linux",
-};
+/**
+ * Methods that need a window but no tab: the chat page in the side panel
+ * calls them too. The chat itself ("ai.state", "ai.send", …) is only on the
+ * AI page's list (PAGE_METHODS), and never hands out the API key.
+ */
+const WINDOW_METHODS = [
+  "settings.get",
+  "ai.keyStatus",
+  "ai.setKey",
+  "ai.removeKey",
+  "ai.state",
+  "ai.send",
+  "ai.stop",
+  "ai.reset",
+  "ai.approve",
+  "ai.setModel",
+] as const satisfies readonly InternalMethod[];
+type WindowMethod = (typeof WINDOW_METHODS)[number];
+type TabMethod = Exclude<InternalMethod, WindowMethod>;
 
-function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
-  const profile = browser.profile;
+function internalWindowMethods(browser: Browser): Record<WindowMethod, WindowHandler> {
+  /** In a private window there is no chat: the assistant doesn't act there. */
+  const unavailable = (): AiChatState => ({
+    available: false,
+    ...browser.aiKey.status(),
+    model: browser.settings.aiModel,
+    askBeforeActing: browser.settings.aiAskBeforeActing,
+    allowedForChat: false,
+    running: false,
+    items: [],
+    approval: null,
+  });
+  const keyChanged = () => {
+    browser.notifyInternal("settings");
+    for (const win of browser.windows) win.notifyAi();
+  };
   return {
     "settings.get": () => ({
       settings: browser.settings,
@@ -342,6 +392,46 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       webgpu:
         (app.getGPUFeatureStatus() as unknown as Record<string, string | undefined>).webgpu ?? "",
     }),
+    "ai.keyStatus": () => browser.aiKey.status(),
+    "ai.setKey": (_win, key) => {
+      if (!isStr(key, 512)) throw new Error("No API key");
+      const status = browser.aiKey.set(key.trim());
+      keyChanged();
+      return status;
+    },
+    "ai.removeKey": () => {
+      const status = browser.aiKey.remove();
+      keyChanged();
+      return status;
+    },
+    "ai.state": (win) => win.assistantChat()?.state() ?? unavailable(),
+    "ai.send": (win, text) => {
+      if (isStr(text, 200_000)) win.assistantChat()?.send(text);
+    },
+    "ai.stop": (win) => win.assistantChat()?.stop(),
+    "ai.reset": (win) => win.assistantChat()?.reset(),
+    "ai.approve": (win, id, answer) => {
+      if (isNum(id) && AI_APPROVAL_ANSWERS.includes(answer as AiApprovalAnswer))
+        win.assistantChat()?.approve(id, answer as AiApprovalAnswer);
+    },
+    "ai.setModel": (win, model) => {
+      if (AI_MODEL_IDS.includes(model as AiModelId)) {
+        browser.updateSettings({ aiModel: model as AiModelId });
+        win.notifyAi();
+      }
+    },
+  };
+}
+
+const SYSTEM_NAMES: Partial<Record<NodeJS.Platform, string>> = {
+  win32: "Windows",
+  darwin: "macOS",
+  linux: "Linux",
+};
+
+function internalMethods(browser: Browser): Record<TabMethod, Handler> {
+  const profile = browser.profile;
+  return {
     "app.restart": () => browser.restart(),
     "settings.set": (_tab, patch) => browser.updateSettings(isObj(patch) ? patch : {}),
     "engines.list": () => ({ engines: SEARCH_ENGINES, bangs: BANGS }),
@@ -539,5 +629,5 @@ function internalMethods(browser: Browser): Record<InternalMethod, Handler> {
       arch: process.arch,
       userData: app.getPath("userData"),
     }),
-  } satisfies Record<InternalMethod, Handler>;
+  } satisfies Record<TabMethod, Handler>;
 }

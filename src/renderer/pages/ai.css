@@ -1,0 +1,278 @@
+/* The chat with "Claude (API key)" in the side panel (AiPage.tsx). */
+
+.mb-ai-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  color: var(--mb-accent);
+  background: var(--mb-selected);
+  box-shadow:
+    inset 0 0 0 1px var(--mb-border-strong),
+    0 0 40px -10px color-mix(in srgb, var(--color-lavender-400) 60%, transparent);
+}
+
+/* The model picker: quiet, like a label that can be changed. */
+.mb-ai-model {
+  max-width: 11rem;
+  height: 1.75rem;
+  padding: 0 0.4rem;
+  border: 1px solid transparent;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--mb-text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.mb-ai-model:hover,
+.mb-ai-model:focus-visible {
+  border-color: var(--mb-border);
+  background: var(--mb-hover);
+  color: var(--mb-text);
+  outline: none;
+}
+.mb-ai-model option {
+  background: var(--mb-popover);
+  color: var(--mb-text);
+}
+
+/* What the person wrote: a bubble on the right. */
+.mb-ai-user {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--mb-border);
+  border-radius: 1rem 1rem 0.3rem 1rem;
+  background: var(--mb-selected);
+  font-size: 0.8438rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* What Claude wrote: plain text on the sky. */
+.mb-ai-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  font-size: 0.8438rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.mb-ai-text :is(p, ul, ol, pre, blockquote, h2, h3, h4, hr) {
+  margin: 0;
+}
+.mb-ai-text p {
+  white-space: pre-wrap;
+}
+.mb-ai-text :is(h2, h3, h4) {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.mb-ai-text :is(ul, ol) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-left: 1.2rem;
+}
+.mb-ai-text ul {
+  list-style: disc;
+}
+.mb-ai-text ol {
+  list-style: decimal;
+}
+.mb-ai-text li::marker {
+  color: var(--mb-text-faint);
+}
+.mb-ai-text a {
+  color: var(--mb-accent);
+  text-underline-offset: 2px;
+}
+.mb-ai-text code {
+  padding: 0.08rem 0.3rem;
+  border-radius: 0.3rem;
+  background: var(--mb-inset);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+.mb-ai-text pre {
+  padding: 0.6rem 0.7rem;
+  overflow-x: auto;
+  border: 1px solid var(--mb-border);
+  border-radius: 0.6rem;
+  background: var(--mb-inset);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+.mb-ai-text pre code {
+  padding: 0;
+  background: none;
+  font-size: inherit;
+}
+.mb-ai-text blockquote {
+  padding-left: 0.7rem;
+  border-left: 2px solid var(--mb-border-strong);
+  color: var(--mb-text-muted);
+}
+.mb-ai-text hr {
+  border: 0;
+  border-top: 1px solid var(--mb-border);
+}
+
+/* One thing the assistant did in the tabs. */
+.mb-ai-tool {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 1.6rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--mb-border);
+  border-radius: 999px;
+  align-self: flex-start;
+  max-width: 100%;
+  font-size: 0.75rem;
+  color: var(--mb-text-muted);
+  background: var(--mb-inset);
+}
+.mb-ai-tool > svg {
+  flex: none;
+  color: var(--mb-success);
+}
+.mb-ai-tool[data-status="failed"] > svg {
+  color: var(--mb-warning);
+}
+.mb-ai-tool[data-status="denied"] > svg {
+  color: var(--mb-text-faint);
+}
+.mb-ai-spinner {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--mb-border-strong);
+  border-top-color: var(--mb-accent);
+  border-radius: 999px;
+  animation: mb-ai-spin 800ms linear infinite;
+}
+@keyframes mb-ai-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Waiting for the first words. */
+.mb-ai-thinking {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.35rem 0.1rem;
+}
+.mb-ai-thinking > span:not(.sr-only) {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--mb-accent);
+  opacity: 0.35;
+  animation: mb-ai-pulse 1200ms ease-in-out infinite;
+}
+.mb-ai-thinking > span:nth-child(2) {
+  animation-delay: 160ms;
+}
+.mb-ai-thinking > span:nth-child(3) {
+  animation-delay: 320ms;
+}
+@keyframes mb-ai-pulse {
+  40% {
+    opacity: 1;
+  }
+}
+
+.mb-ai-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--mb-border);
+  border-radius: 0.7rem;
+  background: var(--mb-inset);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--mb-text-muted);
+  overflow-wrap: anywhere;
+}
+.mb-ai-notice[data-tone="error"] {
+  border-color: color-mix(in srgb, var(--mb-danger) 45%, transparent);
+  color: var(--mb-text);
+}
+
+/* The question before the assistant acts, above the message box. */
+.mb-ai-approval {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0.625rem 0.625rem;
+  padding: 0.75rem;
+  border: 1px solid var(--mb-border-strong);
+  border-radius: 0.9rem;
+  background: var(--mb-popover);
+  box-shadow:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.05),
+    0 0 50px -22px color-mix(in srgb, var(--color-lavender-400) 70%, transparent);
+}
+
+.mb-ai-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  padding: 0.3rem 0.3rem 0.3rem 0.75rem;
+  border: 1px solid var(--mb-border-strong);
+  border-radius: 1rem;
+  background: var(--mb-inset);
+  transition: border-color var(--mb-motion);
+}
+.mb-ai-composer:focus-within {
+  border-color: var(--mb-focus-ring);
+}
+.mb-ai-composer textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--mb-text);
+  font: inherit;
+  font-size: 0.8438rem;
+  line-height: 1.5;
+}
+.mb-ai-composer textarea::placeholder {
+  color: var(--mb-text-faint);
+}
+.mb-ai-send {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--color-night-950);
+  background: linear-gradient(135deg, var(--color-lavender-300), #a597f5);
+  cursor: pointer;
+  transition: opacity var(--mb-motion);
+}
+.mb-ai-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.mb-ai-send[data-stop="true"] {
+  color: var(--mb-text);
+  background: var(--mb-selected);
+  box-shadow: inset 0 0 0 1px var(--mb-border-strong);
+}
