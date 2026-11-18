@@ -37,5 +37,9 @@ export function mixColors(base: string, over: string, alpha: number): string {
     .join("")}`;
 }
 
-/** Height of the tab strip, which doubles as the title bar. */
-export const TAB_STRIP_HEIGHT = 40;
+/**
+ * Height of the tab strip, which doubles as the title bar: the tabs (34px)
+ * and, above them, room to take hold of the window and move it
+ * (src/renderer/ui/ui.css).
+ */
+export const TAB_STRIP_HEIGHT = 48;

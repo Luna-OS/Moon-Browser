@@ -13,7 +13,8 @@ body {
   display: flex;
   align-items: flex-end;
   gap: 0.25rem;
-  height: 40px;
+  /* TAB_STRIP_HEIGHT (src/shared/chrome-colors.ts). */
+  height: 48px;
   padding: 0 0.5rem;
   /* Leave room for the window buttons drawn by the system. */
   padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 0.5rem);
@@ -36,7 +37,9 @@ body {
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
-  padding-top: 6px;
+  /* Above the tabs, the strip is the window's title bar: enough of it to
+     drag the window by, however many tabs are open. */
+  padding-top: 14px;
   /* A tab scrolled into view stays clear of the new tab button (sticky at the end). */
   scroll-padding-inline: 8px 48px;
 }
