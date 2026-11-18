@@ -88,7 +88,7 @@ const MAC = process.platform === "darwin";
 /** How long a page may take to give its snapshot before a menu opens without it. */
 const SNAPSHOT_TIMEOUT = 250;
 /** Where the traffic lights go: vertically centred on the tabs (src/renderer/ui/ui.css). */
-const TRAFFIC_LIGHTS = { x: 14, y: 15 };
+const TRAFFIC_LIGHTS = { x: 14, y: 23 };
 
 /** Addresses the UI may open directly (bookmarks, suggestions). */
 export function isOpenableUrl(url: string): boolean {

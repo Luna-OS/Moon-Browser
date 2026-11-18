@@ -7,6 +7,7 @@
  * Tool inputs stream in as they are generated and nobody validates them on
  * the way, so every input is checked here before a tool runs.
  */
+import { cleanGroupTitle, GROUP_COLORS, isGroupColor, type GroupColor } from "./tab-groups";
 
 export const AI_TOOL_NAMES = [
   "read_page",
@@ -18,6 +19,11 @@ export const AI_TOOL_NAMES = [
   "list_tabs",
   "open_tab",
   "switch_tab",
+  "group_tabs",
+  "ungroup_tabs",
+  "close_tabs",
+  "move_tab",
+  "rename_group",
 ] as const;
 
 export type AiToolName = (typeof AI_TOOL_NAMES)[number];
@@ -30,7 +36,10 @@ export interface AiToolDefinition {
   description: string;
   input_schema: {
     type: "object";
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<
+      string,
+      { type: string; description: string; enum?: string[]; items?: { type: string } }
+    >;
     required: string[];
     additionalProperties: false;
   };
@@ -39,6 +48,21 @@ export interface AiToolDefinition {
 const TAB_ID = {
   type: "integer",
   description: "The tab to use, from list_tabs. Leave out for the tab the user is looking at.",
+};
+/** Several tabs at once, for the tools that manage the tab strip. */
+const TAB_IDS = {
+  type: "array",
+  items: { type: "integer" },
+  description: "The IDs of the tabs, from list_tabs.",
+};
+const GROUP_ID = {
+  type: "integer",
+  description: "The ID of an existing group, from list_tabs.",
+};
+const GROUP_COLOR = {
+  type: "string",
+  enum: [...GROUP_COLORS],
+  description: "The group's colour.",
 };
 const REF = {
   type: "string",
@@ -137,7 +161,10 @@ export const AI_TOOLS: readonly AiToolDefinition[] = [
   },
   {
     name: "list_tabs",
-    description: "List the window's tabs: their IDs, titles and addresses, and which one is shown.",
+    description:
+      "List the window's tabs in the order of the tab strip: their IDs, titles and addresses, " +
+      "which one is shown, which are pinned and which group each is in; then the window's " +
+      "tab groups with their IDs, names and colours.",
     input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
   {
@@ -162,6 +189,79 @@ export const AI_TOOLS: readonly AiToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "group_tabs",
+    description:
+      "Put tabs into a tab group: a new one (give its name, and a colour if you like) or an " +
+      "existing one (give group_id instead). The tabs move next to each other in the tab " +
+      "strip; a tab that was in another group leaves it. Put all tabs of a group into one call.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tab_ids: TAB_IDS,
+        name: { type: "string", description: "The name of the new group, a word or two." },
+        color: { ...GROUP_COLOR, description: "The new group's colour; left out, Luma picks one." },
+        group_id: GROUP_ID,
+      },
+      required: ["tab_ids"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "ungroup_tabs",
+    description: "Take tabs out of their groups. A group with no tabs left is gone.",
+    input_schema: {
+      type: "object",
+      properties: { tab_ids: TAB_IDS },
+      required: ["tab_ids"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "close_tabs",
+    description:
+      "Close tabs. At least one tab of the window stays open: closing them all would close " +
+      "the window, which you can't do.",
+    input_schema: {
+      type: "object",
+      properties: { tab_ids: TAB_IDS },
+      required: ["tab_ids"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "move_tab",
+    description:
+      "Move a tab to another place in the tab strip. Pinned tabs stay at the start and the " +
+      "others after them; a tab moved between two tabs of a group joins that group, one " +
+      "moved away from its group leaves it. The result says where the tab ended up.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tab_id: { type: "integer", description: "The tab's ID, from list_tabs." },
+        position: {
+          type: "integer",
+          description: "Where the tab goes, counted as list_tabs lists them: 1 is the first tab.",
+        },
+      },
+      required: ["tab_id", "position"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "rename_group",
+    description: "Give an existing tab group another name, another colour, or both.",
+    input_schema: {
+      type: "object",
+      properties: {
+        group_id: GROUP_ID,
+        name: { type: "string", description: "The group's new name, a word or two." },
+        color: GROUP_COLOR,
+      },
+      required: ["group_id"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export type AiToolCall =
@@ -173,12 +273,21 @@ export type AiToolCall =
   | { name: "go_back"; tabId?: number }
   | { name: "list_tabs" }
   | { name: "open_tab"; url: string }
-  | { name: "switch_tab"; tabId: number };
+  | { name: "switch_tab"; tabId: number }
+  // A new group has a title (and maybe a colour); an existing one its ID.
+  | { name: "group_tabs"; tabIds: number[]; groupId?: number; title?: string; color?: GroupColor }
+  | { name: "ungroup_tabs"; tabIds: number[] }
+  | { name: "close_tabs"; tabIds: number[] }
+  | { name: "move_tab"; tabId: number; position: number }
+  | { name: "rename_group"; groupId: number; title?: string; color?: GroupColor };
 
 export type ToolInputResult = { ok: true; call: AiToolCall } | { ok: false; error: string };
 
 const MAX_TYPED = 20_000;
 const MAX_OFFSET = 50_000_000;
+/** More tabs than anyone sorts in one go; a longer list is a garbled one. */
+export const MAX_TAB_IDS = 200;
+const MAX_POSITION = 10_000;
 
 /** An address the assistant may open: http or https, nothing else. */
 export function webUrl(value: unknown): string | null {
@@ -219,6 +328,22 @@ export function validateToolInput(name: string, input: unknown): ToolInputResult
     typeof raw.ref === "string" && /^e\d{1,6}$/.test(raw.ref) ? raw.ref : null;
   const badRef = '"ref" must be an element reference from read_page, like "e12".';
   const badUrl = '"url" must be a full http:// or https:// address.';
+  const isId = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
+  /** The tabs of a call: a list of tab IDs, each once. A reason instead if it isn't one. */
+  const tabIds = (): number[] | string => {
+    const ids: unknown = raw.tab_ids;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return '"tab_ids" must be a list of tab IDs from list_tabs, with at least one.';
+    if (ids.length > MAX_TAB_IDS) return `"tab_ids" lists more than ${MAX_TAB_IDS} tabs.`;
+    if (!ids.every(isId)) return '"tab_ids" must hold tab IDs from list_tabs (whole numbers) only.';
+    if (new Set(ids).size !== ids.length) return '"tab_ids" lists a tab more than once.';
+    return [...ids];
+  };
+  /** A group's name as the tab strip shows it; null if the input has none. */
+  const groupTitle = (): string | null => cleanGroupTitle(raw.name) || null;
+  const badName = '"name" must be a short name for the group.';
+  const badColor = `"color" must be one of: ${GROUP_COLORS.join(", ")}.`;
+  const badGroup = '"group_id" must be a group ID from list_tabs.';
 
   switch (tool.name) {
     case "read_page": {
@@ -271,6 +396,71 @@ export function validateToolInput(name: string, input: unknown): ToolInputResult
       return tabId === undefined
         ? fail('"tab_id" must be a tab ID from list_tabs.')
         : { ok: true, call: { name: "switch_tab", tabId } };
+    case "group_tabs": {
+      const ids = tabIds();
+      if (typeof ids === "string") return fail(ids);
+      if (raw.group_id !== undefined) {
+        if (!isId(raw.group_id)) return fail(badGroup);
+        if (raw.name !== undefined || raw.color !== undefined)
+          return fail(
+            'Give "group_id" for an existing group, or "name" (and "color") for a new one, ' +
+              "not both. rename_group changes an existing group.",
+          );
+        return { ok: true, call: { name: "group_tabs", tabIds: ids, groupId: raw.group_id } };
+      }
+      if (raw.name === undefined)
+        return fail('Give a "name" for a new group, or the "group_id" of an existing one.');
+      const title = groupTitle();
+      if (!title) return fail(badName);
+      if (raw.color === undefined)
+        return { ok: true, call: { name: "group_tabs", tabIds: ids, title } };
+      return isGroupColor(raw.color)
+        ? { ok: true, call: { name: "group_tabs", tabIds: ids, title, color: raw.color } }
+        : fail(badColor);
+    }
+    case "ungroup_tabs": {
+      const ids = tabIds();
+      return typeof ids === "string"
+        ? fail(ids)
+        : { ok: true, call: { name: "ungroup_tabs", tabIds: ids } };
+    }
+    case "close_tabs": {
+      const ids = tabIds();
+      return typeof ids === "string"
+        ? fail(ids)
+        : { ok: true, call: { name: "close_tabs", tabIds: ids } };
+    }
+    case "move_tab": {
+      if (tabId === undefined) return fail('"tab_id" must be a tab ID from list_tabs.');
+      const position = raw.position;
+      if (
+        typeof position !== "number" ||
+        !Number.isInteger(position) ||
+        position < 1 ||
+        position > MAX_POSITION
+      )
+        return fail('"position" must be a whole number, 1 for the first tab.');
+      return { ok: true, call: { name: "move_tab", tabId, position } };
+    }
+    case "rename_group": {
+      if (!isId(raw.group_id)) return fail(badGroup);
+      if (raw.name === undefined && raw.color === undefined)
+        return fail('Give a new "name", a new "color", or both.');
+      const call: Extract<AiToolCall, { name: "rename_group" }> = {
+        name: "rename_group",
+        groupId: raw.group_id,
+      };
+      if (raw.name !== undefined) {
+        const title = groupTitle();
+        if (!title) return fail(badName);
+        call.title = title;
+      }
+      if (raw.color !== undefined) {
+        if (!isGroupColor(raw.color)) return fail(badColor);
+        call.color = raw.color;
+      }
+      return { ok: true, call };
+    }
   }
 }
 
@@ -325,14 +515,45 @@ export function elementName(element: { label: string; role: string }): string {
   return element.label.trim() ? quote(element.label) : `a ${element.role}`;
 }
 
+/** What a tool call is aimed at, as far as the chat's texts tell it. */
+export interface ToolTargetText {
+  label: string;
+  role: string;
+  sensitive: boolean;
+  /** For switch_tab and move_tab: the tab's title. */
+  title?: string;
+  /** For the tools that take several tabs: their titles, in the order of the tab strip. */
+  titles?: string[];
+  /** For an existing group: what it is called (see groupName). */
+  group?: string;
+}
+
+/** What a tab group is called in the chat: by its name, or by its colour if it has none. */
+export function groupName(group: { title: string; color: string }): string {
+  return group.title.trim()
+    ? `the group ${quote(group.title, 40)}`
+    : `the unnamed ${group.color} group`;
+}
+
+const tabCount = (count: number): string => (count === 1 ? "1 tab" : `${count} tabs`);
+
+/** How many titles of tabs a question lists before it says "and … more". */
+const MAX_TITLES = 3;
+
+/** The tabs a question is about, by their titles: ": “A”, “B” and 2 more". */
+function titleList(titles: readonly string[] | undefined): string {
+  if (!titles?.length) return "";
+  const shown = titles.slice(0, MAX_TITLES).map((t) => quote(t || "untitled", 32));
+  const more = titles.length - shown.length;
+  const last = more > 0 ? `${more} more` : shown.length > 1 ? shown.pop() : undefined;
+  return `: ${shown.join(", ")}${last ? ` and ${last}` : ""}`;
+}
+
 /**
  * The question of the approval card: what the assistant is about to do.
  * What is typed into a password or payment field is not repeated.
  */
-export function approvalSummary(
-  call: AiToolCall,
-  target?: { label: string; role: string; sensitive: boolean; title?: string },
-): string {
+export function approvalSummary(call: AiToolCall, target?: ToolTargetText): string {
   switch (call.name) {
     case "click":
       return `Click ${target ? elementName(target) : "an element"}`;
@@ -349,17 +570,37 @@ export function approvalSummary(
       return `Open ${call.url} in a new tab`;
     case "switch_tab":
       return `Switch to the tab ${quote(target?.title || "untitled")}`;
+    case "group_tabs": {
+      const tabs = tabCount(call.tabIds.length);
+      const list = titleList(target?.titles);
+      return call.groupId === undefined
+        ? `Group ${tabs} as ${quote(call.title ?? "")}${list}`
+        : `Add ${tabs} to ${target?.group ?? "a group"}${list}`;
+    }
+    case "ungroup_tabs":
+      return (
+        `Take ${tabCount(call.tabIds.length)} out of ` +
+        `${call.tabIds.length === 1 ? "its group" : "their groups"}${titleList(target?.titles)}`
+      );
+    case "close_tabs":
+      return `Close ${tabCount(call.tabIds.length)}${titleList(target?.titles)}`;
+    case "move_tab":
+      return `Move the tab ${quote(target?.title || "untitled")} to position ${call.position}`;
+    case "rename_group": {
+      const group = target?.group ?? "a group";
+      if (call.title === undefined) return `Make ${group} ${call.color}`;
+      return (
+        `Rename ${group} to ${quote(call.title)}` +
+        (call.color === undefined ? "" : ` and make it ${call.color}`)
+      );
+    }
     default:
       return call.name;
   }
 }
 
 /** The compact row a tool call leaves in the chat, while it runs and after. */
-export function toolLabel(
-  call: AiToolCall,
-  done: boolean,
-  target?: { label: string; role: string; sensitive: boolean; title?: string },
-): string {
+export function toolLabel(call: AiToolCall, done: boolean, target?: ToolTargetText): string {
   const name = target ? elementName(target) : "";
   switch (call.name) {
     case "read_page":
@@ -384,6 +625,27 @@ export function toolLabel(
       return done ? `Opened ${hostOf(call.url)}` : `Opening ${hostOf(call.url)}…`;
     case "switch_tab":
       return done ? "Switched tabs" : "Switching tabs…";
+    case "group_tabs": {
+      const tabs = tabCount(call.tabIds.length);
+      if (call.groupId === undefined)
+        return done
+          ? `Grouped ${tabs} as ${quote(call.title ?? "")}`
+          : `Grouping ${tabs} as ${quote(call.title ?? "")}…`;
+      const group = target?.group ?? "a group";
+      return done ? `Added ${tabs} to ${group}` : `Adding ${tabs} to ${group}…`;
+    }
+    case "ungroup_tabs": {
+      const tabs = tabCount(call.tabIds.length);
+      return done ? `Ungrouped ${tabs}` : `Ungrouping ${tabs}…`;
+    }
+    case "close_tabs": {
+      const tabs = tabCount(call.tabIds.length);
+      return done ? `Closed ${tabs}` : `Closing ${tabs}…`;
+    }
+    case "move_tab":
+      return done ? "Moved a tab" : "Moving a tab…";
+    case "rename_group":
+      return done ? "Changed a tab group" : "Changing a tab group…";
   }
 }
 

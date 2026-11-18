@@ -14,10 +14,13 @@ import {
   sanitizeCustomAssistants,
 } from "./ai";
 import {
+  AI_TOOL_NAMES,
   AI_TOOLS,
   approvalSummary,
+  groupName,
   isActingTool,
   isSensitiveField,
+  MAX_TAB_IDS,
   needsApproval,
   toolLabel,
   validateToolInput,
@@ -229,11 +232,21 @@ describe("the assistant's tools", () => {
       "list_tabs",
       "open_tab",
       "switch_tab",
+      // Appended: the list is the cached start of every prompt.
+      "group_tabs",
+      "ungroup_tabs",
+      "close_tabs",
+      "move_tab",
+      "rename_group",
     ]);
+    expect(AI_TOOLS.map((t) => t.name)).toEqual([...AI_TOOL_NAMES]);
     for (const tool of AI_TOOLS) {
       expect(tool.input_schema.additionalProperties).toBe(false);
       for (const key of tool.input_schema.required)
         expect(tool.input_schema.properties).toHaveProperty(key);
+      // A list says what it is a list of.
+      for (const property of Object.values(tool.input_schema.properties))
+        expect(property.items !== undefined).toBe(property.type === "array");
     }
   });
 
@@ -268,6 +281,103 @@ describe("the assistant's tools", () => {
       call: { name: "switch_tab", tabId: 2 },
     });
     expect(validateToolInput("list_tabs", {})).toEqual({ ok: true, call: { name: "list_tabs" } });
+  });
+
+  it("accept well-formed inputs for the tab strip", () => {
+    expect(
+      validateToolInput("group_tabs", { tab_ids: [3, 5, 8], name: "  Moon\n research " }),
+    ).toEqual({
+      ok: true,
+      call: { name: "group_tabs", tabIds: [3, 5, 8], title: "Moon research" },
+    });
+    expect(validateToolInput("group_tabs", { tab_ids: [3], name: "News", color: "cyan" })).toEqual({
+      ok: true,
+      call: { name: "group_tabs", tabIds: [3], title: "News", color: "cyan" },
+    });
+    expect(validateToolInput("group_tabs", { tab_ids: [9, 3], group_id: 2 })).toEqual({
+      ok: true,
+      call: { name: "group_tabs", tabIds: [9, 3], groupId: 2 },
+    });
+    expect(validateToolInput("ungroup_tabs", { tab_ids: [0] })).toEqual({
+      ok: true,
+      call: { name: "ungroup_tabs", tabIds: [0] },
+    });
+    expect(validateToolInput("close_tabs", { tab_ids: [4, 7] })).toEqual({
+      ok: true,
+      call: { name: "close_tabs", tabIds: [4, 7] },
+    });
+    const many = Array.from({ length: MAX_TAB_IDS }, (_, i) => i);
+    expect(validateToolInput("close_tabs", { tab_ids: many }).ok).toBe(true);
+    expect(validateToolInput("move_tab", { tab_id: 4, position: 1 })).toEqual({
+      ok: true,
+      call: { name: "move_tab", tabId: 4, position: 1 },
+    });
+    expect(validateToolInput("rename_group", { group_id: 2, name: "Later" })).toEqual({
+      ok: true,
+      call: { name: "rename_group", groupId: 2, title: "Later" },
+    });
+    expect(validateToolInput("rename_group", { group_id: 2, color: "pink" })).toEqual({
+      ok: true,
+      call: { name: "rename_group", groupId: 2, color: "pink" },
+    });
+    expect(validateToolInput("rename_group", { group_id: 2, name: "Later", color: "red" })).toEqual(
+      { ok: true, call: { name: "rename_group", groupId: 2, title: "Later", color: "red" } },
+    );
+  });
+
+  it("take lists of tabs only whole: some, each once, not endlessly many", () => {
+    const bad = (input: unknown) =>
+      expect(validateToolInput("close_tabs", input).ok, JSON.stringify(input)).toBe(false);
+    bad({});
+    bad({ tab_ids: [] });
+    bad({ tab_ids: 4 });
+    bad({ tab_ids: "4,5" });
+    bad({ tab_ids: { 0: 4 } });
+    bad({ tab_ids: [4, 4] });
+    bad({ tab_ids: [4, "5"] });
+    bad({ tab_ids: [4, 5.5] });
+    bad({ tab_ids: [4, -1] });
+    bad({ tab_ids: [4, null] });
+    bad({ tab_ids: [[4]] });
+    bad({ tab_ids: Array.from({ length: MAX_TAB_IDS + 1 }, (_, i) => i) });
+    bad({ tab_ids: [4], tab_id: 4 });
+    // The other tools check their lists the same way.
+    expect(validateToolInput("ungroup_tabs", { tab_ids: [] }).ok).toBe(false);
+    expect(validateToolInput("group_tabs", { tab_ids: [1, 1], name: "Twice" }).ok).toBe(false);
+  });
+
+  it("refuse calls for the tab strip that don't say what to do", () => {
+    const bad = (name: string, input: unknown) =>
+      expect(validateToolInput(name, input).ok, `${name} ${JSON.stringify(input)}`).toBe(false);
+    // A new group has a name; an existing one is not renamed on the way.
+    bad("group_tabs", { tab_ids: [1] });
+    bad("group_tabs", { name: "Nobody" });
+    bad("group_tabs", { tab_ids: [1], name: "" });
+    bad("group_tabs", { tab_ids: [1], name: "  \n " });
+    bad("group_tabs", { tab_ids: [1], name: 7 });
+    bad("group_tabs", { tab_ids: [1], color: "blue" });
+    bad("group_tabs", { tab_ids: [1], name: "Sky", color: "skyblue" });
+    bad("group_tabs", { tab_ids: [1], name: "Sky", color: 3 });
+    bad("group_tabs", { tab_ids: [1], group_id: 2, name: "Sky" });
+    bad("group_tabs", { tab_ids: [1], group_id: 2, color: "blue" });
+    bad("group_tabs", { tab_ids: [1], group_id: "2" });
+    bad("group_tabs", { tab_ids: [1], group_id: -2 });
+    bad("move_tab", { tab_id: 4 });
+    bad("move_tab", { position: 2 });
+    bad("move_tab", { tab_id: 4, position: 0 });
+    bad("move_tab", { tab_id: 4, position: 1.5 });
+    bad("move_tab", { tab_id: 4, position: "first" });
+    bad("move_tab", { tab_id: 4, position: 1e9 });
+    bad("rename_group", { group_id: 2 });
+    bad("rename_group", { name: "Later" });
+    bad("rename_group", { group_id: 2, name: " " });
+    bad("rename_group", { group_id: 2, color: "mauve" });
+    bad("rename_group", { group_id: 2.5, name: "Later" });
+    bad("rename_group", { group_id: 2, name: "Later", collapsed: true });
+    // A name longer than a label is cut, as the tab strip does it.
+    expect(validateToolInput("rename_group", { group_id: 2, name: "x".repeat(90) })).toMatchObject({
+      call: { title: "x".repeat(60) },
+    });
   });
 
   it("refuse inputs that are cut off, mistyped or made up", () => {
@@ -330,6 +440,11 @@ describe("asking before the assistant acts", () => {
       "go_back",
       "open_tab",
       "switch_tab",
+      "group_tabs",
+      "ungroup_tabs",
+      "close_tabs",
+      "move_tab",
+      "rename_group",
     ] as const) {
       expect(isActingTool(name)).toBe(true);
       expect(needsApproval(name, ask)).toBe(true);
@@ -393,6 +508,75 @@ describe("asking before the assistant acts", () => {
     ).toBe("Switch to the tab “Inbox”");
   });
 
+  it("says which tabs are grouped, moved or closed, by their titles", () => {
+    const tabs = (...titles: string[]) => ({ label: "", role: "tab", sensitive: false, titles });
+    expect(
+      approvalSummary(
+        { name: "group_tabs", tabIds: [1, 2, 3, 4, 5], title: "Research" },
+        tabs("Moon phases", "Tides", "Eclipses", "Apollo 11", "Lunar maria"),
+      ),
+    ).toBe("Group 5 tabs as “Research”: “Moon phases”, “Tides”, “Eclipses” and 2 more");
+    expect(
+      approvalSummary(
+        { name: "group_tabs", tabIds: [1, 2], title: "Research" },
+        tabs("Moon phases", "Tides"),
+      ),
+    ).toBe("Group 2 tabs as “Research”: “Moon phases” and “Tides”");
+    expect(
+      approvalSummary({ name: "group_tabs", tabIds: [1], title: "Research" }, tabs("Tides")),
+    ).toBe("Group 1 tab as “Research”: “Tides”");
+    // Without the tabs' titles (they are gone, say) the count still stands.
+    expect(approvalSummary({ name: "group_tabs", tabIds: [1, 2], title: "Research" })).toBe(
+      "Group 2 tabs as “Research”",
+    );
+    expect(
+      approvalSummary(
+        { name: "group_tabs", tabIds: [7, 8], groupId: 3 },
+        { ...tabs("Tides", ""), group: groupName({ title: "Research", color: "blue" }) },
+      ),
+    ).toBe("Add 2 tabs to the group “Research”: “Tides” and “untitled”");
+    expect(
+      approvalSummary(
+        { name: "group_tabs", tabIds: [7], groupId: 3 },
+        { ...tabs("Tides"), group: groupName({ title: " ", color: "blue" }) },
+      ),
+    ).toBe("Add 1 tab to the unnamed blue group: “Tides”");
+
+    expect(
+      approvalSummary({ name: "close_tabs", tabIds: [1, 2, 3] }, tabs("Inbox", "News", "Shop")),
+    ).toBe("Close 3 tabs: “Inbox”, “News” and “Shop”");
+    const long = "The moon tonight: where to look, when to look and what you will see";
+    const closing = approvalSummary({ name: "close_tabs", tabIds: [1] }, tabs(long));
+    expect(closing).toBe("Close 1 tab: “The moon tonight: where to look…”");
+    expect(
+      approvalSummary({ name: "close_tabs", tabIds: [1, 2, 3, 4] }, tabs("A", "B", "C", "D")),
+    ).toBe("Close 4 tabs: “A”, “B”, “C” and 1 more");
+
+    expect(approvalSummary({ name: "ungroup_tabs", tabIds: [1, 2] }, tabs("Inbox", "News"))).toBe(
+      "Take 2 tabs out of their groups: “Inbox” and “News”",
+    );
+    expect(approvalSummary({ name: "ungroup_tabs", tabIds: [1] }, tabs("Inbox"))).toBe(
+      "Take 1 tab out of its group: “Inbox”",
+    );
+    expect(
+      approvalSummary(
+        { name: "move_tab", tabId: 4, position: 2 },
+        { label: "", role: "tab", sensitive: false, title: "Inbox" },
+      ),
+    ).toBe("Move the tab “Inbox” to position 2");
+
+    const group = { label: "", role: "group", sensitive: false, group: "the group “Research”" };
+    expect(approvalSummary({ name: "rename_group", groupId: 3, title: "Later" }, group)).toBe(
+      "Rename the group “Research” to “Later”",
+    );
+    expect(approvalSummary({ name: "rename_group", groupId: 3, color: "pink" }, group)).toBe(
+      "Make the group “Research” pink",
+    );
+    expect(
+      approvalSummary({ name: "rename_group", groupId: 3, title: "Later", color: "pink" }, group),
+    ).toBe("Rename the group “Research” to “Later” and make it pink");
+  });
+
   it("labels the rows of the chat", () => {
     expect(toolLabel({ name: "read_page", offset: 0 }, false)).toBe("Reading the page…");
     expect(toolLabel({ name: "read_page", offset: 0 }, true)).toBe("Read the page");
@@ -405,6 +589,27 @@ describe("asking before the assistant acts", () => {
     ).toBe("Clicked “Sign in”");
     expect(toolLabel({ name: "navigate", url: "https://moon.example/x" }, true)).toBe(
       "Went to moon.example",
+    );
+    expect(toolLabel({ name: "group_tabs", tabIds: [1, 2], title: "Research" }, false)).toBe(
+      "Grouping 2 tabs as “Research”…",
+    );
+    expect(toolLabel({ name: "group_tabs", tabIds: [1, 2], title: "Research" }, true)).toBe(
+      "Grouped 2 tabs as “Research”",
+    );
+    expect(
+      toolLabel({ name: "group_tabs", tabIds: [1], groupId: 3 }, true, {
+        label: "",
+        role: "tab",
+        sensitive: false,
+        group: "the group “Research”",
+      }),
+    ).toBe("Added 1 tab to the group “Research”");
+    expect(toolLabel({ name: "ungroup_tabs", tabIds: [1, 2] }, true)).toBe("Ungrouped 2 tabs");
+    expect(toolLabel({ name: "close_tabs", tabIds: [1, 2, 3] }, false)).toBe("Closing 3 tabs…");
+    expect(toolLabel({ name: "close_tabs", tabIds: [1] }, true)).toBe("Closed 1 tab");
+    expect(toolLabel({ name: "move_tab", tabId: 1, position: 2 }, true)).toBe("Moved a tab");
+    expect(toolLabel({ name: "rename_group", groupId: 3, color: "red" }, true)).toBe(
+      "Changed a tab group",
     );
   });
 });
