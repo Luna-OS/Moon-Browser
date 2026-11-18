@@ -2202,6 +2202,155 @@ try {
       throw new Error("WebGPU is on, but pages get no adapter");
   });
 
+  await check("a page's fullscreen covers the whole screen, as for YouTube", async () => {
+    const inDrm = (js) =>
+      app.evaluate(
+        ({ webContents }, [url, code]) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL() === url)
+            ?.executeJavaScript(code, true),
+        [`${base}/drm`, js],
+      );
+    // The page's tab in front, as when someone watches a video.
+    await ui.evaluate(
+      (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "foreground" }),
+      `${base}/drm`,
+    );
+    await new Promise((r) => setTimeout(r, 500));
+    const windows = process.platform === "win32";
+    // On Windows, from a maximized window, as most people use it.
+    if (windows) {
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((w) => w.webContents.getURL().startsWith("moon://ui"))
+          .maximize(),
+      );
+      await waitFor(
+        () =>
+          app.evaluate(({ BrowserWindow }) =>
+            BrowserWindow.getAllWindows()
+              .find((w) => w.webContents.getURL().startsWith("moon://ui"))
+              .isMaximized(),
+          ),
+        "the window to be maximized",
+      );
+    }
+    // Not waiting for the page's promise: it only settles once the window
+    // has finished going fullscreen, which macOS on CI may never do.
+    await inDrm("document.documentElement.requestFullscreen().catch(() => null), true");
+    const state = () =>
+      app.evaluate(({ BrowserWindow, screen }) => {
+        const win = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().startsWith("moon://ui"),
+        );
+        const bounds = win.getBounds();
+        return {
+          fullscreen: win.isFullScreen(),
+          maximized: win.isMaximized(),
+          bounds,
+          display: screen.getDisplayMatching(bounds).bounds,
+          hwnd: win.getNativeWindowHandle().toString("hex"),
+        };
+      });
+    const covers = (s) => ["x", "y", "width", "height"].every((k) => s.bounds[k] === s.display[k]);
+    // The point is Windows, where the taskbar must step aside; elsewhere
+    // (no window manager under Xvfb, a macOS runner without a display
+    // session) the result is only reported.
+    const went = await waitFor(
+      async () => (await state()).fullscreen,
+      "the window to go fullscreen",
+    )
+      .then(() => true)
+      .catch((err) => {
+        if (windows) throw err;
+        return false;
+      });
+    if (!went) {
+      console.log(`      (fullscreen didn't happen here: ${JSON.stringify(await state())})`);
+      await inDrm("document.exitFullscreen().catch(() => null), true");
+      return;
+    }
+    // Over the whole display, taskbar included.
+    const on = await waitFor(
+      async () => {
+        const s = await state();
+        return covers(s) ? s : null;
+      },
+      "the window to cover the display",
+      5000,
+    ).catch(async (err) => {
+      if (!windows) return state();
+      throw err;
+    });
+    let shell = {};
+    if (windows) {
+      // What Windows itself sees: the window's frame, whether it is in
+      // front, and whether the shell counts a full-screen app as running
+      // (then the taskbar steps aside).
+      const koffi = require("koffi");
+      const user32 = koffi.load("user32.dll");
+      const shell32 = koffi.load("shell32.dll");
+      const getStyle = user32.func(
+        "intptr_t __stdcall GetWindowLongPtrW(intptr_t hWnd, int nIndex)",
+      );
+      const foreground = user32.func("intptr_t __stdcall GetForegroundWindow()");
+      const notification = shell32.func(
+        "long __stdcall SHQueryUserNotificationState(_Out_ int *pquns)",
+      );
+      const hwnd = BigInt(`0x${Buffer.from(on.hwnd, "hex").reverse().toString("hex")}`);
+      const out = [0];
+      notification(out);
+      const style = BigInt(getStyle(hwnd, -16));
+      shell = {
+        caption: (style & 0xc00000n) === 0xc00000n,
+        maximizedStyle: (style & 0x1000000n) !== 0n,
+        inFront: BigInt(foreground()) === hwnd,
+        notificationState: out[0],
+      };
+      // Not maximized underneath: Windows and tools that manage windows
+      // (custom taskbars) move maximized windows into the work area.
+      if (shell.maximizedStyle)
+        throw new Error(`fullscreen window still maximized underneath: ${JSON.stringify(shell)}`);
+      // A bar that claims the top of the screen as Windows' taskbar does
+      // (an app bar) changes the work area. Windows then moves maximized
+      // windows into the new work area: a fullscreen window must stay over
+      // the whole display.
+      const RECT = koffi.struct("RECT", {
+        left: "long",
+        top: "long",
+        right: "long",
+        bottom: "long",
+      });
+      const workArea = user32.func(
+        "bool __stdcall SystemParametersInfoW(uint uiAction, uint uiParam, _Inout_ RECT *pvParam, uint fWinIni)",
+      );
+      const area = { left: 0, top: 0, right: 0, bottom: 0 };
+      workArea(0x30, 0, area, 0); // SPI_GETWORKAREA
+      try {
+        workArea(0x2f, 0, { ...area, top: area.top + 48 }, 0x2); // SPI_SETWORKAREA, SPIF_SENDCHANGE
+        await new Promise((r) => setTimeout(r, 1500));
+        const after = await state();
+        shell.afterWorkAreaChange = after.bounds;
+        if (!covers(after))
+          throw new Error(
+            `a work area change moved the fullscreen window to ${JSON.stringify(after.bounds)} (${JSON.stringify(shell)})`,
+          );
+      } finally {
+        workArea(0x2f, 0, area, 0x2);
+      }
+    }
+    console.log(`      (fullscreen: ${JSON.stringify({ ...on, hwnd: undefined, ...shell })})`);
+    await inDrm("document.exitFullscreen().catch(() => null), true");
+    await waitFor(
+      async () => !(await state()).fullscreen,
+      "the window to leave fullscreen",
+      20_000,
+    );
+    // …and comes back as it was.
+    if (windows) await waitFor(async () => (await state()).maximized, "the window maximized again");
+  });
+
   await check("the window survives for a while without crashing", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
