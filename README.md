@@ -37,6 +37,21 @@ and their place as the default browser.
   for Chrome). Before an extension is added, Luma shows
   what it will be able to do; `moon://extensions` switches them off, removes them
   and shows their issues (repeats counted once, noise left out), and repairs an extension whose files got damaged.
+- **Luma AI — bring your own assistant** — the ✦ button (or `Ctrl Shift A`) opens a panel next to
+  the page with the assistant you choose: Claude, ChatGPT, Gemini, Perplexity, Le Chat, or any
+  other with a website (*Settings → Luma AI*; one running on your own computer works too). It is
+  the assistant's own site, so you sign in with your own account — Claude with your Claude
+  subscription, without the extension — and the sign-in is the one your tabs have. *Send page*
+  (`Ctrl Shift M`) puts the page's title, address and the text you selected into the message box;
+  sending it stays up to you. Luma has no AI of its own and sends nothing anywhere by itself.
+- **Claude that acts in your tabs** (optional) — "Claude (API key)" in the same panel is Luma's
+  own chat: it reads the page you're on and, when you allow it, clicks, types and opens pages.
+  Every action is shown first (*Allow once* / *Allow for this chat* / *Don't allow*; typing into
+  password and payment fields always asks, and what is in them is never read), pages are treated
+  as untrusted, and it stays out of private windows and Luma's own pages. It needs an
+  [Anthropic API key](https://platform.claude.com/settings/keys): Anthropic lets a Claude
+  subscription sign in only on claude.ai and in its own apps, not in other apps. The key is kept
+  encrypted by your system's keyring and goes to Anthropic only.
 - **Developer mode** on `moon://extensions` — load your own extension from a folder (*Load
   unpacked*), reload it after changes, see its ID and errors
 - **Updates without reinstalling** — Luma downloads a new version in the background; one
@@ -95,7 +110,8 @@ Luma is built to be safe by default. See [SECURITY.md](SECURITY.md) for the deta
   Chrome Web Store. Even Chromium's spell-check dictionaries are not fetched from Google unless
   you switch spell checking on (Linux). The Widevine module for protected content (Netflix and
   the like) comes from Google and is kept up to date from there, unless you switch protected
-  content off.
+  content off. Luma AI is off until you open it: a web assistant is a page like any other, and
+  "Claude (API key)" talks to Anthropic's API only, with your key, when you send it a message.
 - **HTTPS first** — every site is tried over HTTPS; if a site has no working HTTPS, or sends you
   back to HTTP, Luma warns before loading it insecurely. Nothing is downgraded silently.
 - **Dangerous pages are stopped** before they load: sites on the malware, scam and tracker lists
@@ -151,6 +167,7 @@ Luma is built to be safe by default. See [SECURITY.md](SECURITY.md) for the deta
 | `Ctrl D`                          | Bookmark this page (name, folder)     |
 | `Ctrl H` / `Ctrl J` / `Ctrl Shift O` | History / downloads / bookmarks    |
 | `Ctrl Shift B`                    | Show or hide the bookmarks bar        |
+| `Ctrl Shift A` / `Ctrl Shift M`   | Luma AI panel / send it this page     |
 | `Ctrl +` / `Ctrl -` / `Ctrl 0`    | Zoom in / out / reset                 |
 | `Ctrl ,`                          | Settings                              |
 | `Ctrl Shift Delete`               | Clear browsing data                   |
@@ -285,14 +302,16 @@ src/
   main/       the browser: windows, tabs, the request pipeline (HTTPS first, Luma Shield,
               cookies), permissions, downloads, import, extensions, updates, the moon://
               protocol, IPC
+    ai/       Luma AI's "Claude (API key)": the agent loop, its tools in the tabs, the key
   preload/    the small APIs the browser UI and the internal pages get — nothing else
   renderer/
     ui/       the browser UI: tab strip, toolbar, address bar, menus (moon://ui)
-    pages/    new tab, settings, history, bookmarks, downloads, extensions, about (moon://…)
+    pages/    new tab, settings, history, bookmarks, downloads, extensions, about, the AI
+              chat (moon://…)
     theme/    the night-sky design tokens, icons and the moon
   shared/     pure logic, unit-tested: address bar input, bangs, search engines,
               settings, suggestions, sites, HTTPS rules, security helpers, import,
-              extension manifests
+              extension manifests, the AI assistants and their tools' rules
 build/        icons, the Windows installer (theme, artwork, browser registration), the Mac
               entitlements and the packaging hooks (fuses, VMP signing)
 scripts/      build, end-to-end test (with a test extension in fixtures/), artwork rendering
