@@ -45,7 +45,9 @@ and their place as the default browser.
   (`Ctrl Shift M`) puts the page's title, address and the text you selected into the message box;
   sending it stays up to you. Luma has no AI of its own and sends nothing anywhere by itself.
 - **Claude that acts in your tabs** (optional) — "Claude (API key)" in the same panel is Luma's
-  own chat: it reads the page you're on and, when you allow it, clicks, types and opens pages.
+  own chat: it reads the page you're on and, when you allow it, clicks, types and opens pages —
+  and tidies your tabs: sorts them into named, coloured groups, moves them and closes the ones
+  you are done with (never the window's last one).
   Every action is shown first (*Allow once* / *Allow for this chat* / *Don't allow*; typing into
   password and payment fields always asks, and what is in them is never read), pages are treated
   as untrusted, and it stays out of private windows and Luma's own pages. It needs an
