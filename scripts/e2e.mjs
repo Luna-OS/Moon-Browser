@@ -1222,6 +1222,25 @@ try {
     const again = await ask();
     if (again === "NotAllowedError") throw new Error("still blocked after allowing");
     if (await bar.isVisible()) throw new Error("asked again after allowing");
+    // Where Windows or macOS keeps the microphone from Luma itself (CI
+    // runners do), Luma says so and where to switch it on.
+    const system = await app.evaluate(({ systemPreferences }) =>
+      process.platform === "win32" || process.platform === "darwin"
+        ? systemPreferences.getMediaAccessStatus("microphone")
+        : "granted",
+    );
+    if (system === "denied" || system === "restricted") {
+      const notice = ui
+        .getByRole("alertdialog")
+        .filter({ hasText: "doesn't let Luma use the microphone" });
+      await waitFor(() => notice.isVisible(), "the notice about the system's setting");
+      await notice.getByRole("button", { name: "Close" }).click();
+      await waitFor(async () => !(await notice.isVisible()), "the notice closed");
+    }
+    if (!(await panel.isVisible())) {
+      await ui.getByRole("button", { name: /Site permissions$/ }).click();
+      await waitFor(() => panel.isVisible(), "the site permissions panel again");
+    }
     // Back to asking, for the checks after this one.
     await panel
       .getByRole("radiogroup", { name: "Microphone" })
