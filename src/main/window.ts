@@ -68,7 +68,8 @@ import {
   type GroupColor,
   type TabGroupInfo,
 } from "@shared/tab-groups";
-import { protectionSiteOf } from "@shared/sites";
+import { originOf, protectionSiteOf } from "@shared/sites";
+import { asksPermissions } from "./permissions";
 import type { BookmarkFolderChoice, FindState, Rect, SplitState, WindowState } from "@shared/types";
 import { AiChat } from "./ai/chat";
 import { askPage } from "./ai/page-tools";
@@ -1185,6 +1186,14 @@ export class MoonWindow {
         siteAllowed: !!site && settings.protectionAllowlist.includes(site),
         site: site ?? "",
       },
+      site:
+        active && asksPermissions(originOf(active.url))
+          ? {
+              origin: originOf(active.url),
+              permissions: this.browser.permissions.site(originOf(active.url), this.isPrivate),
+              blocked: this.browser.permissions.blockedIn(active.id),
+            }
+          : null,
       theme: this.browser.resolvedTheme(),
       showHomeButton: settings.showHomeButton,
       showBookmarksBar: settings.showBookmarksBar,
@@ -1787,6 +1796,9 @@ export class MoonWindow {
         break;
       case "toggleProtection":
         if (tab) this.browser.toggleProtection(tab);
+        break;
+      case "sitePermission":
+        if (tab) this.browser.permissions.setSite(tab, cmd.kind, cmd.decision);
         break;
       case "split":
         this.startSplit(cmd.tabId);

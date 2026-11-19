@@ -9,7 +9,7 @@ import {
 import type { SuggestResult } from "@shared/api";
 import { isNewTabUrl } from "@shared/internal";
 import { displayUrl } from "@shared/display";
-import type { Suggestion, TabInfo } from "@shared/types";
+import type { Suggestion, TabInfo, WindowState } from "@shared/types";
 import { Favicon } from "@theme/Favicon";
 import {
   BookmarksIcon,
@@ -25,6 +25,16 @@ import {
 } from "@theme/icons";
 import { keys, onUiEvent, ui } from "./store";
 
+function blockedName(kind: string): string {
+  return kind === "clipboard-read"
+    ? "reading the clipboard"
+    : kind === "geolocation"
+      ? "location"
+      : kind === "popup"
+        ? "pop-ups"
+        : kind;
+}
+
 /** The address as shown while editing: complete, nothing for the new tab page. */
 function editableUrl(tab: TabInfo | undefined): string {
   if (!tab || isNewTabUrl(tab.url)) return "";
@@ -35,12 +45,17 @@ export function AddressBar({
   tab,
   engineName,
   bookmarked,
+  site,
   onDropdownChange,
+  onSiteInfo,
 }: {
   tab: TabInfo | undefined;
   engineName: string;
   bookmarked: boolean;
+  /** The page's site and its permissions: the site icon opens them. */
+  site: WindowState["site"];
   onDropdownChange: (open: boolean) => void;
+  onSiteInfo: (anchor: DOMRect) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -218,13 +233,38 @@ export function AddressBar({
         className="mb-omnibox"
         onMouseDown={(e) => e.target === box.current && focusAndSelect()}
       >
-        <span
-          className="mb-site-chip"
-          data-security={focused ? undefined : security}
-          title={focused ? undefined : siteTitle}
-        >
-          {siteIcon}
-        </span>
+        {site && !focused && showSite ? (
+          // Like Chrome's padlock: the site's connection and permissions,
+          // where pages tell people to allow the camera or microphone.
+          <button
+            type="button"
+            className="mb-site-chip mb-site-button"
+            data-security={security}
+            data-blocked={site.blocked.length > 0 || undefined}
+            aria-label={
+              site.blocked.length
+                ? `${siteTitle}. Blocked here: ${site.blocked.map(blockedName).join(", ")}`
+                : `${siteTitle}. Site permissions`
+            }
+            title={
+              site.blocked.length
+                ? `Blocked on this site: ${site.blocked.map(blockedName).join(", ")}. Click to change.`
+                : `${siteTitle}. Click for this site's permissions.`
+            }
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => onSiteInfo(e.currentTarget.getBoundingClientRect())}
+          >
+            {siteIcon}
+          </button>
+        ) : (
+          <span
+            className="mb-site-chip"
+            data-security={focused ? undefined : security}
+            title={focused ? undefined : siteTitle}
+          >
+            {siteIcon}
+          </span>
+        )}
         <div className="relative flex h-full min-w-0 flex-1 items-center">
           <input
             ref={input}

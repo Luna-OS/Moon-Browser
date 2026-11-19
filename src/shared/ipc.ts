@@ -11,7 +11,7 @@
 import type { ShortcutCommand } from "./shortcuts";
 import type { InternalPage } from "./internal";
 import type { GroupColor } from "./tab-groups";
-import type { Rect, WindowState } from "./types";
+import type { PermissionKind, Rect, SiteDecision, WindowState } from "./types";
 
 export type Disposition = "current" | "foreground" | "background" | "window" | "private";
 
@@ -40,6 +40,7 @@ export type UiCommand =
   | { type: "findInPage"; text: string; forward: boolean; findNext: boolean }
   | { type: "stopFind" }
   | { type: "toggleProtection" }
+  | { type: "sitePermission"; kind: PermissionKind; decision: SiteDecision }
   | { type: "split"; tabId?: number }
   | { type: "unsplit" }
   | { type: "splitRatio"; ratio: number }

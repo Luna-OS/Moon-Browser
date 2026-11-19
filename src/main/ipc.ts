@@ -32,6 +32,7 @@ import { resolveInput } from "@shared/omnibox";
 import { normalizeSite } from "@shared/settings";
 import { inlineCompletion, suggest } from "@shared/suggest";
 import type { AboutInfo, ClearDataOptions, PermissionKind, Suggestion } from "@shared/types";
+import { SITE_KINDS } from "./permissions";
 import type { Browser } from "./browser";
 import { engineSettingsChanged } from "./engine-settings";
 import type { Tab } from "./tab";
@@ -166,6 +167,11 @@ export function validateCommand(raw: unknown): UiCommand | null {
     case "respondPrompt":
       return isNum(c.id) && typeof c.allow === "boolean" && typeof c.remember === "boolean"
         ? { type: "respondPrompt", id: c.id, allow: c.allow, remember: c.remember }
+        : null;
+    case "sitePermission":
+      return SITE_KINDS.includes(c.kind as PermissionKind) &&
+        (c.decision === "allow" || c.decision === "deny" || c.decision === "ask")
+        ? { type: "sitePermission", kind: c.kind as PermissionKind, decision: c.decision }
         : null;
     case "findInPage":
       return isStr(c.text, 1024) &&

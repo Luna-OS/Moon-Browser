@@ -406,6 +406,9 @@ if (process.platform === "linux") {
 
 const args = [root];
 if (process.platform === "linux") args.push("--no-sandbox");
+// A stand-in camera and microphone, as CI machines have none (pages still
+// have to be allowed to use them).
+args.push("--use-fake-device-for-media-stream");
 // The API key of Luma AI is encrypted with the Keychain on macOS; a test
 // run must not stop at a Keychain question nobody is there to answer.
 if (process.platform === "darwin") args.push("--use-mock-keychain");
@@ -1164,6 +1167,87 @@ try {
     const after = await states();
     if (after.join() !== "granted,granted,prompt,prompt,prompt")
       throw new Error(`after allowing: ${after}`);
+  });
+
+  await check("a blocked microphone can be allowed again from the site icon", async () => {
+    // The same page (in front from the check before): it asks for the
+    // microphone and is blocked, remembered for the site.
+    const inPage = (code) =>
+      app.evaluate(
+        ({ webContents }, js) =>
+          webContents
+            .getAllWebContents()
+            .find((w) => w.getURL().endsWith("/permissions"))
+            .executeJavaScript(js, true),
+        code,
+      );
+    const mic = () =>
+      inPage("navigator.permissions.query({ name: 'microphone' }).then((s) => s.state)");
+    const ask = () =>
+      inPage(
+        "navigator.mediaDevices.getUserMedia({ audio: true }).then((s) => (s.getTracks().forEach((t) => t.stop()), 'ok'), (e) => e.name)",
+      );
+    const first = ask();
+    const bar = ui.getByRole("alert").filter({ hasText: "wants to use your microphone" });
+    await waitFor(() => bar.isVisible(), "the microphone question");
+    await bar.getByRole("button", { name: "Block" }).click();
+    if ((await first) !== "NotAllowedError") throw new Error(`blocked: ${await first}`);
+    // Asked again: refused at once, and the site icon says so.
+    if ((await ask()) !== "NotAllowedError") throw new Error("not blocked the second time");
+    const icon = ui.getByRole("button", { name: /Blocked here: microphone/ });
+    await waitFor(() => icon.isVisible(), "the site icon marking the blocked microphone");
+    // Where the page tells people to look: the icon opens the site's
+    // permissions, and Allow there holds.
+    await icon.click();
+    const panel = ui.getByRole("dialog", { name: "Site permissions" });
+    await waitFor(() => panel.isVisible(), "the site permissions panel");
+    await new Promise((r) => setTimeout(r, 400));
+    await shot("09a-site-permissions");
+    await panel
+      .getByRole("radiogroup", { name: "Microphone" })
+      .getByRole("radio", { name: "Allow" })
+      .click();
+    await waitFor(async () => (await mic()) === "granted", "the microphone allowed for the site");
+    await waitFor(
+      () =>
+        panel
+          .getByRole("radiogroup", { name: "Microphone" })
+          .getByRole("radio", { name: "Allow" })
+          .getAttribute("aria-checked")
+          .then((v) => v === "true"),
+      "the panel showing it allowed",
+    );
+    // The page tries again: no question, Luma lets it through (whether a
+    // microphone is there is up to the machine).
+    const again = await ask();
+    if (again === "NotAllowedError") throw new Error("still blocked after allowing");
+    if (await bar.isVisible()) throw new Error("asked again after allowing");
+    // Where Windows or macOS keeps the microphone from Luma itself (CI
+    // runners do), Luma says so and where to switch it on.
+    const system = await app.evaluate(({ systemPreferences }) =>
+      process.platform === "win32" || process.platform === "darwin"
+        ? systemPreferences.getMediaAccessStatus("microphone")
+        : "granted",
+    );
+    if (system === "denied" || system === "restricted") {
+      const notice = ui
+        .getByRole("alertdialog")
+        .filter({ hasText: "doesn't let Luma use the microphone" });
+      await waitFor(() => notice.isVisible(), "the notice about the system's setting");
+      await notice.getByRole("button", { name: "Close" }).click();
+      await waitFor(async () => !(await notice.isVisible()), "the notice closed");
+    }
+    if (!(await panel.isVisible())) {
+      await ui.getByRole("button", { name: /Site permissions$/ }).click();
+      await waitFor(() => panel.isVisible(), "the site permissions panel again");
+    }
+    // Back to asking, for the checks after this one.
+    await panel
+      .getByRole("radiogroup", { name: "Microphone" })
+      .getByRole("radio", { name: "Ask" })
+      .click();
+    await waitFor(async () => (await mic()) === "prompt", "the microphone back to asking");
+    await ui.keyboard.press("Escape");
   });
 
   await check("Ctrl+T opens a new tab and Ctrl+W closes it", async () => {

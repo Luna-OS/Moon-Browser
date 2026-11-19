@@ -1,9 +1,12 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { formatBytes, formatNumber } from "@shared/format";
-import type { DownloadInfo, WindowState } from "@shared/types";
+import type { DownloadInfo, PermissionKind, SiteDecision, WindowState } from "@shared/types";
 import {
+  BellIcon,
   BookmarksIcon,
+  CameraIcon,
   CheckIcon,
+  ClipboardIcon,
   CloseIcon,
   CodeIcon,
   DownloadIcon,
@@ -13,12 +16,16 @@ import {
   FolderIcon,
   HistoryIcon,
   InfoIcon,
+  LockIcon,
   MaskIcon,
+  MicIcon,
   MinusIcon,
   MoonIcon,
   PauseIcon,
+  PinIcon,
   PlayIcon,
   PlusIcon,
+  PopupIcon,
   PrintIcon,
   PuzzleIcon,
   SettingsIcon,
@@ -34,7 +41,15 @@ import type { UiCommand } from "@shared/ipc";
 import { keys, ui } from "./store";
 
 export type PopoverKind =
-  "menu" | "shield" | "downloads" | "extensions" | "group" | "bookmarkFolder" | "bookmark" | "ai";
+  | "menu"
+  | "shield"
+  | "downloads"
+  | "extensions"
+  | "group"
+  | "bookmarkFolder"
+  | "bookmark"
+  | "ai"
+  | "site";
 
 const run = (cmd: UiCommand) => void ui.command(cmd);
 
@@ -380,6 +395,118 @@ export function AssistantMenu({ state, onClose }: { state: WindowState; onClose:
           run({ type: "aiManage" });
         }}
       />
+    </div>
+  );
+}
+
+const SITE_PERMISSIONS: Partial<Record<PermissionKind, { icon: ReactNode; label: string }>> = {
+  camera: { icon: <CameraIcon size={15} />, label: "Camera" },
+  microphone: { icon: <MicIcon size={15} />, label: "Microphone" },
+  geolocation: { icon: <PinIcon size={15} />, label: "Location" },
+  notifications: { icon: <BellIcon size={15} />, label: "Notifications" },
+  "clipboard-read": { icon: <ClipboardIcon size={15} />, label: "Read the clipboard" },
+  popup: { icon: <PopupIcon size={15} />, label: "Pop-ups" },
+};
+
+const DECISIONS: { value: SiteDecision; label: string }[] = [
+  { value: "ask", label: "Ask" },
+  { value: "allow", label: "Allow" },
+  { value: "deny", label: "Block" },
+];
+
+/**
+ * Behind the address bar's site icon: the connection and what the site may
+ * do. Changing a permission holds from now on (as in Settings → Site
+ * permissions); the page asks again for what it was refused.
+ */
+export function SitePanel({ state, onClose }: { state: WindowState; onClose: () => void }) {
+  const tab = state.tabs.find((t) => t.id === state.activeId);
+  const site = state.site;
+  if (!site || !tab) return null;
+  const secure = tab.security === "secure";
+  const host = site.origin.replace(/^https?:\/\//, "");
+  const changed = site.blocked.length > 0;
+  return (
+    <div className="flex flex-col gap-3 p-2">
+      <div className="flex items-center gap-2.5">
+        <span className={secure ? "text-(--mb-success)" : "text-(--mb-warning)"}>
+          {secure ? <LockIcon size={18} /> : <InfoIcon size={18} />}
+        </span>
+        <div className="min-w-0">
+          <div className="truncate font-semibold" title={site.origin}>
+            {host}
+          </div>
+          <div className="text-xs text-(--mb-text-muted)">
+            {secure
+              ? "Connection is secure"
+              : site.origin.startsWith("file:")
+                ? "A file on this computer"
+                : "Not secure: plain HTTP"}
+          </div>
+        </div>
+      </div>
+      {changed && (
+        <p className="m-0 px-1 text-xs text-(--mb-warning)">
+          Blocked on this page because of an earlier answer:{" "}
+          {site.blocked.map((k) => SITE_PERMISSIONS[k]?.label.toLowerCase() ?? k).join(", ")}. Allow
+          it below, then try again on the page.
+        </p>
+      )}
+      <div className="flex flex-col gap-1.5" role="list" aria-label="Permissions of this site">
+        {site.permissions.map((p) => {
+          const info = SITE_PERMISSIONS[p.kind];
+          if (!info) return null;
+          return (
+            <div key={p.kind} role="listitem" className="flex items-center gap-2.5 px-1">
+              <span
+                className={
+                  site.blocked.includes(p.kind) ? "text-(--mb-warning)" : "text-(--mb-text-muted)"
+                }
+              >
+                {info.icon}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm">{info.label}</span>
+              <div
+                role="radiogroup"
+                aria-label={info.label}
+                className="inline-flex shrink-0 gap-0.5 rounded-[0.6rem] border border-(--mb-border) bg-(--mb-inset) p-0.5"
+              >
+                {DECISIONS.map((d) => {
+                  const selected = p.decision === d.value;
+                  return (
+                    <button
+                      key={d.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() =>
+                        run({ type: "sitePermission", kind: p.kind, decision: d.value })
+                      }
+                      className={`inline-flex h-6 cursor-pointer items-center rounded-[0.45rem] border-0 px-2 text-xs font-medium transition-colors duration-150 ${
+                        selected
+                          ? "bg-(--mb-selected) text-(--mb-accent) shadow-[inset_0_0_0_1px_rgb(185_174_251/0.35)]"
+                          : "bg-transparent text-(--mb-text-muted) hover:text-(--mb-text)"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        className="mb-btn mb-btn-ghost mb-btn-sm self-start"
+        onClick={() => {
+          onClose();
+          run({ type: "openUrl", url: "moon://settings/#permissions", disposition: "foreground" });
+        }}
+      >
+        All site permissions
+      </button>
     </div>
   );
 }
