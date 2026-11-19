@@ -1134,3 +1134,30 @@ body {
   transform: translateX(0.8rem);
   background: var(--color-night-950);
 }
+
+/* The site icon as a button: the site's connection and permissions. */
+.mb-site-button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.mb-site-button:hover {
+  background: var(--mb-hover);
+  color: var(--mb-text);
+}
+.mb-site-button:focus-visible {
+  outline: 2px solid var(--mb-focus-ring);
+  outline-offset: 1px;
+}
+/* Something the page asked for was refused because of an earlier answer. */
+.mb-site-button[data-blocked]::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--mb-warning);
+}

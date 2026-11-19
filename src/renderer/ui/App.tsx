@@ -29,6 +29,7 @@ import {
   MainMenu,
   Popover,
   ShieldPanel,
+  SitePanel,
   type PopoverKind,
 } from "./Popovers";
 import { keys, onUiEvent, ui, useWindowState } from "./store";
@@ -199,7 +200,11 @@ function Browser({ state }: { state: WindowState }) {
                 tab={tab}
                 engineName={state.searchEngineName}
                 bookmarked={state.bookmarked}
+                site={state.site}
                 onDropdownChange={onDropdown}
+                onSiteInfo={(anchor) =>
+                  setPopover((p) => (p?.kind === "site" ? null : { kind: "site", anchor }))
+                }
               />
             </div>
             {!state.private && <ExtensionButtons state={state} actions={actions} />}
@@ -414,6 +419,7 @@ function Browser({ state }: { state: WindowState }) {
         popover.kind !== "ai" && (
           <Popover
             anchor={popover.anchor}
+            align={popover.kind === "site" ? "left" : "right"}
             width={
               popover.kind === "menu"
                 ? 312
@@ -428,10 +434,13 @@ function Browser({ state }: { state: WindowState }) {
                   ? "Luma Shield"
                   : popover.kind === "extensions"
                     ? "Extensions"
-                    : "Downloads"
+                    : popover.kind === "site"
+                      ? "Site permissions"
+                      : "Downloads"
             }
             onClose={closePopover}
           >
+            {popover.kind === "site" && <SitePanel state={state} onClose={closePopover} />}
             {popover.kind === "menu" && <MainMenu state={state} onClose={closePopover} />}
             {popover.kind === "shield" && <ShieldPanel state={state} onClose={closePopover} />}
             {popover.kind === "downloads" && (

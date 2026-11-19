@@ -127,7 +127,10 @@ Luma is built to be safe by default. See [SECURITY.md](SECURITY.md) for the deta
 - **Permissions are asked for** — camera, microphone, location, notifications, clipboard,
   opening other apps and pop-ups without a click. Until you've answered, sites see "not asked
   yet" (as in Chrome), not "blocked", so they ask. USB, serial, HID and Bluetooth access are
-  refused.
+  refused. The site icon in the address bar shows a site's permissions and changes them (allow,
+  block, or ask again), with a dot when something was blocked because of an earlier answer; if
+  Windows or macOS keeps Luma from the camera or microphone, Luma says where to switch it on.
+  Local files can ask too.
 - **Downloads** — programs and scripts are held under a harmless name (`Unconfirmed ….crdownload`)
   until you choose *Keep anyway*. On Windows every download gets the Mark of the Web, so
   SmartScreen checks it; on macOS the quarantine mark, so Gatekeeper checks apps before they

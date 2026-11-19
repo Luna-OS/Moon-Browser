@@ -17,6 +17,8 @@
  */
 import {
   ipcMain,
+  shell,
+  systemPreferences,
   type IpcMainEvent,
   type PermissionCheckHandlerHandlerDetails,
   type PermissionRequest,
@@ -25,7 +27,7 @@ import {
 } from "electron";
 import { PERMISSION_STATE_CHANNEL, type PermissionState } from "@shared/ipc";
 import { originOf } from "@shared/sites";
-import type { PermissionKind, PermissionPrompt } from "@shared/types";
+import type { PermissionKind, PermissionPrompt, SiteDecision, SitePermission } from "@shared/types";
 import type { Browser } from "./browser";
 import type { Tab } from "./tab";
 import type { MoonWindow } from "./window";
@@ -75,6 +77,33 @@ const PANEL_REQUESTS: Record<string, string> = {
   geolocation: "know your location",
 };
 
+/** What the site panel (the address bar's site icon) shows and changes. */
+export const SITE_KINDS: readonly PermissionKind[] = [
+  "camera",
+  "microphone",
+  "geolocation",
+  "notifications",
+  "clipboard-read",
+  "popup",
+];
+
+/** Web pages and local files are asked; Luma's own and other pages never get anything. */
+export function asksPermissions(origin: string): boolean {
+  return /^(https?:\/\/|file:)/.test(origin);
+}
+
+/** Where Windows and macOS let apps use the camera and microphone. */
+const SYSTEM_SETTINGS: Record<"camera" | "microphone", Partial<Record<NodeJS.Platform, string>>> = {
+  camera: {
+    win32: "ms-settings:privacy-webcam",
+    darwin: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
+  },
+  microphone: {
+    win32: "ms-settings:privacy-microphone",
+    darwin: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+  },
+};
+
 /** The extension a page or worker belongs to, from its origin. */
 function extensionIdOf(origin: string): string | null {
   const m = /^chrome-extension:\/\/([a-p]{32})(\/|$)/.exec(origin);
@@ -96,6 +125,10 @@ export class Permissions {
   private readonly sessionDecisions = new Map<string, Decision>();
   /** Tabs given the camera or microphone since their last navigation: maybe in a call. */
   private readonly mediaTabs = new Set<number>();
+  /** What a tab's page asked for since its last navigation and was refused by an earlier answer. */
+  private readonly blockedTabs = new Map<number, Set<PermissionKind>>();
+  /** When the system's camera or microphone notice last showed: not again for a minute. */
+  private readonly systemNotices = new Map<string, number>();
 
   constructor(private readonly browser: Browser) {}
 
@@ -122,7 +155,7 @@ export class Permissions {
     const tab = this.browser.tabFor(wc.id);
     const win = tab?.window ?? this.browser.panelWindow(wc.id);
     const origin = originOf(url || tab?.url || wc.getURL());
-    if (!kind || !win || !/^https?:\/\//.test(origin)) return "deny";
+    if (!kind || !win || !asksPermissions(origin)) return "deny";
     return this.decision(origin, kind, win.isPrivate) ?? "ask";
   }
 
@@ -172,6 +205,7 @@ export class Permissions {
   /** Drops the questions of a tab that navigated away or closed. */
   cancelTab(tabId: number): void {
     this.mediaTabs.delete(tabId);
+    this.blockedTabs.delete(tabId);
     let changed = false;
     for (const [id, entry] of this.pending) {
       if (entry.prompt.tabId !== tabId) continue;
@@ -223,6 +257,38 @@ export class Permissions {
     else this.browser.profile.setPermission(origin, kind, decision);
   }
 
+  /** What a site may do, for the site panel. */
+  site(origin: string, isPrivate: boolean): SitePermission[] {
+    return SITE_KINDS.map((kind) => ({
+      kind,
+      decision: this.decision(origin, kind, isPrivate) ?? "ask",
+    }));
+  }
+
+  /** What the tab's page asked for and Luma refused because of an earlier answer. */
+  blockedIn(tabId: number): PermissionKind[] {
+    return [...(this.blockedTabs.get(tabId) ?? [])];
+  }
+
+  /**
+   * The site panel changes a permission: allowed or blocked from now on, as
+   * Settings → Site permissions keeps it, or asked for again.
+   */
+  setSite(tab: Tab, kind: PermissionKind, decision: SiteDecision): void {
+    const origin = originOf(tab.url);
+    const isPrivate = tab.window.isPrivate;
+    if (!asksPermissions(origin)) return;
+    if (decision === "ask") {
+      this.sessionDecisions.delete(`${isPrivate ? "p" : "n"} ${origin} ${kind}`);
+      if (isPrivate) this.privateDecisions.delete(`${origin} ${kind}`);
+      else this.browser.profile.resetPermission(origin, kind);
+    } else {
+      this.remember(origin, kind, decision, isPrivate);
+    }
+    this.blockedTabs.get(tab.id)?.delete(kind);
+    tab.window.update();
+  }
+
   /** Settings → Site permissions reset a site: its answers of this session go too. */
   reset(origin: string, kind?: PermissionKind): void {
     this.browser.profile.resetPermission(origin, kind);
@@ -236,9 +302,14 @@ export class Permissions {
     if (kind === "camera-microphone") {
       const cam = this.decision(origin, "camera", tab.window.isPrivate);
       const mic = this.decision(origin, "microphone", tab.window.isPrivate);
-      if (cam && mic) return Promise.resolve(cam === "allow" && mic === "allow");
+      if (cam && mic) {
+        if (cam === "deny") this.blocked(tab, "camera");
+        if (mic === "deny") this.blocked(tab, "microphone");
+        return Promise.resolve(cam === "allow" && mic === "allow");
+      }
     } else if (kind !== "open-external") {
       const stored = this.decision(origin, kind, tab.window.isPrivate);
+      if (stored === "deny") this.blocked(tab, kind);
       if (stored) return Promise.resolve(stored === "allow");
     }
     return new Promise((resolve) => {
@@ -258,6 +329,57 @@ export class Permissions {
       this.pending.set(prompt.id, { prompt, resolvers: [resolve], private: tab.window.isPrivate });
       tab.window.update();
     });
+  }
+
+  /** Refused by an earlier answer: the site icon shows it, and changes it. */
+  private blocked(tab: Tab, kind: PermissionKind): void {
+    let kinds = this.blockedTabs.get(tab.id);
+    if (!kinds) this.blockedTabs.set(tab.id, (kinds = new Set()));
+    if (kinds.has(kind)) return;
+    kinds.add(kind);
+    tab.window.update();
+  }
+
+  /**
+   * Allowed for the site, but Windows or macOS may still keep Luma from the
+   * camera or microphone (their privacy settings): then the page only gets
+   * "permission denied". macOS asks once; otherwise Luma says where to
+   * switch it on, rather than leave the site to blame the browser.
+   */
+  private async systemAllows(win: MoonWindow, kinds: ("camera" | "microphone")[]): Promise<void> {
+    if (process.platform !== "win32" && process.platform !== "darwin") return;
+    for (const kind of kinds) {
+      let status = systemPreferences.getMediaAccessStatus(kind);
+      if (status === "not-determined" && process.platform === "darwin")
+        status = (await systemPreferences.askForMediaAccess(kind)) ? "granted" : "denied";
+      if (status !== "denied" && status !== "restricted") continue;
+      const last = this.systemNotices.get(kind) ?? 0;
+      if (Date.now() - last < 60_000) return;
+      this.systemNotices.set(kind, Date.now());
+      const mac = process.platform === "darwin";
+      const device = kind === "camera" ? "camera" : "microphone";
+      void win
+        .ask({
+          tone: "calm",
+          glyph: "permission",
+          eyebrow: mac ? "macOS settings" : "Windows settings",
+          title: `${mac ? "macOS" : "Windows"} doesn't let Luma use the ${device}`,
+          message: mac
+            ? `Allow Luma under System Settings → Privacy & Security → ${kind === "camera" ? "Camera" : "Microphone"}, then reload the page.`
+            : `Switch on “${kind === "camera" ? "Camera" : "Microphone"} access” and “Let desktop apps access your ${device}” under Settings → Privacy & security → ${kind === "camera" ? "Camera" : "Microphone"}, then reload the page.`,
+          buttons: [
+            { label: "Close", style: "secondary" },
+            { label: "Open settings", style: "primary" },
+          ],
+          defaultId: 1,
+          cancelId: 0,
+        })
+        .then((response) => {
+          const url = SYSTEM_SETTINGS[kind][process.platform];
+          if (response === 1 && url) void shell.openExternal(url);
+        });
+      return;
+    }
   }
 
   /** Extensions get what their manifest declares; null for anything that isn't an extension. */
@@ -291,7 +413,7 @@ export class Permissions {
     if (tab.window.isPrivate !== isPrivate) return false;
     if (ALWAYS_ALLOWED.has(permission)) return true;
     const origin = originOf(details.requestingUrl || tab.url);
-    if (!/^https?:\/\//.test(origin)) return false;
+    if (!asksPermissions(origin)) return false;
 
     switch (permission) {
       case "media": {
@@ -304,7 +426,13 @@ export class Permissions {
           video && audio ? "camera-microphone" : video ? "camera" : "microphone",
           origin,
         );
-        if (allowed) this.mediaTabs.add(tab.id);
+        if (allowed) {
+          this.mediaTabs.add(tab.id);
+          await this.systemAllows(tab.window, [
+            ...(video ? (["camera"] as const) : []),
+            ...(audio ? (["microphone"] as const) : []),
+          ]);
+        }
         return allowed;
       }
       case "geolocation":
@@ -368,6 +496,19 @@ export class Permissions {
         return false;
     }
     if (!kinds.length) return false;
+    const allowed = await this.askPanel(win, origin, kinds);
+    const media = kinds.filter((k): k is "camera" | "microphone" =>
+      ["camera", "microphone"].includes(k),
+    );
+    if (allowed && media.length) await this.systemAllows(win, media);
+    return allowed;
+  }
+
+  private async askPanel(
+    win: MoonWindow,
+    origin: string,
+    kinds: PermissionKind[],
+  ): Promise<boolean> {
     const stored = kinds.map((kind) => this.decision(origin, kind, win.isPrivate));
     if (stored.every((d) => d !== undefined)) return stored.every((d) => d === "allow");
     const response = await win.ask({

@@ -195,6 +195,14 @@ export interface DialogInfo {
   cancelId: number;
 }
 
+/** A permission of a site, as the site panel shows it: allowed, blocked, or asked for. */
+export type SiteDecision = "allow" | "deny" | "ask";
+
+export interface SitePermission {
+  kind: PermissionKind;
+  decision: SiteDecision;
+}
+
 export interface PermissionPrompt {
   id: number;
   tabId: number;
@@ -287,6 +295,12 @@ export interface WindowState {
   /** What the bookmarks bar shows: its bookmarks and folders. */
   bookmarksBar: Bookmark[];
   protection: { adblock: boolean; siteAllowed: boolean; site: string };
+  /**
+   * The active page's site and its permissions, for the panel behind the
+   * address bar's site icon; `blocked`: what it asked for this time and Luma
+   * refused because of an earlier answer. Null for pages that can't ask.
+   */
+  site: { origin: string; permissions: SitePermission[]; blocked: PermissionKind[] } | null;
   theme: ResolvedTheme;
   showHomeButton: boolean;
   showBookmarksBar: boolean;
