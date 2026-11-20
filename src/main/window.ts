@@ -10,6 +10,7 @@ import {
   Menu,
   type MenuItemConstructorOptions,
   type Result,
+  screen,
   type Session,
   type WebContents,
   WebContentsView,
@@ -77,6 +78,18 @@ import type { Browser } from "./browser";
 import { internalPreload, uiPreload, windowIcon } from "./paths";
 import type { SavedWindow } from "./profile";
 import { Tab, type TabInit } from "./tab";
+
+/** Whether a window with these bounds covers its whole display (give or take rounding). */
+function coversDisplay(bounds: Rect): boolean {
+  const display = screen.getDisplayMatching(bounds).bounds;
+  const slack = 8;
+  return (
+    bounds.x <= display.x + slack &&
+    bounds.y <= display.y + slack &&
+    bounds.x + bounds.width >= display.x + display.width - slack &&
+    bounds.y + bounds.height >= display.y + display.height - slack
+  );
+}
 
 export interface WindowOptions {
   private?: boolean;
@@ -169,6 +182,7 @@ export class MoonWindow {
   private fullscreenByPage = false;
   /** Maximized before it went fullscreen (Windows): maximized again after. */
   private maximizedBeforeFullscreen = false;
+  private fullscreenCheck: NodeJS.Timeout | null = null;
   private updateScheduled = false;
   private softTimer: NodeJS.Timeout | null = null;
   /** Questions asked in Luma's own dialogs, one at a time. */
@@ -251,8 +265,15 @@ export class MoonWindow {
       }, delay);
     });
 
-    this.win.on("resize", () => this.layout());
-    this.win.on("maximize", () => this.layout());
+    this.win.on("resize", () => {
+      this.layout();
+      this.checkFullscreenSoon();
+    });
+    this.win.on("move", () => this.checkFullscreenSoon());
+    this.win.on("maximize", () => {
+      this.layout();
+      this.checkFullscreenSoon();
+    });
     this.win.on("unmaximize", () => this.layout());
     this.win.on("enter-full-screen", () => {
       this.layout();
@@ -285,6 +306,7 @@ export class MoonWindow {
     this.win.on("close", () => browser.windowClosing(this));
     this.win.on("closed", () => {
       this.closed = true;
+      if (this.fullscreenCheck) clearTimeout(this.fullscreenCheck);
       this.dialogs.dismissAll();
       for (const tab of [...this.tabs]) {
         browser.permissions.cancelTab(tab.id);
@@ -449,6 +471,10 @@ export class MoonWindow {
     if (group?.collapsed) group.collapsed = false;
     this.activeId = tab.id;
     tab.lastActive = Date.now();
+    // Another tab comes to the front (a link's new tab, Ctrl+T, the
+    // assistant) while a page is in full screen: that ends, or the page
+    // would stay over everything, tabs and toolbar included.
+    if (this.htmlFullscreen && this.htmlFullscreen !== tab) this.endHtmlFullscreen();
     for (const t of this.visibleTabs()) t.wake();
     if (tab.wc) this.browser.extensions.selectTab(tab.wc);
     this.refreshSidePanel();
@@ -556,8 +582,11 @@ export class MoonWindow {
     const [width, height] = this.win.getContentSize();
     const wanted = new Map<WebContentsView, Rect>();
     if (!this.overlayOpen) {
-      if (this.htmlFullscreen?.view) {
-        wanted.set(this.htmlFullscreen.view, { x: 0, y: 0, width, height });
+      const full = this.htmlFullscreen;
+      // Over everything only while the window really is in full screen and
+      // the page is the one in front: never over the tabs of a normal window.
+      if (full?.view && !full.crashed && this.win.isFullScreen() && full === this.activeTab) {
+        wanted.set(full.view, { x: 0, y: 0, width, height });
       } else {
         let area = contentArea(width, height, this.insets);
         if (this.sidePanel) {
@@ -1047,6 +1076,32 @@ export class MoonWindow {
     }
     this.layout();
     this.update();
+  }
+
+  /** Ends a page's full screen from the browser's side: the page is told, too. */
+  private endHtmlFullscreen(): void {
+    const tab = this.htmlFullscreen;
+    if (!tab) return;
+    tab.wc?.executeJavaScript("document.exitFullscreen?.()", true).catch(() => undefined);
+    this.setHtmlFullscreen(tab, false);
+  }
+
+  /**
+   * Windows: a window counted as in full screen that doesn't cover its
+   * display any more (maximized, snapped or moved by the system or by
+   * another program) would stay without tabs and toolbar. It leaves full
+   * screen properly instead. Looked at a moment after the window changed,
+   * once it has settled.
+   */
+  private checkFullscreenSoon(): void {
+    if (process.platform !== "win32" || this.fullscreenCheck) return;
+    this.fullscreenCheck = setTimeout(() => {
+      this.fullscreenCheck = null;
+      if (this.closed || this.win.isDestroyed() || !this.win.isFullScreen()) return;
+      if (this.win.isMinimized() || coversDisplay(this.win.getBounds())) return;
+      this.endHtmlFullscreen();
+      if (this.win.isFullScreen()) this.setFullScreen(false);
+    }, 700);
   }
 
   /**
