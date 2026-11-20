@@ -2628,18 +2628,24 @@ try {
         });
       });
       await waitFor(() => strip.isVisible(), "the tab strip back");
-      // The page isn't laid over the tabs: it starts below the toolbar.
-      const top = await app.evaluate(({ BrowserWindow }) => {
-        const win = BrowserWindow.getAllWindows().find((w) =>
-          w.webContents.getURL().startsWith("moon://ui"),
-        );
-        return Math.min(
-          ...win.contentView.children
-            .filter((v) => v.getVisible() && !v.webContents?.getURL().startsWith("moon://ui"))
-            .map((v) => v.getBounds().y),
-        );
-      });
-      if (!(top > 40)) throw new Error(`a page still lies over the tabs (top ${top})`);
+      // The page isn't laid over the tabs: it starts below the toolbar (once
+      // the UI has said where that ends again).
+      const top = () =>
+        app.evaluate(({ BrowserWindow }) => {
+          const win = BrowserWindow.getAllWindows().find((w) =>
+            w.webContents.getURL().startsWith("moon://ui"),
+          );
+          return Math.min(
+            ...win.contentView.children
+              .filter((v) => v.getVisible() && !v.webContents?.getURL().startsWith("moon://ui"))
+              .map((v) => v.getBounds().y),
+          );
+        });
+      await waitFor(async () => (await top()) > 40, "the page below the toolbar again", 5000).catch(
+        async () => {
+          throw new Error(`a page still lies over the tabs (top ${await top()})`);
+        },
+      );
       for (const id of await stripIds())
         if (!before.includes(id))
           await ui.evaluate((tabId) => window.moonUI.command({ type: "close", tabId }), Number(id));
