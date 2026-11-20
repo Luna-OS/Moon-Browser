@@ -2580,6 +2580,72 @@ try {
     if (windows) await waitFor(async () => (await state()).maximized, "the window maximized again");
   });
 
+  await check(
+    "another tab in front ends a page's fullscreen: tabs and toolbar are back",
+    async () => {
+      // Still on the page of the check before. A link's new tab, Ctrl+T or
+      // the assistant may bring another tab to the front meanwhile.
+      const windows = process.platform === "win32";
+      const fullscreen = () =>
+        app.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()
+            .find((w) => w.webContents.getURL().startsWith("moon://ui"))
+            .isFullScreen(),
+        );
+      const strip = ui.locator('[role="tablist"]').first();
+      const before = await stripIds();
+      await app.evaluate(
+        ({ webContents }, url) =>
+          void webContents
+            .getAllWebContents()
+            .find((w) => w.getURL() === url)
+            ?.executeJavaScript(
+              "document.documentElement.requestFullscreen().catch(() => null), true",
+              true,
+            ),
+        `${base}/drm`,
+      );
+      const went = await waitFor(fullscreen, "the window to go fullscreen")
+        .then(() => true)
+        .catch((err) => {
+          if (windows) throw err;
+          return false;
+        });
+      if (went)
+        await waitFor(async () => !(await strip.isVisible()), "the tabs hidden in fullscreen");
+      await ui.evaluate(
+        (url) => window.moonUI.command({ type: "navigate", input: url, disposition: "foreground" }),
+        `${base}/second`,
+      );
+      await waitFor(
+        async () => !(await fullscreen()),
+        "the window to leave fullscreen",
+        20_000,
+      ).catch(async (err) => {
+        if (process.platform !== "darwin") throw err;
+        await app.evaluate(({ BrowserWindow }) => {
+          for (const w of BrowserWindow.getAllWindows()) w.setFullScreen(false);
+        });
+      });
+      await waitFor(() => strip.isVisible(), "the tab strip back");
+      // The page isn't laid over the tabs: it starts below the toolbar.
+      const top = await app.evaluate(({ BrowserWindow }) => {
+        const win = BrowserWindow.getAllWindows().find((w) =>
+          w.webContents.getURL().startsWith("moon://ui"),
+        );
+        return Math.min(
+          ...win.contentView.children
+            .filter((v) => v.getVisible() && !v.webContents?.getURL().startsWith("moon://ui"))
+            .map((v) => v.getBounds().y),
+        );
+      });
+      if (!(top > 40)) throw new Error(`a page still lies over the tabs (top ${top})`);
+      for (const id of await stripIds())
+        if (!before.includes(id))
+          await ui.evaluate((tabId) => window.moonUI.command({ type: "close", tabId }), Number(id));
+    },
+  );
+
   await check("the window survives for a while without crashing", async () => {
     await new Promise((r) => setTimeout(r, 1500));
     const alive = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);

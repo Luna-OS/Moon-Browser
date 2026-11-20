@@ -576,6 +576,7 @@ export class Tab {
       if (details.reason === "clean-exit") return;
       this.crashed = true;
       this.fullscreen = false;
+      this.window.setHtmlFullscreen(this, false);
       this.loading = false;
       this.audible = false;
       this.window.layout();
